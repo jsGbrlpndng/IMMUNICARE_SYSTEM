@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import {
     Users,
@@ -14,7 +15,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
 
-/* ─── Constants ─────────────────────────────────────────── */
+/* Constants */
 
 const BARANGAY_OPTIONS = [
     { value: 'LANGGAM', label: 'LANGGAM' },
@@ -31,7 +32,7 @@ const BARANGAY_OPTIONS = [
     { value: 'NARRA', label: 'NARRA' },
 ];
 
-/* ─── Sub-components ─────────────────────────────────────── */
+/* Sub-components */
 
 /** Top-right floating toast */
 const Toast = ({ message, onDismiss }) => {
@@ -102,7 +103,7 @@ const SuccessModal = ({ data, onClose, onRegisterAnother }) => {
                         </div>
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Assigned Barangay</p>
-                            <p className="text-sm font-semibold text-slate-800">{data.barangay || '—'}</p>
+                            <p className="text-sm font-semibold text-slate-800">{data.barangay || '-'}</p>
                         </div>
                     </div>
 
@@ -159,16 +160,22 @@ const SuccessModal = ({ data, onClose, onRegisterAnother }) => {
     );
 };
 
-/* ─── Main Component ─────────────────────────────────────── */
+/* Main Component */
 
 const UserManagement = () => {
     const { user } = useAuth();
+    const getInitialUserForm = useCallback(() => ({
+        full_name: '',
+        role: 'Midwife',
+        assigned_barangay: user?.role === 'Admin' ? (user.assigned_barangay || '') : '',
+        password: ''
+    }), [user]);
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
-    const [newUser, setNewUser] = useState({ full_name: '', role: 'Midwife', assigned_barangay: '', password: '' });
+    const [newUser, setNewUser] = useState(getInitialUserForm);
     const [formError, setFormError] = useState('');
 
     // Success modal
@@ -224,7 +231,6 @@ const UserManagement = () => {
         if (submitting) return;
         setFormError('');
 
-        // Validation: non-Super Admin roles require a barangay
         if (newUser.role !== 'Super Admin' && !newUser.assigned_barangay) {
             setFormError('Please select an assigned barangay');
             return;
@@ -239,7 +245,7 @@ const UserManagement = () => {
                 // Success: close modal and reset form
                 const staffId = data?.user_id ?? data?.id ?? 'N/A';
                 setShowAddModal(false);
-                setNewUser({ full_name: '', role: 'Midwife', assigned_barangay: '', password: '' });
+                setNewUser(getInitialUserForm());
                 setFormError('');
 
                 // Show success modal
@@ -250,7 +256,7 @@ const UserManagement = () => {
                     barangay: newUser.assigned_barangay,
                 });
 
-                setToast(`Staff registered – ID: ${staffId}`);
+                setToast(`Staff registered - ID: ${staffId}`);
                 fetchUsers();
             } else {
                 // Failure: keep modal open and show error
@@ -306,12 +312,7 @@ const UserManagement = () => {
                 </div>
                 <button
                     onClick={() => {
-                        setNewUser({ 
-                            full_name: '', 
-                            role: 'Midwife', 
-                            assigned_barangay: user?.role === 'Barangay Admin' ? user.assigned_barangay : '', 
-                            password: '' 
-                        });
+                        setNewUser(getInitialUserForm());
                         setShowAddModal(true);
                     }}
                     className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-lg hover:bg-black transition-colors shadow-sm font-semibold text-sm"
@@ -327,7 +328,7 @@ const UserManagement = () => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 w-4 h-4" />
                     <input
                         type="text"
-                        placeholder="Search by name or role…"
+                        placeholder="Search by name or role..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm transition"
@@ -353,7 +354,7 @@ const UserManagement = () => {
                                 <td colSpan="5" className="px-6 py-12 text-center">
                                     <div className="flex flex-col items-center gap-2 text-slate-400">
                                         <Loader2 className="w-5 h-5 animate-spin" />
-                                        <span className="text-sm">Loading staff list…</span>
+                                        <span className="text-sm">Loading staff list...</span>
                                     </div>
                                 </td>
                             </tr>
@@ -382,12 +383,15 @@ const UserManagement = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${staffUser.role.includes('Admin')
-                                            ? 'bg-slate-900 text-white border-slate-900'
-                                            : staffUser.role === 'Midwife'
-                                                ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                                : 'bg-green-50 text-green-700 border-green-100'
-                                            }`}>
+                                        <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                                            staffUser.role === 'Super Admin'
+                                                ? 'bg-slate-900 text-white border-slate-900'
+                                                : staffUser.role === 'Admin'
+                                                    ? 'bg-violet-50 text-violet-700 border-violet-100'
+                                                    : staffUser.role === 'Midwife'
+                                                        ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                        : 'bg-green-50 text-green-700 border-green-100'
+                                        }`}>
                                             {staffUser.role}
                                         </span>
                                     </td>
@@ -398,7 +402,7 @@ const UserManagement = () => {
                                                 <span className="text-sm font-medium">{staffUser.assigned_barangay}</span>
                                             </div>
                                         ) : (
-                                            <span className="text-xs text-slate-400 italic">—</span>
+                                            <span className="text-xs text-slate-400 italic">-</span>
                                         )}
                                     </td>
                                     <td className="px-6 py-4">
@@ -450,7 +454,7 @@ const UserManagement = () => {
                             <button
                                 onClick={() => { 
                                     setShowAddModal(false); 
-                                    setNewUser({ full_name: '', role: 'Midwife', assigned_barangay: '', password: '' }); 
+                                    setNewUser(getInitialUserForm()); 
                                     setFormError(''); 
                                 }}
                                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
@@ -492,9 +496,7 @@ const UserManagement = () => {
                                         setNewUser({ 
                                             ...newUser, 
                                             role: newRole, 
-                                            assigned_barangay: (newRole === 'Super Admin' || user?.role === 'Barangay Admin') 
-                                                ? (user?.role === 'Barangay Admin' ? user.assigned_barangay : '') 
-                                                : '' 
+                                            assigned_barangay: user?.role === 'Admin' ? (user.assigned_barangay || '') : ''
                                         });
                                     }}
                                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm font-medium transition"
@@ -502,18 +504,13 @@ const UserManagement = () => {
                                     {/* Role Options filtered by Privilege Level */}
                                     <option value="Midwife">Midwife</option>
                                     <option value="BHW">BHW (Barangay Health Worker)</option>
-                                    
-                                    {/* Only Super Admins can create other Admins */}
                                     {user?.role === 'Super Admin' && (
-                                        <>
-                                            <option value="Barangay Admin">Barangay Admin</option>
-                                            <option value="Super Admin">Super Admin (Full System Access)</option>
-                                        </>
+                                        <option value="Admin">Admin / Head Nurse</option>
                                     )}
                                 </select>
                             </div>
 
-                            {/* Assigned Barangay — shown for non-Super Admin roles and enabled only for Super Admin creators */}
+                            {/* Assigned Barangay - required for all scoped roles */}
                             {newUser.role !== 'Super Admin' && (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 mb-1.5">
@@ -521,24 +518,29 @@ const UserManagement = () => {
                                     </label>
                                     <div className="relative">
                                         <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                        <select
-                                            required
-                                            disabled={user?.role === 'Barangay Admin'}
-                                            value={newUser.assigned_barangay}
-                                            onChange={e => setNewUser({ ...newUser, assigned_barangay: e.target.value })}
-                                            className={`w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm font-medium transition appearance-none ${
-                                                user?.role === 'Barangay Admin' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50 text-slate-900'
-                                            }`}
-                                        >
-                                            <option value="">Select a barangay…</option>
-                                            {BARANGAY_OPTIONS.map(opt => (
-                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                            ))}
-                                        </select>
+                                        {user?.role === 'Admin' ? (
+                                            <input
+                                                value={user.assigned_barangay || ''}
+                                                readOnly
+                                                className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-lg bg-slate-100 text-slate-700 text-sm font-semibold"
+                                            />
+                                        ) : (
+                                            <select
+                                                required
+                                                value={newUser.assigned_barangay}
+                                                onChange={e => setNewUser({ ...newUser, assigned_barangay: e.target.value })}
+                                                className="w-full pl-9 pr-3.5 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm font-medium transition appearance-none bg-slate-50 text-slate-900"
+                                            >
+                                                <option value="">Select a barangay...</option>
+                                                {BARANGAY_OPTIONS.map(opt => (
+                                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                ))}
+                                            </select>
+                                        )}
                                     </div>
-                                    {user?.role === 'Barangay Admin' && (
-                                        <p className="text-[10px] text-slate-400 mt-1 font-medium italic">
-                                            Locked to your administrative context ({user.assigned_barangay})
+                                    {user?.role === 'Admin' && (
+                                        <p className="mt-1 text-[11px] text-slate-500">
+                                            Admin-created staff are locked to your assigned barangay.
                                         </p>
                                     )}
                                 </div>
@@ -562,7 +564,7 @@ const UserManagement = () => {
                             <div className="pt-2 flex gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => { setShowAddModal(false); setNewUser({ full_name: '', role: 'Midwife', assigned_barangay: '', password: '' }); setFormError(''); }}
+                                    onClick={() => { setShowAddModal(false); setNewUser(getInitialUserForm()); setFormError(''); }}
                                     className="flex-1 px-4 py-2.5 text-slate-600 font-semibold text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                                 >
                                     Cancel
@@ -575,7 +577,7 @@ const UserManagement = () => {
                                     {submitting ? (
                                         <>
                                             <Loader2 className="w-4 h-4 animate-spin" />
-                                            Creating…
+                                            Creating...
                                         </>
                                     ) : (
                                         'Create Account'

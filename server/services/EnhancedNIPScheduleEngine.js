@@ -80,7 +80,8 @@ class EnhancedNIPScheduleEngine {
                 // Map the status strings back to the format historically expected by this engine/service
                 const mapStatus = (vax) => {
                     const dueDate = new Date(vax.dueDate);
-                    const isDefaulter = vax.status === 'DEFAULTER' || vax.status === 'DROPOUT';
+                    const isDefaulter = vax.status === 'DEFAULTED';
+                    const isOverdue = vax.status === 'OVERDUE';
                     return {
                         ...vax,
                         vaccine: vax.vaccineCode,
@@ -88,7 +89,7 @@ class EnhancedNIPScheduleEngine {
                         vaccineName: vax.vaccineName,
                         doseNumber: vax.doseNumber,
                         scheduleId: vax.scheduleId,
-                        daysOverdue: isDefaulter ? differenceInDays(todayDate, dueDate) : 0,
+                        daysOverdue: (isDefaulter || isOverdue) ? differenceInDays(todayDate, dueDate) : 0,
                         daysUntilDue: vax.status === 'UPCOMING' ? differenceInDays(dueDate, todayDate) : 0,
                         maxAgeDays: vax.maxAgeDays
                     };
@@ -99,6 +100,7 @@ class EnhancedNIPScheduleEngine {
                     age_in_weeks:       ageInWeeks,
                     age_in_months:      ageInMonths,
                     due_now:            persistentSchedule.due_now.map(mapStatus),
+                    overdue:            (persistentSchedule.overdue || []).map(mapStatus),
                     due_soon:           (persistentSchedule.due_soon || []).map(mapStatus),
                     defaulter:          persistentSchedule.defaulter.map(mapStatus),
                     upcoming:           persistentSchedule.upcoming.map(mapStatus),
@@ -107,6 +109,7 @@ class EnhancedNIPScheduleEngine {
                     ineligible:         (persistentSchedule.ineligible || []).map(mapStatus),
                     schedule_complete:  ageInMonths >= 12
                                           && persistentSchedule.due_now.length === 0
+                                          && (persistentSchedule.overdue || []).length === 0
                                           && persistentSchedule.defaulter.length === 0
                                           && (persistentSchedule.due_soon || []).length === 0
                                           && (persistentSchedule.pending_validation || []).length === 0
@@ -321,7 +324,7 @@ class EnhancedNIPScheduleEngine {
                             vaccine: vaccine.vaccine,
                             vaccineName: vaccine.vaccineName,
                             dueDate: adjustedDueDate,
-                            status: 'DEFAULTER',
+                            status: 'DEFAULTED',
                             priority: 'URGENT',
                             daysOverdue: daysPastDue,
                             description: vaccine.description,
@@ -373,7 +376,7 @@ class EnhancedNIPScheduleEngine {
                 SELECT 
                     id, reference_id, first_name, last_name, dob, created_at,
                     bcg_status, hepa_b_status,
-                    'VALIDATED' AS registration_status, barangay,
+                    'APPROVED' AS registration_status, barangay,
                     landmark, length_at_birth_cm, initiated_breastfeeding, delivery_facility_name,
                     COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                     COALESCE(hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
@@ -492,6 +495,7 @@ class EnhancedNIPScheduleEngine {
             return {
                 ...schedule,
                 due_now: enhanceVaccineList(schedule.due_now),
+                overdue: enhanceVaccineList(schedule.overdue || []),
                 defaulter: enhanceVaccineList(schedule.defaulter || []),
                 upcoming: enhanceVaccineList(schedule.upcoming),
                 completed: enhanceVaccineList(schedule.completed)
@@ -515,7 +519,7 @@ class EnhancedNIPScheduleEngine {
             let whereConditions = ["i.status IN ('Active', 'Defaulter', 'FIC', 'CIC')"];
             let queryParams = [];
 
-            // registration_status is no longer in the infants table as it only holds approved data (implicitly 'VALIDATED')
+            // The master infants table contains only approved registrations.
 
             // Search filter
             if (filters.search) {
@@ -547,7 +551,7 @@ class EnhancedNIPScheduleEngine {
                 SELECT 
                     i.id, i.reference_id, i.first_name, i.last_name, i.dob,
                     i.mothers_maiden_name, i.father_name, i.barangay, i.purok, i.exact_address,
-                    i.caregiver_phone, 'VALIDATED' AS registration_status,
+                    i.caregiver_phone, 'APPROVED' AS registration_status,
                     i.bcg_status, i.hepa_b_status,
                     i.landmark, i.length_at_birth_cm, i.initiated_breastfeeding, i.delivery_facility_name,
                     i.created_by as approved_by,
@@ -557,7 +561,7 @@ class EnhancedNIPScheduleEngine {
                     COALESCE(i.bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                     COALESCE(i.hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
                 FROM infants i
-                LEFT JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'Approved'
+                LEFT JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'APPROVED'
 
                 WHERE ${whereClause}
                 ORDER BY COALESCE(aa.timestamp, i.dob) DESC, i.dob DESC
@@ -636,17 +640,18 @@ class EnhancedNIPScheduleEngine {
                     nextDueVaccine = overdueVaccine.vaccineName || overdueVaccine.vaccine;
                     nextDueDate = overdueVaccine.dueDate;
                     
-                    // CLINICAL ESCALATION: If any dose in the defaulter list is a DEFAULTER (>30d) or DROPOUT (>365d or catch-up exceeded),
-                    // escalate the entire infant's urgency.
-                    const hasDropoutDose = schedule.defaulter.some(v => v.status === 'DROPOUT' || v.daysOverdue > 365 || (v.maxAgeDays && schedule.age_in_days > v.maxAgeDays));
-                    const hasDefaulterDose = schedule.defaulter.some(v => v.status === 'DEFAULTER');
+                    urgency = 'defaulter';
                     
-                    if (hasDropoutDose) {
-                        urgency = 'dropout';
-                    } else {
-                        urgency = 'defaulter';
-                    }
-                    
+                    daysOverdue = overdueVaccine.daysOverdue || 0;
+                    nextDueVaccineCode = overdueVaccine.vaccineCode || overdueVaccine.vaccine;
+                    nextDoseNumber = overdueVaccine.doseNumber || overdueVaccine.dose_number;
+                    nextScheduleId = overdueVaccine.scheduleId;
+                } else if (schedule.overdue && schedule.overdue.length > 0) {
+                    vaccinationNeeds = schedule.overdue;
+                    const overdueVaccine = schedule.overdue[0];
+                    nextDueVaccine = overdueVaccine.vaccineName || overdueVaccine.vaccine;
+                    nextDueDate = overdueVaccine.dueDate;
+                    urgency = 'overdue';
                     daysOverdue = overdueVaccine.daysOverdue || 0;
                     nextDueVaccineCode = overdueVaccine.vaccineCode || overdueVaccine.vaccine;
                     nextDoseNumber = overdueVaccine.doseNumber || overdueVaccine.dose_number;
@@ -813,11 +818,12 @@ class EnhancedNIPScheduleEngine {
     sortByUrgency(infants) {
         const urgencyOrder = { 
             'defaulter': 1, 
-            'due_today': 2, 
-            'due_soon': 3,
-            'pending_validation': 4,
-            'upcoming': 5,
-            'completed': 6
+            'overdue': 2,
+            'due_today': 3,
+            'due_soon': 4,
+            'pending_validation': 5,
+            'upcoming': 6,
+            'completed': 7
         };
 
         return infants.sort((a, b) => {
@@ -901,6 +907,8 @@ class EnhancedNIPScheduleEngine {
 
                 if (schedule.defaulter && schedule.defaulter.length > 0) {
                     defaulterCount++;
+                } else if (schedule.overdue && schedule.overdue.length > 0) {
+                    dueTodayCount++;
                 } else if (schedule.due_now && schedule.due_now.length > 0) {
                     dueTodayCount++;
                 } else if (schedule.due_soon && schedule.due_soon.length > 0) {

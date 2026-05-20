@@ -112,15 +112,25 @@ router.get('/dashboard/stats', async (req, res) => {
 // GET /api/admin/users
 router.get('/users', async (req, res) => {
     try {
-        const { barangay } = req.query;
         let query = 'SELECT id, full_name, role, assigned_barangay, is_active, created_at FROM users';
         let params = [];
-        
-        if (barangay) {
+
+        if (req.user.role === ROLES.ADMIN) {
+            query += `
+                WHERE (
+                    id = ?
+                    OR (
+                        assigned_barangay = ?
+                        AND role IN (?, ?)
+                    )
+                )
+            `;
+            params.push(req.user.id, req.user.assigned_barangay, ROLES.MIDWIFE, ROLES.BHW);
+        } else if (req.query.barangay) {
             query += ' WHERE assigned_barangay = ?';
-            params.push(barangay);
+            params.push(req.query.barangay);
         }
-        
+
         query += ' ORDER BY created_at DESC';
         const [users] = await db.execute(query, params);
         res.json(users);
@@ -133,6 +143,15 @@ const bcrypt = require('bcrypt'); // Added dependency
 
 // ... existing imports ...
 
+const SCOPED_STAFF_ROLES = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.BHW];
+const STAFF_MANAGED_BY_ADMIN = [ROLES.MIDWIFE, ROLES.BHW];
+
+const normalizeBarangayInput = (value) => {
+    if (value === undefined || value === null) return null;
+    const normalized = value.toString().trim().toUpperCase();
+    return normalized || null;
+};
+
 // Helper to generate Role-Based ID (e.g., BHW-001, MW-005, SADMIN-001)
 const generateUserId = async (role) => {
     let prefix = '';
@@ -140,6 +159,7 @@ const generateUserId = async (role) => {
         case ROLES.MIDWIFE: prefix = 'MW'; break;
         case ROLES.BHW: prefix = 'BHW'; break;
         case ROLES.SUPER_ADMIN: prefix = 'SADMIN'; break;
+        case ROLES.ADMIN: prefix = 'ADMIN'; break;
         default: prefix = 'USER';
     }
 
@@ -190,13 +210,25 @@ router.post('/users', async (req, res) => {
             return res.status(400).json({ error: 'Invalid role' });
         }
 
-        // --- SANITIZATION & DEFAULTS ---
-        const sanitizedBarangay = role === ROLES.SUPER_ADMIN
-            ? null 
-            : (assigned_barangay ? assigned_barangay.trim() : null);
+        if (req.user.role === ROLES.ADMIN && !STAFF_MANAGED_BY_ADMIN.includes(role)) {
+            return res.status(403).json({ error: 'Admins can only create Midwife and BHW accounts within their assigned barangay.' });
+        }
 
-        if (role !== ROLES.SUPER_ADMIN && !sanitizedBarangay) {
-            return res.status(400).json({ error: 'Assigned Barangay is required for this role' });
+        if (role === ROLES.SUPER_ADMIN) {
+            return res.status(403).json({ error: 'Super Admin accounts cannot be created from this screen.' });
+        }
+
+        const requestedBarangay = normalizeBarangayInput(assigned_barangay);
+        const sanitizedBarangay = role === ROLES.SUPER_ADMIN
+            ? null
+            : (req.user.role === ROLES.ADMIN ? req.user.assigned_barangay : requestedBarangay);
+
+        if (SCOPED_STAFF_ROLES.includes(role) && !sanitizedBarangay) {
+            return res.status(400).json({ error: 'Assigned barangay is required for this role.' });
+        }
+
+        if (req.user.role === ROLES.ADMIN && requestedBarangay && requestedBarangay !== req.user.assigned_barangay) {
+            return res.status(403).json({ error: 'Admins can only assign staff inside their own barangay.' });
         }
 
 
@@ -234,6 +266,17 @@ router.post('/users', async (req, res) => {
                         revoked_at = NULL,
                         assigned_at = CURRENT_TIMESTAMP
                 `, [id, req.user.id, sanitizedBarangay]);
+
+                await connection.execute(`
+                    UPDATE user_barangay_assignments
+                    SET is_active = FALSE,
+                        revoked_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                      AND barangay_id NOT IN (
+                          SELECT id FROM barangays WHERE name = ?
+                      )
+                      AND is_active = TRUE
+                `, [id, sanitizedBarangay]);
             }
 
             await connection.commit();

@@ -23,10 +23,10 @@ export const BarangayFilterProvider = ({ children }) => {
         sessionStorage.setItem('selected_barangay', val);
     };
 
-    // Reset to 'all' if user changes or if they are not Super Admin
+    // Only Super Admin can hold a global barangay selection in session state.
     useEffect(() => {
         if (user && user.role !== 'Super Admin') {
-            setSelectedBarangay(user.assigned_barangay || 'all');
+            setSelectedBarangay(user.assigned_barangay || '');
         } else if (!user) {
             setSelectedBarangay('all');
         }

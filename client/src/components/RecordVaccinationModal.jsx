@@ -47,14 +47,14 @@ const RecordVaccinationModal = ({
 
     const regStatus = infant?.registration_status?.toUpperCase();
     const userRole = user?.role?.toUpperCase();
-    const canRecord = userRole === 'MIDWIFE' || userRole === 'NURSE' || userRole === 'BHW' || userRole === 'ADMIN';
+    const canRecord = userRole === 'ADMIN' || userRole === 'MIDWIFE' || userRole === 'BHW' || userRole === 'SUPER_ADMIN';
     const isBHW = userRole === 'BHW';
 
     if (!isOpen) return null;
 
     console.log("CURRENT INFANT STATUS:", regStatus);
     // Guard against explicitly non-approved infants, but allow if status is undefined or null (e.g., from NIP schedule)
-    const isApproved = !regStatus || regStatus === 'APPROVED' || regStatus === 'VALIDATED';
+    const isApproved = !regStatus || regStatus === 'APPROVED';
 
     // Dates & Validation Logic
     const getDaysDiff = (adminDateStr, dueDateStr) => {
@@ -74,7 +74,7 @@ const RecordVaccinationModal = ({
         e.preventDefault();
 
         if (!canRecord) {
-            setSubmitError('PERMISSIONS_ERROR: Only Midwives and Nurses are authorized to record vaccinations.');
+            setSubmitError('PERMISSIONS_ERROR: Only Super Admins, Admins, Midwives, and BHWs are authorized to record vaccinations.');
             return;
         }
 
@@ -251,7 +251,7 @@ const RecordVaccinationModal = ({
                             <div>
                                 <p className="text-amber-900 font-bold text-sm uppercase tracking-wide">Provisional Record</p>
                                 <p className="text-amber-700 text-xs mt-1 leading-relaxed">
-                                    You are recording this dose as a BHW. It will be marked as <strong>Pending Validation</strong> and must be approved by a Midwife or Nurse.
+                                    You are recording this dose as a BHW. It will be marked as <strong>Pending Validation</strong> and must be approved by a Midwife.
                                 </p>
                             </div>
                         </div>

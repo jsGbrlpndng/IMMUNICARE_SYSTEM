@@ -212,8 +212,8 @@ class InfantRegistrationService {
                  status, created_by, encoded_by_role, created_at, birth_status,
                  bcg_facility, hepa_b_facility, location, is_location_verified, exact_address,
                  landmark, length_at_birth_cm, initiated_breastfeeding, delivery_facility_name,
-                 bcg_status, hepa_b_status, latitude, longitude) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 bcg_status, hepa_b_status, latitude, longitude, approved_registration_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             await connection.execute(promoQuery, [
@@ -240,7 +240,8 @@ class InfantRegistrationService {
                 data.bcg_status || null,
                 data.hepatitis_b_status || data.hepa_b_status || null,
                 data.latitude ? parseFloat(data.latitude) : null,
-                data.longitude ? parseFloat(data.longitude) : null
+                data.longitude ? parseFloat(data.longitude) : null,
+                registrationId
             ]);
 
             // 3. Update registration status
@@ -248,10 +249,12 @@ class InfantRegistrationService {
                 UPDATE infant_registrations 
                 SET status = 'APPROVED', 
                     promoted_infant_id = ?, 
+                    reviewed_by = ?,
+                    reviewed_at = CURRENT_TIMESTAMP,
                     review_history = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            `, [infantId, JSON.stringify(history), registrationId]);
+            `, [infantId, actor.id, JSON.stringify(history), registrationId]);
 
             // 4. Write Audit Trail (New Schema)
             await connection.execute(`
@@ -266,6 +269,11 @@ class InfantRegistrationService {
                 JSON.stringify({ status: REGISTRATION_STATUS.APPROVED, promoted_infant_id: infantId }),
                 notes || 'Approved via Validation Center'
             ]);
+
+            await connection.execute(`
+                INSERT INTO approval_audit (id, registration_id, infant_id, action, approver_id, approver_role, remarks, timestamp)
+                VALUES (?, ?, ?, 'APPROVED', ?, ?, ?, CURRENT_TIMESTAMP)
+            `, [uuidv4(), registrationId, infantId, actor.id, actor.role, notes || 'Approved via Validation Center']);
 
             // 5. Generate NIP Schedule
             await this.nipScheduleService.generateFullSchedule(infantId, data.dob, connection);

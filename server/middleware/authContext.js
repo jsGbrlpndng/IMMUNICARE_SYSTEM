@@ -32,6 +32,24 @@ const loadActiveAssignments = async (userId, assignedBarangay) => {
     return Array.from(assignments);
 };
 
+const validateScopedAssignments = (role, assignedBarangays) => {
+    if (role === ROLES.SUPER_ADMIN) {
+        return;
+    }
+
+    if (assignedBarangays.length === 0) {
+        const err = new Error('Forbidden: User has no active barangay assignment');
+        err.status = 403;
+        throw err;
+    }
+
+    if (assignedBarangays.length !== 1) {
+        const err = new Error('Forbidden: User must have exactly one active barangay assignment');
+        err.status = 403;
+        throw err;
+    }
+};
+
 const requireAuthenticatedUser = async (req, allowedRoles = STAFF_ROLES) => {
     const token = req.headers['x-auth-token'];
     if (!token) {
@@ -82,11 +100,7 @@ const requireAuthenticatedUser = async (req, allowedRoles = STAFF_ROLES) => {
         ? []
         : await loadActiveAssignments(user.id, user.assigned_barangay);
 
-    if (user.role !== ROLES.SUPER_ADMIN && assignedBarangays.length === 0) {
-        const err = new Error('Forbidden: User has no active barangay assignment');
-        err.status = 403;
-        throw err;
-    }
+    validateScopedAssignments(user.role, assignedBarangays);
 
     return {
         id: user.id,

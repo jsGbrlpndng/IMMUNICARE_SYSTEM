@@ -26,8 +26,8 @@ class InfantService {
                 i.id, i.reference_id, i.first_name, i.last_name, i.dob, i.barangay,
                 aa.timestamp as approved_at, aa.approver_id, aa.approver_role, aa.remarks
             FROM infants i
-            INNER JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'Approved'
-            WHERE aa.timestamp >= DATE_SUB(NOW(), INTERVAL ? DAY) ${barangayClause}
+            INNER JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'APPROVED'
+            WHERE aa.timestamp >= CURRENT_TIMESTAMP - (?::int * INTERVAL '1 day') ${barangayClause}
             ORDER BY aa.timestamp DESC
         `, params);
 
@@ -58,7 +58,7 @@ class InfantService {
 
     async getInfantsRegistry({ search, page = 1, limit = 20, status, urgency, barangay }) {
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        const filterStatus = status || 'VALIDATED,PENDING_VALIDATION';
+        const filterStatus = status || 'APPROVED';
         const statusArray = filterStatus.split(',');
 
         const result = await this.nipEngine.getApprovedInfantsWithSchedule(
@@ -163,22 +163,22 @@ class InfantService {
 
             const infant = existingInfant[0];
 
-            if (infant.registration_status === 'Approved') {
+            if (infant.registration_status === 'APPROVED') {
                 const [auditRecord] = await connection.execute(
-                    "SELECT timestamp, approver_id FROM approval_audit WHERE infant_id = ? AND action = 'Approved' ORDER BY timestamp DESC LIMIT 1",
+                    "SELECT timestamp, approver_id FROM approval_audit WHERE infant_id = ? AND action = 'APPROVED' ORDER BY timestamp DESC LIMIT 1",
                     [id]
                 );
                 return { alreadyApproved: true, approvedAt: auditRecord.length > 0 ? auditRecord[0].timestamp : null };
             }
 
-            if (infant.registration_status !== 'Pending') {
+            if (infant.registration_status !== 'PENDING_VALIDATION') {
                 throw new Error(`Cannot approve registration with status: ${infant.registration_status}`);
             }
 
             const [updateResult] = await connection.execute(`
                 UPDATE infants 
-                SET registration_status = 'Approved', status = 'Active'
-                WHERE id = ? AND registration_status = 'Pending'
+                SET registration_status = 'APPROVED', status = 'Active'
+                WHERE id = ? AND registration_status = 'PENDING_VALIDATION'
             `, [id]);
 
             if (updateResult.affectedRows === 0) {
@@ -191,7 +191,7 @@ class InfantService {
             await connection.execute(`
                 INSERT INTO approval_audit 
                 (id, infant_id, action, approver_id, approver_role, remarks, timestamp)
-                VALUES (?, ?, 'Approved', ?, ?, ?, ?)
+                VALUES (?, ?, 'APPROVED', ?, ?, ?, ?)
             `, [auditId, id, approverId, approverRole, remarks || null, timestamp]);
 
             await connection.commit();
@@ -223,22 +223,22 @@ class InfantService {
 
             const infant = existingInfant[0];
 
-            if (infant.registration_status === 'Rejected') {
+            if (infant.registration_status === 'REJECTED') {
                 const [auditRecord] = await connection.execute(
-                    "SELECT timestamp, approver_id, remarks FROM approval_audit WHERE infant_id = ? AND action = 'Rejected' ORDER BY timestamp DESC LIMIT 1",
+                    "SELECT timestamp, approver_id, remarks FROM approval_audit WHERE infant_id = ? AND action = 'REJECTED' ORDER BY timestamp DESC LIMIT 1",
                     [id]
                 );
                 return { alreadyRejected: true, rejectedAt: auditRecord.length > 0 ? auditRecord[0].timestamp : null };
             }
 
-            if (infant.registration_status !== 'Pending') {
+            if (infant.registration_status !== 'PENDING_VALIDATION') {
                 throw new Error(`Cannot reject registration with status: ${infant.registration_status}`);
             }
 
             const [updateResult] = await connection.execute(`
                 UPDATE infants 
-                SET registration_status = 'Rejected'
-                WHERE id = ? AND registration_status = 'Pending'
+                SET registration_status = 'REJECTED'
+                WHERE id = ? AND registration_status = 'PENDING_VALIDATION'
             `, [id]);
 
             if (updateResult.affectedRows === 0) {
@@ -251,7 +251,7 @@ class InfantService {
             await connection.execute(`
                 INSERT INTO approval_audit 
                 (id, infant_id, action, approver_id, approver_role, remarks, timestamp)
-                VALUES (?, ?, 'Rejected', ?, ?, ?, ?)
+                VALUES (?, ?, 'REJECTED', ?, ?, ?, ?)
             `, [auditId, id, rejectedById, approverRole, rejectionReason.trim(), timestamp]);
 
             await connection.commit();
@@ -435,7 +435,7 @@ class InfantService {
 
                 await connection.execute(`
                     INSERT INTO approval_audit (id, infant_id, action, approver_id, approver_role, remarks, timestamp)
-                    VALUES (?, ?, 'Approved', ?, ?, ?, ?)
+                    VALUES (?, ?, 'APPROVED', ?, ?, ?, ?)
                 `, [uuidv4(), id, userId, userRole, 'Auto-approved at registration by clinical staff', nowTs]);
             }
 
@@ -497,7 +497,7 @@ class InfantService {
                     pregnancy_order, cpab_status,
                     bcg_status, hepa_b_status,
                     bcg_date, hepatitis_b_date,
-                    next_due_vaccine, 'VALIDATED' AS registration_status,
+                    next_due_vaccine, 'APPROVED' AS registration_status,
                     status, created_by, encoded_by_role, created_at,
                     is_location_verified, exact_address,
                     landmark, length_at_birth_cm, initiated_breastfeeding, delivery_facility_name,
@@ -543,7 +543,7 @@ class InfantService {
                 dob, sex, birth_setting, purok, barangay, current_address, caregiver_phone, 
                 birth_weight, place_of_birth, mother_tt_status, last_tt_date,
                 pregnancy_order, cpab_status,
-                next_due_vaccine, 'VALIDATED' AS registration_status,
+                next_due_vaccine, 'APPROVED' AS registration_status,
                 status, created_by, created_at, is_location_verified, exact_address,
                 landmark, length_at_birth_cm, initiated_breastfeeding, delivery_facility_name,
                 COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
@@ -568,7 +568,7 @@ class InfantService {
         const summary = {
             completed: formattedRecord.filter(r => r.status === 'COMPLETED_VALIDATED').length,
             pending: formattedRecord.filter(r => r.status === 'PENDING_VALIDATION').length,
-            defaulter: formattedRecord.filter(r => (r.original_schedule_status === 'DEFAULTER' || r.original_schedule_status === 'DROPOUT') && r.status === 'NOT_GIVEN').length,
+            defaulter: formattedRecord.filter(r => r.original_schedule_status === 'DEFAULTED' && r.status === 'NOT_GIVEN').length,
             due_today: formattedRecord.filter(r => r.original_schedule_status === 'DUE_TODAY' && r.status === 'NOT_GIVEN').length,
             due_soon: formattedRecord.filter(r => r.original_schedule_status === 'DUE_SOON' && r.status === 'NOT_GIVEN').length,
             upcoming: formattedRecord.filter(r => r.original_schedule_status === 'NOT_YET_DUE' && r.status === 'NOT_GIVEN').length,
@@ -656,8 +656,8 @@ class InfantService {
             SELECT 
                 i.id,
                 COALESCE(
-                    MAX(CASE WHEN s.status = 'DEFAULTER'   THEN 'DEFAULTER'  END),
-                    MAX(CASE WHEN s.status = 'DROPOUT'     THEN 'DEFAULTER'  END),
+                    MAX(CASE WHEN s.status = 'DEFAULTED'   THEN 'DEFAULTED'  END),
+                    MAX(CASE WHEN s.status = 'OVERDUE'     THEN 'OVERDUE'    END),
                     MAX(CASE WHEN s.status = 'DUE_TODAY'   THEN 'DUE_TODAY'  END),
                     MAX(CASE WHEN s.status = 'DUE_SOON'    THEN 'DUE_SOON'   END),
                     MAX(CASE WHEN s.status = 'NOT_YET_DUE' THEN 'ON_TRACK'   END),
@@ -695,8 +695,10 @@ class InfantService {
             const doseCount = (inf.vaccination_needs || []).length;
             const topVaccine = doseCount > 0 ? (inf.vaccination_needs[0].vaccine_name || inf.vaccination_needs[0].vaccine_code) : null;
 
-            if (computed_map_status === 'DEFAULTER') {
+            if (computed_map_status === 'DEFAULTED') {
                 clinical_directive = topVaccine ? `Visit for ${topVaccine}` : 'Urgent Follow-Up';
+            } else if (computed_map_status === 'OVERDUE') {
+                clinical_directive = topVaccine ? `Follow up for ${topVaccine}` : 'Overdue Follow-Up';
             } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
                 clinical_directive = topVaccine ? `Prepare ${topVaccine}` : 'Prepare Next Dose';
             } else if (computed_map_status === 'ON_TRACK') {
@@ -707,8 +709,10 @@ class InfantService {
 
             // Map Rendering Rules: 4 independent color categories
             let marker_color = '#94A3B8'; // Default slate for unknown
-            if (computed_map_status === 'DEFAULTER') {
+            if (computed_map_status === 'DEFAULTED') {
                 marker_color = '#EF4444'; // Red
+            } else if (computed_map_status === 'OVERDUE') {
+                marker_color = '#F97316'; // Orange
             } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
                 marker_color = '#F59E0B'; // Amber
             } else if (computed_map_status === 'ON_TRACK') {
@@ -719,7 +723,8 @@ class InfantService {
 
             // Urgency: lowercase token for frontend filtering — 4 independent values
             const urgency = 
-                computed_map_status === 'DEFAULTER'                             ? 'defaulter' :
+                computed_map_status === 'DEFAULTED'                             ? 'defaulter' :
+                computed_map_status === 'OVERDUE'                               ? 'overdue' :
                 (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') ? 'due_soon'  :
                 computed_map_status === 'ON_TRACK'                              ? 'on_track'  :
                 'completed';

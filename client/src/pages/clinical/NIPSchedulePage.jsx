@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import {
@@ -9,7 +10,7 @@ import RecordVaccinationModal from '../../components/RecordVaccinationModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../utils/formatters';
 
-/* ─── urgency config ─────────────────────────────────────────── */
+/* Urgency config */
 const URGENCY = {
     overdue: {
         label:     'Overdue',
@@ -71,12 +72,12 @@ const URGENCY = {
 
 const getUrgencyConfig = (urgency) => URGENCY[urgency] || URGENCY.upcoming;
 
-/* ══════════════════════════════════════════════════════════════
+/*
    NIP TIMELINE MODAL
    Rendered via ReactDOM.createPortal into document.body so the
    overlay escapes StaffLayout's stacking context and covers the
    full viewport including the sidebar and top navigation bar.
-══════════════════════════════════════════════════════════════ */
+*/
 const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading]   = useState(true);
@@ -107,7 +108,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                 const src = data.schedule || data;  // graceful fallback if shape ever changes
                 const timeline = [
                     ...(src.overdue            || []).map(v => ({ ...v, urgency: 'overdue',            status: 'OVERDUE'   })),
-                    ...(src.defaulter          || []).map(v => ({ ...v, urgency: 'defaulter',          status: 'DEFAULTER' })),
+                    ...(src.defaulter          || []).map(v => ({ ...v, urgency: 'defaulted',          status: 'DEFAULTED' })),
                     ...(src.due_now            || []).map(v => ({ ...v, urgency: 'due_today',          status: 'DUE_TODAY' })),
                     ...(src.due_soon           || []).map(v => ({ ...v, urgency: 'due_soon',           status: 'DUE_SOON'  })),
                     ...(src.upcoming           || []).map(v => ({ ...v, urgency: 'upcoming',           status: 'UPCOMING'  })),
@@ -115,7 +116,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                     ...(src.pending_validation || []).map(v => ({ ...v, urgency: 'pending_validation', status: 'PENDING_VALIDATION' })),
                 ].map(v => ({
                     ...v,
-                    // Normalise the date field — items use camelCase `dueDate` from _mapRowToFrontend
+                    // Normalize the date field - items use camelCase `dueDate` from _mapRowToFrontend
                     scheduled_date: v.dueDate || v.administeredDate || v.scheduled_date,
                 })).sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
 
@@ -133,7 +134,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
         fetchSchedule();
     }, [infant.id]);
 
-    // ── Portal target — escapes StaffLayout stacking context ──
+    // Portal target - escapes StaffLayout stacking context
     const modalContent = (
         <div
             className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 flex items-center justify-center"
@@ -143,14 +144,14 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                 className="bg-white border border-slate-200 rounded-sm w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl"
                 onClick={e => e.stopPropagation()}
             >
-                {/* ── Modal Header ──────────────────────────────── */}
+                {/* Modal Header */}
                 <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
                     <div>
                         <h2 className="text-lg font-bold text-slate-900 capitalize">
                             {infant.last_name}, {infant.first_name}
                         </h2>
                         <p className="text-xs font-medium text-slate-500 mt-0.5">
-                            {infant.reference_id} &nbsp;·&nbsp; Vaccination Timeline
+                            {infant.reference_id} · Vaccination Timeline
                         </p>
                     </div>
                     <button
@@ -161,7 +162,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                     </button>
                 </div>
 
-                {/* ── Modal Body ────────────────────────────────── */}
+                {/* Modal Body */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -184,20 +185,17 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                             {schedule.map((item, idx) => {
                                 const isCompleted  = item?.status === 'COMPLETED';
                                 const isOverdue    = item?.urgency === 'overdue' || item?.status === 'OVERDUE';
-                                const isDefaulter  = item?.urgency === 'defaulter' || item?.status === 'DEFAULTER' || (item?.daysOverdue || item?.days_overdue) > 28;
-                                const needsCatchUp = isDefaulter || isOverdue;
+                                const isDefaulted  = item?.urgency === 'defaulted' || item?.status === 'DEFAULTED' || (item?.daysOverdue || item?.days_overdue) > 42;
+                                const needsCatchUp = isDefaulted || isOverdue;
 
                                 let badgeClass = 'bg-slate-50 text-slate-600 border-slate-200';
                                 let badgeLabel = 'Upcoming';
                                 if (isCompleted) {
                                     badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                                     badgeLabel = 'Completed';
-                                } else if (isDefaulter) {
+                                } else if (isDefaulted) {
                                     badgeClass = 'bg-red-600 text-white border-red-700';
-                                    badgeLabel = 'Defaulter';
-                                } else if (item?.urgency === 'defaulter' || item?.status === 'DEFAULTER') {
-                                    badgeClass = 'bg-red-600 text-white border-red-700';
-                                    badgeLabel = 'Defaulter';
+                                    badgeLabel = 'Defaulted';
                                 } else if (isOverdue) {
                                     badgeClass = 'bg-red-50 text-red-700 border-red-200';
                                     badgeLabel = 'Overdue';
@@ -218,7 +216,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
 
                                         {/* Timeline node dot */}
                                         <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10 ${
-                                            isCompleted ? 'bg-emerald-500' : isDefaulter ? 'bg-red-600' : isOverdue ? 'bg-amber-500' : 'bg-slate-300'
+                                            isCompleted ? 'bg-emerald-500' : isDefaulted ? 'bg-red-600' : isOverdue ? 'bg-amber-500' : 'bg-slate-300'
                                         }`}>
                                             {isCompleted
                                                 ? <CircleCheck className="w-3 h-3 text-white" />
@@ -243,7 +241,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                         }
                                                         {needsCatchUp && (item?.daysOverdue || item?.days_overdue) > 0 && (
                                                             <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-black ${
-                                                                isDefaulter ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
+                                                                isDefaulted ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
                                                             }`}>
                                                                 {item?.daysOverdue || item?.days_overdue}d late
                                                             </span>
@@ -259,7 +257,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                 <div className="mt-3">
                                                     {(() => {
                                                         const allowedDate = item?.earliest_allowed_date || item?.earliestAllowedDate || item?.target_date;
-                                                        // For defaulters: always allow — catch-up is the clinical directive.
+                                                        // For defaulters: always allow - catch-up is the clinical directive.
                                                         // For future doses: block if earliest_allowed_date is in the future.
                                                         const isPremature = !needsCatchUp && allowedDate && new Date() < new Date(allowedDate);
                                                         return (
@@ -296,9 +294,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
     return ReactDOM.createPortal(modalContent, document.body);
 };
 
-/* ══════════════════════════════════════════════════════════════
-   MAIN PAGE COMPONENT
-══════════════════════════════════════════════════════════════ */
+/* Main page component */
 const NIPSchedulePage = () => {
     const { user } = useAuth();
 
@@ -312,8 +308,8 @@ const NIPSchedulePage = () => {
     const [searchQuery, setSearchQuery]     = useState('');
 
     // Modals
-    const [timelineModal, setTimelineModal] = useState(null); // infant object → opens NIPTimelineModal
-    const [vacModal, setVacModal]           = useState(null); // { infant, vaccine } → opens RecordVaccinationModal
+    const [timelineModal, setTimelineModal] = useState(null); // infant object -> opens NIPTimelineModal
+    const [vacModal, setVacModal]           = useState(null); // { infant, vaccine } -> opens RecordVaccinationModal
 
     // KPI card definitions
     const kpiDefs = [
@@ -323,7 +319,7 @@ const NIPSchedulePage = () => {
         { key: 'completed_today', label: 'Completed today', icon: CircleCheck,   colorText: 'text-emerald-600', colorBorder: 'border-l-emerald-500'  },
     ];
 
-    /* ── fetch queue ─────────────────────────────────────────── */
+    /* Fetch queue */
     const fetchQueue = useCallback(async () => {
         try {
             setLoading(true);
@@ -354,7 +350,7 @@ const NIPSchedulePage = () => {
         return () => clearInterval(interval);
     }, [fetchQueue]);
 
-    /* ── filtering ──────────────────────────────────────────── */
+    /* Filtering */
     const filtered = useMemo(() => {
         let list = [...allInfants];
         if (urgencyFilter !== 'all') list = list.filter(i => i.urgency === urgencyFilter);
@@ -369,14 +365,14 @@ const NIPSchedulePage = () => {
         return list;
     }, [allInfants, urgencyFilter, searchQuery]);
 
-    /* ── handlers ───────────────────────────────────────────── */
+    /* Handlers */
     // Called from inside NIPTimelineModal when "Record Dose" is clicked on a vaccine item.
     // Items are camelCase per NIPScheduleService._mapRowToFrontend:
     //   vaccineName, vaccineCode, doseNumber, scheduleId, dueDate
     const handleRecordDose = (item) => {
         if (!timelineModal) return;
         setVacModal({
-            // Ensure infant.name is available — RecordVaccinationModal uses this for display
+            // Ensure infant.name is available - RecordVaccinationModal uses this for display
             infant: {
                 ...timelineModal,
                 name: `${timelineModal.first_name} ${timelineModal.last_name}`,
@@ -402,11 +398,11 @@ const NIPSchedulePage = () => {
         fetchQueue();
     };
 
-    /* ── render ─────────────────────────────────────────────── */
+    /* Render */
     return (
         <div className="space-y-6">
 
-            {/* ── Page Header ──────────────────────────────────── */}
+            {/* Page Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-xl font-bold text-slate-900 tracking-tight">Vaccination Schedule</h1>
@@ -424,7 +420,7 @@ const NIPSchedulePage = () => {
                 </button>
             </div>
 
-            {/* ── KPI Cards Row ─────────────────────────────────── */}
+            {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {kpiDefs.map(kpi => {
                     const isActive = urgencyFilter === kpi.key;
@@ -444,7 +440,7 @@ const NIPSchedulePage = () => {
                                 <Icon className={`w-4 h-4 ${kpi.colorText} opacity-50`} />
                             </div>
                             <p className={`text-3xl font-extrabold ${kpi.colorText}`}>
-                                {loading ? '—' : (stats[kpi.key] ?? 0)}
+                                {loading ? '-' : (stats[kpi.key] ?? 0)}
                             </p>
                             {isActive && (
                                 <p className="text-xs text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
@@ -456,7 +452,7 @@ const NIPSchedulePage = () => {
                 })}
             </div>
 
-            {/* ── Search + Filter Toolbar ───────────────────────── */}
+            {/* Search and filters */}
             <div className="bg-white border border-slate-200 rounded-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                 {/* Search input */}
                 <div className="relative w-72">
@@ -475,7 +471,7 @@ const NIPSchedulePage = () => {
                     {['all', 'defaulter', 'overdue', 'due_today', 'due_soon', 'upcoming'].map(f => {
                         const labels = {
                             all: 'All',
-                            defaulter: '🚨 Defaulter',
+                            defaulter: 'Defaulter',
                             overdue: 'Overdue',
                             due_today: 'Due today',
                             due_soon: 'Due soon',
@@ -498,7 +494,7 @@ const NIPSchedulePage = () => {
                 </div>
             </div>
 
-            {/* ── Full-Width Data Table ─────────────────────────── */}
+            {/* Queue table */}
             <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <div className="max-h-[calc(100vh-420px)] overflow-y-auto custom-scrollbar">
@@ -555,7 +551,7 @@ const NIPSchedulePage = () => {
                                                             {infant.last_name}, {infant.first_name}
                                                         </span>
                                                         <span className="text-xs text-slate-500 font-medium mt-0.5">
-                                                            {infant.guardian_name || infant.mothers_maiden_name || infant.mother_name || '—'}
+                                                            {infant.guardian_name || infant.mothers_maiden_name || infant.mother_name || '-'}
                                                         </span>
                                                     </div>
                                                 </td>
@@ -569,7 +565,7 @@ const NIPSchedulePage = () => {
 
                                                 {/* Next vaccine due */}
                                                 <td className="clinical-table-td text-xs font-bold text-slate-700">
-                                                    {infant.next_due_vaccine || infant.next_due_date || '—'}
+                                                    {infant.next_due_vaccine || infant.next_due_date || '-'}
                                                 </td>
 
                                                 {/* Status badge */}
@@ -579,7 +575,7 @@ const NIPSchedulePage = () => {
                                                     </span>
                                                 </td>
 
-                                                {/* Delay — days overdue */}
+                                                {/* Delay - days overdue */}
                                                 <td className="clinical-table-td">
                                                     {(infant.urgency === 'overdue' || infant.urgency === 'defaulter') && (infant.days_overdue > 0) ? (
                                                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black border ${
@@ -590,7 +586,7 @@ const NIPSchedulePage = () => {
                                                             {infant.days_overdue}d late
                                                         </span>
                                                     ) : (
-                                                        <span className="text-slate-300 text-xs">—</span>
+                                                        <span className="text-slate-300 text-xs">-</span>
                                                     )}
                                                 </td>
 
@@ -600,7 +596,7 @@ const NIPSchedulePage = () => {
                                                         onClick={() => setTimelineModal(infant)}
                                                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-md transition-colors"
                                                     >
-                                                        Manage record
+                                                        Manage dose
                                                     </button>
                                                 </td>
                                             </tr>
@@ -612,7 +608,7 @@ const NIPSchedulePage = () => {
                     </div>
                 </div>
 
-                {/* Table footer — record count */}
+                {/* Table footer */}
                 {!loading && (
                     <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
                         <p className="text-xs font-medium text-slate-500">
@@ -622,7 +618,7 @@ const NIPSchedulePage = () => {
                 )}
             </div>
 
-            {/* ── NIP Timeline Modal ────────────────────────────── */}
+            {/* NIP timeline modal */}
             {timelineModal && (
                 <NIPTimelineModal
                     infant={timelineModal}
@@ -631,7 +627,7 @@ const NIPSchedulePage = () => {
                 />
             )}
 
-            {/* ── Record Vaccination Modal ──────────────────────── */}
+            {/* Record vaccination modal */}
             {vacModal && (
                 <RecordVaccinationModal
                     isOpen={!!vacModal}

@@ -1,8 +1,9 @@
+﻿import React from 'react';
 /**
  * M1ReportView
  *
  * Pure consumer of GET /api/reports/m1.
- * No client-side aggregation — every number shown comes directly from the API response.
+ * No client-side aggregation - every number shown comes directly from the API response.
  *
  * Props:
  *   month      {number}  1-12 (undefined = current month)
@@ -81,19 +82,19 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
         return () => { cancelled = true; };
     }, [buildQuery, navigate, onForbidden]);
 
-    // ── Loading ──────────────────────────────────────────────────────────────
+    // Loading
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
                 <div className="w-10 h-10 border-4 border-blue-100 border-t-[#0061FF] rounded-full animate-spin" />
                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    Loading M1 Report…
+                    Loading M1 Report...
                 </p>
             </div>
         );
     }
 
-    // ── Forbidden (BHW hit URL directly) ────────────────────────────────────
+    // Forbidden (BHW hit URL directly)
     if (forbidden) {
         return (
             <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
@@ -103,15 +104,15 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
                 <div>
                     <p className="font-bold text-slate-800 text-lg">Not Authorized</p>
                     <p className="text-slate-500 text-sm mt-1">
-                        M1 Report access is restricted to Midwife, Nurse, and Admin only.
+                        M1 Report access is restricted to Midwife and Super Admin only.
                     </p>
-                    <p className="text-slate-400 text-xs mt-2">Redirecting you back to your dashboard…</p>
+                    <p className="text-slate-400 text-xs mt-2">Redirecting you back to your dashboard...</p>
                 </div>
             </div>
         );
     }
 
-    // ── Error ────────────────────────────────────────────────────────────────
+    // Error
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
@@ -134,16 +135,34 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
 
     const { fic, cpab, vaccines, report_month, generated_at, ipv1_tracked } = report;
 
-    // ── Render ───────────────────────────────────────────────────────────────
+    const handleExportAndPrint = async () => {
+        try {
+            await apiClient.post('/reports/exports', {
+                report_type: 'M1',
+                format: 'PDF',
+                filter_params: {
+                    month,
+                    year,
+                    barangay: barangay || null
+                }
+            });
+        } catch (err) {
+            console.error('Failed to record report export metadata:', err);
+        } finally {
+            window.print();
+        }
+    };
+
+    // Render
     return (
         <div className="space-y-6">
-            {/* ── Action bar (hidden on print) ─────────────────────────── */}
+            {/* Action bar (hidden on print) */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-900 leading-tight">
-                        Infant Immunization Summary (0–11 Months)
+                        Infant Immunization Summary (0-11 Months)
                         <br />
-                        <span className="text-[#0061FF] text-lg font-semibold tracking-normal">— M1 Infant Portion</span>
+                        <span className="text-[#0061FF] text-lg font-semibold tracking-normal">- M1 Infant Portion</span>
                     </h2>
                     <p className="text-sm text-slate-500 mt-1">
                         Focused exclusively on newborns and infants in their first year of life.
@@ -157,7 +176,7 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
                     </p>
                 </div>
                 <button
-                    onClick={() => window.print()}
+                    onClick={handleExportAndPrint}
                     className="flex items-center gap-2 px-5 py-2.5 bg-[#0061FF] text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20 print:hidden shrink-0 h-fit"
                 >
                     <Printer className="w-4 h-4" />
@@ -165,7 +184,7 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
                 </button>
             </div>
 
-            {/* ── FIC / CPAB Summary Cards (Reduced for print space) ────────────────── */}
+            {/* FIC / CPAB summary cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:gap-2">
                 {/* FIC */}
                 <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm print:p-3 print:rounded-none print:border-gray-400">
@@ -217,10 +236,10 @@ const M1ReportView = ({ month, year, barangay, onForbidden }) => {
                 </div>
             </div>
 
-            {/* ── Section C: Child Care and Services ───────────────────────── */}
+            {/* Section C: Child Care and Services */}
             <M1SectionCReport report={report} />
 
-            {/* ── Print-only footer (hidden on screen) ─────────────────── */}
+            {/* Print-only footer */}
             <div className="hidden print:block text-center py-2 border-t border-gray-300 mt-4">
                 <p className="text-[8px] italic">Generated by ImmuniCare Health Information System · {new Date(generated_at).toISOString()}</p>
             </div>

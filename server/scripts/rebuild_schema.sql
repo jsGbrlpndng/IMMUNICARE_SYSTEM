@@ -47,7 +47,7 @@ CREATE TABLE barangays (
 CREATE TABLE users (
     id VARCHAR(36) PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('Super Admin', 'Midwife', 'BHW', 'Caregiver')),
+    role VARCHAR(50) NOT NULL CHECK (role IN ('Super Admin', 'Admin', 'Midwife', 'BHW', 'Caregiver')),
     assigned_barangay VARCHAR(100),
     password VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -490,6 +490,28 @@ CREATE INDEX idx_otp_records_mobile_active ON otp_records(mobile_number, expires
 CREATE INDEX idx_dbscan_cluster_scope ON dbscan_cluster_results(run_scope, barangay, generated_at);
 CREATE INDEX idx_audit_trail_entity ON audit_trail(entity_type, entity_id);
 CREATE INDEX idx_system_audit_logs_action ON system_audit_logs(action_type, timestamp);
+
+INSERT INTO doh_compliance_rules (
+    rule_id, vaccine_code, vaccine_name, description, dose_number,
+    min_age_days, max_age_days, min_interval_days, effective_date
+)
+VALUES
+    (gen_random_uuid()::text, 'BCG', 'BCG', 'At-birth BCG dose', 1, 0, 365, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'HEPB', 'Hepatitis B Birth Dose', 'Hepatitis B birth dose', 1, 0, 365, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'PENTA-1', 'Pentavalent 1', 'First pentavalent dose', 1, 42, NULL, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'OPV-1', 'OPV 1', 'First oral polio dose', 1, 42, NULL, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'PCV-1', 'PCV 1', 'First PCV dose', 1, 42, NULL, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'PENTA-2', 'Pentavalent 2', 'Second pentavalent dose', 2, 70, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'OPV-2', 'OPV 2', 'Second oral polio dose', 2, 70, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'PCV-2', 'PCV 2', 'Second PCV dose', 2, 70, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'PENTA-3', 'Pentavalent 3', 'Third pentavalent dose', 3, 98, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'OPV-3', 'OPV 3', 'Third oral polio dose', 3, 98, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'PCV-3', 'PCV 3', 'Third PCV dose', 3, 98, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'IPV-1', 'IPV 1', 'First IPV dose', 1, 98, NULL, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'IPV-2', 'IPV 2', 'Second IPV dose', 2, 270, NULL, 28, '2026-01-01'),
+    (gen_random_uuid()::text, 'MCV-1', 'Measles 1 (MCV1)', 'First measles-containing dose', 1, 270, NULL, NULL, '2026-01-01'),
+    (gen_random_uuid()::text, 'MCV-2', 'Measles 2 (MCV2)', 'Second measles-containing dose', 2, 365, NULL, NULL, '2026-01-01')
+ON CONFLICT (vaccine_code, dose_number, effective_date) DO NOTHING;
 
 INSERT INTO system_settings (setting_key, setting_value, value_type, category, description, min_value, max_value)
 VALUES

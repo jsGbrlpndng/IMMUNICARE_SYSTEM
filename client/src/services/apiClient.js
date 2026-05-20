@@ -41,8 +41,6 @@ class ApiClient {
      */
     async request(endpoint, options = {}) {
         const token = this.getToken();
-        const user = this.getUser();
-        
         // Build headers
         const headers = {
             'Content-Type': 'application/json',
@@ -54,22 +52,15 @@ class ApiClient {
             headers['x-auth-token'] = token;
         }
 
-        // Attach user ID if available (required by backend middleware)
-        if (user && user.id) {
-            headers['x-user-id'] = user.id;
-        }
-
-        // Attach user role if available (required by backend middleware)
-        if (user && user.role) {
-            headers['x-user-role'] = user.role;
-        }
-
         // Build full URL
         let url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
 
-        // Inject Multi-Tenancy context (barangay) for Super Admin global filtering
+        // Super Admin can request a barangay context explicitly from the UI.
+        // Barangay-scoped users are enforced on the backend and should not drive
+        // scope by browser session state.
+        const user = this.getUser();
         const contextBarangay = sessionStorage.getItem('selected_barangay');
-        if (contextBarangay) {
+        if (user?.role === 'Super Admin' && contextBarangay && contextBarangay !== 'all') {
             const separator = url.includes('?') ? '&' : '?';
             url += `${separator}barangay=${encodeURIComponent(contextBarangay)}`;
         }

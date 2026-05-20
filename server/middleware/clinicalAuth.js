@@ -5,6 +5,7 @@ const clinicalAuth = async (req, res, next) => {
     try {
         const user = await requireAuthenticatedUser(req, [
             ROLES.SUPER_ADMIN,
+            ROLES.ADMIN,
             ROLES.MIDWIFE,
             ROLES.BHW
         ]);

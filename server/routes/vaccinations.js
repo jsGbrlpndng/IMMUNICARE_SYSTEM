@@ -4,6 +4,7 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const db = require('../db');
 const VaccinationService = require('../services/VaccinationService');
 const NIPAuditLogger = require('../services/NIPAuditLogger');
+const { ROLES } = require('../constants/domain');
 
 // Protect vaccinations routes - clinical staff only
 router.use(clinicalAuth);
@@ -29,6 +30,14 @@ const auditLogger = new NIPAuditLogger(db);
  */
 router.post('/', async (req, res) => {
     try {
+        if (![ROLES.BHW, ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Forbidden',
+                message: 'Only Super Admins, Admins, Midwives, and BHWs can record vaccinations.'
+            });
+        }
+
         // --- TYPE SANITIZATION: Enforce correct types before any DB operation ---
         // dose_number must be an integer — JSON body may deliver it as a string.
         const sanitizedBody = {
@@ -40,8 +49,19 @@ router.post('/', async (req, res) => {
             ...sanitizedBody,
             recorded_by: req.user?.id || sanitizedBody.vaccinator_id,
             recorded_by_role: req.user?.role || 'BHW',
-            validation_status: (req.user?.role === 'Midwife' || req.user?.role === 'Nurse') ? 'VALIDATED' : 'PENDING_VALIDATION'
+            validation_status: req.user?.role === ROLES.BHW ? 'PENDING_VALIDATION' : 'VALIDATED'
         };
+
+        const [infantScopeRows] = await db.execute(
+            'SELECT id, barangay FROM infants WHERE id = ?',
+            [sanitizedBody.infant_id]
+        );
+        if (infantScopeRows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
+        if (req.user.role !== ROLES.SUPER_ADMIN && infantScopeRows[0].barangay !== req.user.assigned_barangay) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
 
         // Trace log using the CORRECT column name ('status', not the legacy 'registration_status')
         try {
@@ -114,18 +134,42 @@ router.post('/', async (req, res) => {
 
 /**
  * PATCH /api/vaccinations/:id/validate - Validate a pending vaccination
- * Midwife or Nurse only
+ * Midwife only
  */
 router.patch('/:id/validate', async (req, res) => {
     try {
         const { id } = req.params;
         const { role, id: userId, full_name, name } = req.user || {};
 
-        if (role !== 'Midwife' && role !== 'Nurse') {
+        if (role !== ROLES.MIDWIFE) {
             return res.status(403).json({
                 success: false,
                 error: 'Forbidden',
-                message: 'Only Midwives and Nurses can validate vaccination records.'
+                message: 'Only Midwives can validate vaccination records.'
+            });
+        }
+
+        const [scopeRows] = await db.execute(
+            `SELECT v.id, i.barangay
+             FROM vaccinations v
+             JOIN infants i ON i.id = v.infant_id
+             WHERE v.id = ?`,
+            [id]
+        );
+
+        if (scopeRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                details: 'Vaccination record not found. Please refresh the page.'
+            });
+        }
+
+        if (scopeRows[0].barangay !== req.user.assigned_barangay) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                details: 'Vaccination record not found. Please refresh the page.'
             });
         }
 
@@ -176,9 +220,16 @@ router.get('/:infantId', async (req, res) => {
         const { infantId } = req.params;
 
         // Get infant details
+        const params = [infantId];
+        let barangayClause = '';
+        if (req.user.role !== ROLES.SUPER_ADMIN) {
+            barangayClause = ' AND barangay = ?';
+            params.push(req.user.assigned_barangay);
+        }
+
         const [infants] = await db.execute(
-            'SELECT id, first_name, last_name, reference_id, dob FROM infants WHERE id = ?',
-            [infantId]
+            `SELECT id, first_name, last_name, reference_id, dob FROM infants WHERE id = ?${barangayClause}`,
+            params
         );
 
         if (infants.length === 0) {

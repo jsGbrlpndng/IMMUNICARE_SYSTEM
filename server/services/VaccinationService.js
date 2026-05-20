@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const EnhancedNIPScheduleEngine = require('./EnhancedNIPScheduleEngine');
 const NIPScheduleService = require('./NIPScheduleService');
+const { ROLES, REGISTRATION_STATUS } = require('../constants/domain');
 
 const VACCINATION_ERRORS = {
     MISSING_FIELD: (field) => `Missing required field: ${field}`,
@@ -11,6 +12,17 @@ const VACCINATION_ERRORS = {
     ALREADY_COMPLETED: (code, series) => `Vaccine ${code} Dose ${series} is already recorded as completed.`,
     CLINICAL_TOO_EARLY: (code, series, date) => `CLINICAL VIOLATION: Too early for ${code} Dose ${series}. Earliest allowed date is ${date}.`,
     DUPLICATE_RECORD: (code, dose, date) => `This infant already has ${code} Dose #${dose} recorded for ${date}.`
+};
+
+const toDateOnlyString = (value) => {
+    if (!value) return null;
+    const raw = value instanceof Date ? value.toISOString() : value.toString();
+    const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) return isoMatch[1];
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().split('T')[0];
 };
 
 class VaccinationService {
@@ -122,13 +134,9 @@ class VaccinationService {
                 isValidated
             );
 
-            // 3. Refresh infant cache (async)
-            this.computeNextDose(vaccinationData.infant_id, connection).catch(err =>
-                console.error('[VaccinationService] Async cache refresh failed:', err)
-            );
-
             if (shouldManageTransaction) {
                 await connection.commit();
+                await this.computeNextDose(vaccinationData.infant_id);
             }
 
             return {
@@ -196,10 +204,8 @@ class VaccinationService {
                 vaccination.schedule_id
             );
 
-            // 4. Refresh infant cache
-            await this.computeNextDose(vaccination.infant_id, connection);
-
             await connection.commit();
+            await this.computeNextDose(vaccination.infant_id);
             return { success: true, message: 'Dose validated successfully' };
         } catch (error) {
             if (connection) await connection.rollback();
@@ -234,7 +240,7 @@ class VaccinationService {
 
         // Check if infant exists and has been approved
         const [infants] = await db.execute(
-            "SELECT id, dob, 'VALIDATED' AS registration_status FROM infants WHERE id = ?",
+            'SELECT id, dob, registration_status FROM infants WHERE id = ?',
             [vaccinationData.infant_id]
         );
 
@@ -248,13 +254,13 @@ class VaccinationService {
 
         const infant = infants[0];
 
-        // Ensure infant is Approved or VALIDATED for vaccination
+        // Ensure infant has been promoted from an approved registration.
         console.log('Attempting Dose - Infant ID:', vaccinationData.infant_id, '| DB Status:', infant.registration_status);
         const dbStatus = infant.registration_status?.toUpperCase() || '';
-        if (dbStatus !== 'APPROVED' && dbStatus !== 'VALIDATED') {
+        if (dbStatus !== REGISTRATION_STATUS.APPROVED) {
             return {
                 valid: false,
-                error: 'REGISTRATION_PENDING: Infant must be approved or validated before recording vaccinations.',
+                error: 'REGISTRATION_PENDING: Infant must be approved before recording vaccinations.',
                 field: 'infant_id'
             };
         }
@@ -262,11 +268,13 @@ class VaccinationService {
         // Validate dates
         const administeredDate = vaccinationData.administered_date ? new Date(vaccinationData.administered_date) : new Date();
         administeredDate.setHours(0, 0, 0, 0);
+        const administeredDateString = toDateOnlyString(vaccinationData.administered_date || administeredDate);
 
         const now = new Date();
         now.setHours(0, 0, 0, 0);
+        const todayString = toDateOnlyString(now);
 
-        if (administeredDate > now) {
+        if (!administeredDateString || administeredDateString > todayString) {
             return {
                 valid: false,
                 error: 'TEMPORAL VIOLATION: Cannot record a vaccination in the future.',
@@ -274,8 +282,8 @@ class VaccinationService {
             };
         }
 
-        const dob = new Date(infant.dob);
-        if (administeredDate < dob) {
+        const dobString = toDateOnlyString(infant.dob);
+        if (dobString && administeredDateString < dobString) {
             return {
                 valid: false,
                 error: 'TEMPORAL VIOLATION: Vaccination dose cannot pre-date the infant birth date.',
@@ -284,7 +292,7 @@ class VaccinationService {
         }
 
         // Check for duplicate entry based on infant_id, vaccine_code, and date(administered_date)
-        const dateString = administeredDate.toISOString().split('T')[0];
+        const dateString = administeredDateString;
 
         // BEFORE checking infant_schedules, check for exact duplicates to prevent 500 DB errors
         const [duplicates] = await db.execute(
@@ -330,7 +338,7 @@ class VaccinationService {
         }
 
         // Validate interval using strict WHO Grace Period / Hard Stop Math
-        const dueDate = new Date(scheduleEntry.due_date);
+        const dueDate = new Date(scheduleEntry.recommended_date);
         administeredDate.setHours(0, 0, 0, 0);
         dueDate.setHours(0, 0, 0, 0);
 
@@ -340,12 +348,12 @@ class VaccinationService {
             // Hard Stop condition: 5 or more days early
             // Check for override
             if (vaccinationData.override_early_dose === true) {
-                // RBAC Check: Only Midwife or Nurse can override
-                const allowedRoles = ['Midwife', 'Nurse'];
+                // RBAC Check: Admins/Head Nurses, Midwives, and Super Admins can authorize early-dose overrides.
+                const allowedRoles = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.SUPER_ADMIN];
                 if (!allowedRoles.includes(vaccinationData.recorded_by_role)) {
                     return {
                         valid: false,
-                        error: `GOVERNANCE ERROR: Only Midwife/Nurse can authorize early-dose overrides. Current role: ${vaccinationData.recorded_by_role}`,
+                        error: `GOVERNANCE ERROR: Only Admins, Midwives, and Super Admins can authorize early-dose overrides. Current role: ${vaccinationData.recorded_by_role}`,
                         field: 'administered_date'
                     };
                 }

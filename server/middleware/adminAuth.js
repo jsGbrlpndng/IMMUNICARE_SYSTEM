@@ -1,13 +1,10 @@
 const { ROLES } = require('../constants/domain');
-const { requireAuthenticatedUser } = require('./authContext');
+const { requireAuthenticatedUser, enforceBarangayScope } = require('./authContext');
 
 const adminAuth = async (req, res, next) => {
     try {
-        const user = await requireAuthenticatedUser(req, [ROLES.SUPER_ADMIN]);
-
-        if (req.query.barangay === 'all') {
-            delete req.query.barangay;
-        }
+        const user = await requireAuthenticatedUser(req, [ROLES.SUPER_ADMIN, ROLES.ADMIN]);
+        enforceBarangayScope(req, user);
 
         req.user = user;
         req.userId = user.id;

@@ -221,7 +221,7 @@ router.post('/:id/vaccinations', async (req, res) => {
         const infant = await infantService.getInfantById(internalId, barangay, true);
         if (!infant) return res.status(404).json({ success: false, error: 'Infant not found', code: 'NOT_FOUND' });
 
-        if (infant.registration_status?.toUpperCase() !== 'VALIDATED') {
+        if (infant.registration_status?.toUpperCase() !== 'APPROVED') {
             return res.status(403).json({
                 success: false,
                 error: 'REGISTRATION_PENDING',

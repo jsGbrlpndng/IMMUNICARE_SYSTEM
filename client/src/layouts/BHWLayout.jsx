@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -16,18 +17,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-/* ─── BHW Layout ─────────────────────────────────────────────
+/* BHW Layout
    Uses the same sidebar shell as the Midwife (StaffLayout/SidebarNav)
    to give both roles a visually consistent experience.
    The only difference is the nav items (BHW-specific).
-──────────────────────────────────────────────────────────── */
+*/
 
 const BHWLayout = () => {
     const { user, logout } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Collapse state – persisted across page loads
+    // Collapse state - persisted across page loads
     const [isCollapsed, setIsCollapsed] = useState(() => {
         try {
             const saved = localStorage.getItem('bhw-sidebar-collapsed');
@@ -68,6 +69,7 @@ const BHWLayout = () => {
                 { path: '/bhw/dashboard', label: 'Dashboard', icon: LayoutDashboard },
                 { path: '/bhw/register', label: 'Register Infant', icon: UserPlus },
                 { path: '/bhw/submissions', label: 'My Submissions', icon: ClipboardList },
+                { path: '/bhw/follow-ups', label: 'Follow-Ups', icon: ClipboardList },
             ],
         },
     ];
@@ -81,7 +83,7 @@ const BHWLayout = () => {
     return (
         <div className="min-h-screen bg-[#F8FAFC] flex">
 
-            {/* ── Mobile overlay ────────────────────────────────── */}
+            {/* Mobile overlay */}
             {isMobileOpen && (
                 <div
                     className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
@@ -89,7 +91,7 @@ const BHWLayout = () => {
                 />
             )}
 
-            {/* ── Sidebar ───────────────────────────────────────── */}
+            {/* Sidebar */}
             <aside
                 className={`
                     fixed inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-200
@@ -217,7 +219,7 @@ const BHWLayout = () => {
                             >
                                 <div className="px-4 py-2.5 border-b border-slate-50 mb-1">
                                     <p className="text-xs font-bold text-slate-900 truncate">{user?.full_name}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">BHW – {user?.assigned_barangay || 'No Barangay'}</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">BHW - {user?.assigned_barangay || 'No Barangay'}</p>
                                 </div>
                                 <button
                                     onClick={() => navigate('/bhw/profile')}
@@ -258,7 +260,7 @@ const BHWLayout = () => {
                 </div>
             </aside>
 
-            {/* ── Main content ──────────────────────────────────── */}
+            {/* Main content */}
             <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
 
                 {/* Mobile top bar */}

@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -134,7 +135,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     useEffect(() => {
         const timer = setTimeout(() => {
             setDebouncedSearchTerm(formData.exact_address);
-        }, 800);
+        }, 350);
         return () => clearTimeout(timer);
     }, [formData.exact_address]);
 
@@ -268,6 +269,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setFormData(prev => ({
             ...prev,
             exact_address: address,
+            current_address: address,
+            locality: identifiedBarangay,
             latitude: lat,
             longitude: lon,
             barangay: identifiedBarangay,
@@ -298,6 +301,10 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 setFormData(prev => ({
                     ...prev,
                     exact_address: address,
+                    current_address: address,
+                    locality: identifiedBarangay,
+                    latitude: lat,
+                    longitude: lon,
                     barangay: identifiedBarangay,
                     is_location_verified: true
                 }));
@@ -312,11 +319,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
     const handleMapClick = (lat, lng) => {
         setFormData(prev => ({ ...prev, latitude: lat, longitude: lng, is_location_verified: true }));
+        setMapCenter([lat, lng]);
         handleReverseGeocode(lat, lng);
     };
 
     const handleDragEnd = (lat, lng) => {
         setFormData(prev => ({ ...prev, latitude: lat, longitude: lng, is_location_verified: true }));
+        setMapCenter([lat, lng]);
         handleReverseGeocode(lat, lng);
     };
 
@@ -472,14 +481,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     justification: formData.emergency_justification
                 });
             } else {
-                // Midwife Standard Workflow: Direct registration
-                const payload = { 
-                    ...normalizedFormData, 
-                    registration_status: 'VALIDATED',
-                    is_duplicate: duplicateMatches.length > 0,
-                    duplicate_override_reason: overrideReason
-                };
-                res = await apiClient.post('/infants', payload);
+                setSubmissionError('Only BHW accounts can create infant registrations. Midwives validate submitted registrations from the queue.');
+                return;
             }
 
             if (res.ok) {
@@ -577,7 +580,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     <div className="mb-8 bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
                         <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-amber-800 uppercase tracking-[0.15em]">⚠️ Midwife Notes / Correction Required</span>
+                            <span className="text-[10px] font-black text-amber-800 uppercase tracking-[0.15em]">âš ï¸ Midwife Notes / Correction Required</span>
                             <span className="text-sm font-bold text-amber-950 mt-1">{formData.correction_notes}</span>
                         </div>
                     </div>
@@ -588,7 +591,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     <div className="mb-8 bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
                         <Info className="w-6 h-6 text-blue-500 shrink-0" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-blue-800 uppercase tracking-[0.15em]">🔒 Pending Validation</span>
+                            <span className="text-[10px] font-black text-blue-800 uppercase tracking-[0.15em]">ðŸ”’ Pending Validation</span>
                             <span className="text-sm font-bold text-blue-950 mt-1">This record is currently locked and pending validation by your Midwife.</span>
                         </div>
                     </div>
@@ -599,7 +602,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     <div className="mb-8 bg-red-50 border-2 border-red-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
                         <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">❌ Record Rejected</span>
+                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">âŒ Record Rejected</span>
                             <span className="text-sm font-bold text-red-950 mt-1">
                                 RECORD REJECTED: {formData.correction_notes || 'No reason specified.'}
                             </span>
@@ -705,7 +708,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         ) : (
                             <div className="w-full flex justify-center py-2">
                                 <span className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                                    🔒 This record is in Read-Only Mode
+                                    ðŸ”’ This record is in Read-Only Mode
                                 </span>
                             </div>
                         )}

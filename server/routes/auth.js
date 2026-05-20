@@ -46,6 +46,36 @@ const getUserAssignments = async (user) => {
     return Array.from(assignments);
 };
 
+const validateScopedAssignments = (role, assignments) => {
+    if (role === ROLES.SUPER_ADMIN) {
+        return null;
+    }
+
+    if (assignments.length === 0) {
+        return {
+            status: 403,
+            body: {
+                error: 'No active barangay assignment. Please contact your administrator.',
+                code: 'NO_BARANGAY_ASSIGNMENT'
+            },
+            auditReason: 'NO_BARANGAY_ASSIGNMENT'
+        };
+    }
+
+    if (assignments.length !== 1) {
+        return {
+            status: 403,
+            body: {
+                error: 'Account has an invalid barangay configuration. Please contact your administrator.',
+                code: 'INVALID_BARANGAY_SCOPE'
+            },
+            auditReason: 'INVALID_BARANGAY_SCOPE'
+        };
+    }
+
+    return null;
+};
+
 const auditAuthEvent = async (userId, actionType, details, req) => {
     await performAuditLog(userId || 'anonymous', actionType, 'auth', userId || null, details, req);
 };
@@ -128,12 +158,10 @@ router.post('/login', async (req, res) => {
         }
 
         const assignedBarangays = await getUserAssignments(user);
-        if (user.role !== ROLES.SUPER_ADMIN && assignedBarangays.length === 0) {
-            await auditAuthEvent(user.id, 'AUTH_LOGIN_FAILED', { reason: 'NO_BARANGAY_ASSIGNMENT' }, req);
-            return res.status(403).json({
-                error: 'No active barangay assignment. Please contact your administrator.',
-                code: 'NO_BARANGAY_ASSIGNMENT'
-            });
+        const assignmentError = validateScopedAssignments(user.role, assignedBarangays);
+        if (assignmentError) {
+            await auditAuthEvent(user.id, 'AUTH_LOGIN_FAILED', { reason: assignmentError.auditReason }, req);
+            return res.status(assignmentError.status).json(assignmentError.body);
         }
 
         const sessionMinutes = await getSettingNumber('session_idle_timeout_minutes', DEFAULT_SESSION_SECONDS / 60);

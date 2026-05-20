@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainDashboard from './pages/clinical/MainDashboard';
 import MidwifeDashboard from './pages/clinical/MidwifeDashboard';
@@ -16,10 +17,9 @@ import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
 import PublicHealthDashboard from './pages/admin/PublicHealthDashboard';
 import UserManagement from './pages/admin/UserManagement';
-// DOHRules removed from navigation – component kept for legacy backend compatibility
+// DOHRules removed from navigation â€“ component kept for legacy backend compatibility
 import AuditLogs from './pages/admin/AuditLogs';
 import SystemSettings from './pages/admin/SystemSettings';
 import AdminM1Reports from './pages/admin/AdminM1Reports';
@@ -35,6 +35,7 @@ import MySubmissions from './pages/bhw/MySubmissions';
 import InfantProfile from './pages/bhw/InfantProfile';
 import InfantRecord from './pages/clinical/InfantRecord';
 import InfantRegistry from './pages/clinical/InfantRegistry';
+import FollowUpTasks from './pages/clinical/FollowUpTasks';
 
 function App() {
     return (
@@ -86,16 +87,12 @@ function App() {
                     />
                     <Route
                         path="/clinical/registration"
-                        element={
-                            <ProtectedRoute>
-                                <StaffLayout><InfantRegistrationForm /></StaffLayout>
-                            </ProtectedRoute>
-                        }
+                        element={<Navigate to="/bhw/register" replace />}
                     />
                     <Route
                         path="/clinical/registrations/:id"
                         element={
-                            <ProtectedRoute allowedRoles={['Super Admin', 'Midwife', 'Nurse', 'BHW']}>
+                            <ProtectedRoute allowedRoles={['Super Admin', 'Admin', 'Midwife', 'BHW']}>
                                 <StaffLayout><InfantRegistrationForm /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -117,6 +114,14 @@ function App() {
                         }
                     />
                     <Route
+                        path="/clinical/follow-ups"
+                        element={
+                            <ProtectedRoute>
+                                <StaffLayout><FollowUpTasks /></StaffLayout>
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
                         path="/clinical/registry"
                         element={
                             <ProtectedRoute>
@@ -129,7 +134,7 @@ function App() {
                     <Route
                         path="/clinical/infants/:id"
                         element={
-                            <ProtectedRoute allowedRoles={['Super Admin', 'Midwife', 'Nurse', 'BHW']}>
+                            <ProtectedRoute allowedRoles={['Super Admin', 'Admin', 'Midwife', 'BHW']}>
                                 <StaffLayout>
                                     <InfantRecord />
                                 </StaffLayout>
@@ -150,6 +155,7 @@ function App() {
                         <Route path="dashboard" element={<BHWDashboard />} />
                         <Route path="register" element={<BHWRegistration />} />
                         <Route path="submissions" element={<MySubmissions />} />
+                        <Route path="follow-ups" element={<FollowUpTasks />} />
                         <Route path="infants/:id" element={<InfantRecord />} />
                         <Route path="registrations/:id" element={<InfantRegistrationForm />} />
                     </Route>
@@ -173,7 +179,7 @@ function App() {
                             </AdminRoute>
                         }
                     />
-                    {/* /admin/rules redirects to dashboard – DOH Rules removed from UI */}
+                    {/* /admin/rules redirects to dashboard â€“ DOH Rules removed from UI */}
                     <Route
                         path="/admin/rules"
                         element={<Navigate to="/admin/dashboard" replace />}
