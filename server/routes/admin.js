@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { v4: uuidv4 } = require('uuid');
 const adminAuth = require('../middleware/adminAuth');
 const { performAuditLog } = require('../utils/auditLogger');
+const { ROLES, STAFF_ROLES } = require('../constants/domain');
 
 // Apply Admin Auth to ALL routes in this file
 router.use(adminAuth);
@@ -26,7 +26,7 @@ router.get('/dashboard/stats', async (req, res) => {
         const totalUsers = userCountRows[0].count;
 
         // 2. Pending Approvals
-        let pendingQuery = "SELECT COUNT(*) as count FROM infants WHERE registration_status = 'Pending'";
+        let pendingQuery = "SELECT COUNT(*) as count FROM infant_registrations WHERE status = 'PENDING_VALIDATION'";
         let pendingParams = [];
         if (barangay) {
             pendingQuery += ' AND barangay = ?';
@@ -36,7 +36,7 @@ router.get('/dashboard/stats', async (req, res) => {
         const pendingApprovals = pendingRows[0].count;
 
         // 3. Registered Infants
-        let regQuery = "SELECT COUNT(*) as count FROM infants WHERE registration_status = 'Approved'";
+        let regQuery = "SELECT COUNT(*) as count FROM infants WHERE registration_status = 'APPROVED'";
         let regParams = [];
         if (barangay) {
             regQuery += ' AND barangay = ?';
@@ -48,9 +48,9 @@ router.get('/dashboard/stats', async (req, res) => {
         // 4. Compliance/Overrides
         let overdueQuery = `
             SELECT COUNT(DISTINCT i.id) as count 
-            FROM immunization_logs il
-            JOIN infants i ON il.infant_id = i.id
-            WHERE il.is_validated = 0 AND il.scheduled_date < NOW()
+            FROM infant_schedules s
+            JOIN infants i ON s.infant_id = i.id
+            WHERE s.status IN ('OVERDUE', 'DEFAULTED')
         `;
         let overdueParams = [];
         if (barangay) {
@@ -64,7 +64,7 @@ router.get('/dashboard/stats', async (req, res) => {
             SELECT COUNT(*) as count 
             FROM schedule_overrides so
             JOIN infants i ON so.infant_id = i.id
-            WHERE so.authorization_status = 'Approved'
+            WHERE so.authorization_status = 'APPROVED'
         `;
         let overrideParams = [];
         if (barangay) {
@@ -133,15 +133,13 @@ const bcrypt = require('bcrypt'); // Added dependency
 
 // ... existing imports ...
 
-// Helper to generate Role-Based ID (e.g., BHW-001, MW-005, ADMIN-002)
+// Helper to generate Role-Based ID (e.g., BHW-001, MW-005, SADMIN-001)
 const generateUserId = async (role) => {
     let prefix = '';
     switch (role) {
-        case 'Midwife': prefix = 'MW'; break;
-        case 'BHW': prefix = 'BHW'; break;
-        case 'Admin': prefix = 'ADMIN'; break;
-        case 'Barangay Admin': prefix = 'BADMIN'; break;
-        case 'Super Admin': prefix = 'SADMIN'; break;
+        case ROLES.MIDWIFE: prefix = 'MW'; break;
+        case ROLES.BHW: prefix = 'BHW'; break;
+        case ROLES.SUPER_ADMIN: prefix = 'SADMIN'; break;
         default: prefix = 'USER';
     }
 
@@ -187,36 +185,17 @@ router.post('/users', async (req, res) => {
             return res.status(400).json({ error: 'Name, Role, and Password are required' });
         }
 
-        const validRoles = ['Super Admin', 'Barangay Admin', 'Admin', 'Midwife', 'BHW'];
+        const validRoles = STAFF_ROLES;
         if (!validRoles.includes(role)) {
             return res.status(400).json({ error: 'Invalid role' });
         }
 
         // --- SANITIZATION & DEFAULTS ---
-        const sanitizedBarangay = role === 'Super Admin' 
+        const sanitizedBarangay = role === ROLES.SUPER_ADMIN
             ? null 
-            : (assigned_barangay ? assigned_barangay.trim().toUpperCase() : null);
+            : (assigned_barangay ? assigned_barangay.trim() : null);
 
-        // --- PRIVILEGE ESCALATION PREVENTION ---
-        // Do not trust the frontend; enforce strict role hierarchy
-        if (req.user.role === 'Barangay Admin') {
-            // Barangay Admins can ONLY create Midwives and BHWs
-            const restrictedRoles = ['Super Admin', 'Barangay Admin', 'Admin'];
-            if (restrictedRoles.includes(role)) {
-                return res.status(403).json({ 
-                    error: "Forbidden: Privilege Escalation detected. Barangay Admins cannot create administrative accounts." 
-                });
-            }
-            
-            // Force the barangay to match the Admin's own barangay
-            if (sanitizedBarangay !== req.user.assigned_barangay) {
-                return res.status(403).json({ 
-                    error: `Forbidden: Context Locking enforced. You can only create staff for ${req.user.assigned_barangay}.` 
-                });
-            }
-        }
-
-        if (role !== 'Super Admin' && !sanitizedBarangay) {
+        if (role !== ROLES.SUPER_ADMIN && !sanitizedBarangay) {
             return res.status(400).json({ error: 'Assigned Barangay is required for this role' });
         }
 
@@ -228,17 +207,44 @@ router.post('/users', async (req, res) => {
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Insert
+        const connection = await db.getConnection();
         try {
-            await db.execute(`
+            await connection.beginTransaction();
+
+            await connection.execute(`
                 INSERT INTO users (id, full_name, role, assigned_barangay, is_active, password)
                 VALUES (?, ?, ?, ?, true, ?)
             `, [id, full_name, role, sanitizedBarangay, hashedPassword]);
+
+            if (sanitizedBarangay) {
+                await connection.execute(`
+                    INSERT INTO barangays (name)
+                    VALUES (?)
+                    ON CONFLICT (name) DO NOTHING
+                `, [sanitizedBarangay]);
+
+                await connection.execute(`
+                    INSERT INTO user_barangay_assignments (user_id, barangay_id, assigned_by)
+                    SELECT ?, id, ?
+                    FROM barangays
+                    WHERE name = ?
+                    ON CONFLICT (user_id, barangay_id) DO UPDATE SET
+                        is_active = TRUE,
+                        assigned_by = EXCLUDED.assigned_by,
+                        revoked_at = NULL,
+                        assigned_at = CURRENT_TIMESTAMP
+                `, [id, req.user.id, sanitizedBarangay]);
+            }
+
+            await connection.commit();
         } catch (dbError) {
-            if (dbError.code === '23505' || dbError.errno === 1062) { // PG: unique_violation, MySQL: ER_DUP_ENTRY
+            await connection.rollback();
+            if (dbError.code === '23505') {
                 return res.status(409).json({ error: 'Conflict', message: 'User ID or Name already exists.' });
             }
             throw dbError;
+        } finally {
+            connection.release();
         }
 
         await performAuditLog(req.user.id, 'USER_CREATE', 'users', id, { full_name, role, assigned_barangay: sanitizedBarangay }, req);
@@ -272,14 +278,6 @@ router.put('/users/:id/status', async (req, res) => {
 
         const statusValue = is_active === true || is_active === 1 || is_active === 'true';
 
-        // --- TENANCY ENFORCEMENT ---
-        if (req.user.role === 'Barangay Admin') {
-            const [userToUpdate] = await db.execute('SELECT assigned_barangay FROM users WHERE id = ?', [id]);
-            if (userToUpdate.length === 0 || userToUpdate[0].assigned_barangay !== req.user.assigned_barangay) {
-                return res.status(403).json({ error: 'Forbidden: Cannot modify users outside your barangay' });
-            }
-        }
-
         await db.execute('UPDATE users SET is_active = ? WHERE id = ?', [statusValue, id]);
 
         await performAuditLog(req.user.id, 'USER_STATUS_TOGGLE', 'users', id, { is_active: statusValue }, req);
@@ -302,14 +300,6 @@ router.post('/users/:id/reset-password', async (req, res) => {
         // 2. Hash using bcrypt
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(rawPassword, saltRounds);
-
-        // --- TENANCY ENFORCEMENT ---
-        if (req.user.role === 'Barangay Admin') {
-            const [userToUpdate] = await db.execute('SELECT assigned_barangay FROM users WHERE id = ?', [id]);
-            if (userToUpdate.length === 0 || userToUpdate[0].assigned_barangay !== req.user.assigned_barangay) {
-                return res.status(403).json({ error: 'Forbidden: Cannot reset password for users outside your barangay' });
-            }
-        }
 
         // 3. Update database
         const [result] = await db.execute('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, id]);

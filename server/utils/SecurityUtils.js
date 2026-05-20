@@ -8,10 +8,16 @@ class SecurityUtils {
     /**
      * Signs a payload using HMAC-SHA256
      */
-    static signToken(payload) {
-        const data = JSON.stringify(payload);
+    static signToken(payload, expiresInSeconds = 60 * 60 * 8) {
+        const now = Math.floor(Date.now() / 1000);
+        const tokenPayload = {
+            ...payload,
+            iat: now,
+            exp: now + expiresInSeconds
+        };
+        const data = JSON.stringify(tokenPayload);
         const signature = crypto.createHmac('sha256', SECRET).update(data).digest('hex');
-        return Buffer.from(JSON.stringify({ payload, signature })).toString('base64');
+        return Buffer.from(JSON.stringify({ payload: tokenPayload, signature })).toString('base64');
     }
 
     /**
@@ -22,10 +28,15 @@ class SecurityUtils {
             const { payload, signature } = JSON.parse(Buffer.from(token, 'base64').toString());
             const expectedSignature = crypto.createHmac('sha256', SECRET).update(JSON.stringify(payload)).digest('hex');
 
-            if (signature === expectedSignature) {
-                return payload;
+            if (signature !== expectedSignature) {
+                return null;
             }
-            return null;
+
+            if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+                return null;
+            }
+
+            return payload;
         } catch (e) {
             return null;
         }
