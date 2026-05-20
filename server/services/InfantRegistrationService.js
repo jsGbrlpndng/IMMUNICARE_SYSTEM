@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const NIPScheduleService = require('./NIPScheduleService');
 const VaccinationService = require('./VaccinationService');
+const { ROLES, REGISTRATION_STATUS } = require('../constants/domain');
 
 class InfantRegistrationService {
     constructor(db) {
@@ -12,24 +13,27 @@ class InfantRegistrationService {
     /**
      * BHW Encode: Save a new registration or draft
      */
-    async saveRegistration(data, userId, userRole) {
+    async saveRegistration(data, actorOrUserId, legacyRole) {
+        const actor = this._actor(actorOrUserId, legacyRole);
+        this._requireRole(actor, [ROLES.BHW], 'Only BHWs can create or update infant registrations.');
+
+        if (!data || typeof data !== 'object') {
+            throw this._httpError('Registration data is required.', 400);
+        }
+
         const id = data.id || uuidv4();
         const reference_id = data.reference_id || this._generateReferenceId();
-        
-        let status = data.status || data.registration_status || 'DRAFT';
-        
-        // Forcibly map 'Pending' or 'PENDING_VALIDATION' to database representation
-        if (status === 'Pending' || status === 'PENDING_VALIDATION') {
-            status = 'PENDING_VALIDATION';
+
+        const status = this._normalizeBhwSaveStatus(data.status || data.registration_status);
+        if (status === REGISTRATION_STATUS.PENDING_VALIDATION) {
             data.correction_notes = null;
-        } else if (status === 'Needs Correction' || status === 'NEEDS_CORRECTION') {
-            status = 'NEEDS_CORRECTION';
-        } else if (status === 'Draft' || status === 'DRAFT') {
-            status = 'DRAFT';
         }
 
         // Explicitly trim and normalize the barangay string
-        const trimmedBarangay = data.barangay ? data.barangay.toString().trim() : '';
+        const trimmedBarangay = this._normalizeBarangay(actor.assigned_barangay || data.barangay);
+        if (!trimmedBarangay || !this._canAccessBarangay(actor, trimmedBarangay)) {
+            throw this._httpError('Forbidden: Registration is outside your barangay scope.', 403);
+        }
         data.barangay = trimmedBarangay;
 
         const query = `
@@ -43,6 +47,8 @@ class InfantRegistrationService {
                 correction_notes = CASE WHEN EXCLUDED.status = 'PENDING_VALIDATION' THEN NULL ELSE infant_registrations.correction_notes END,
                 updated_at = CURRENT_TIMESTAMP
             WHERE infant_registrations.status IN ('DRAFT', 'NEEDS_CORRECTION')
+              AND infant_registrations.created_by = ?
+              AND TRIM(infant_registrations.barangay) = ?
         `;
 
         const [result] = await this.db.execute(query, [
@@ -51,7 +57,9 @@ class InfantRegistrationService {
             JSON.stringify(data), 
             status, 
             trimmedBarangay, 
-            userId
+            actor.id,
+            actor.id,
+            trimmedBarangay
         ]);
 
         if (result.affectedRows === 0 && data.id) {
@@ -64,7 +72,12 @@ class InfantRegistrationService {
     /**
      * Midwife Queue: Fetch records pending validation
      */
-    async getValidationQueue(barangay = null) {
+    async getValidationQueue(barangay = null, actor = null) {
+        const normalizedBarangay = this._normalizeBarangay(barangay);
+        if (actor?.role && actor.role !== ROLES.SUPER_ADMIN && !this._canAccessBarangay(actor, normalizedBarangay)) {
+            throw this._httpError('Forbidden: Validation queue is outside your barangay scope.', 403);
+        }
+
         let query = `
             SELECT ir.*, u.full_name as submitted_by_name 
             FROM infant_registrations ir
@@ -73,9 +86,9 @@ class InfantRegistrationService {
         `;
         const params = [];
 
-        if (barangay) {
+        if (normalizedBarangay) {
             query += ' AND TRIM(ir.barangay) = ?';
-            params.push(barangay.toString().trim());
+            params.push(normalizedBarangay);
         }
 
         query += ' ORDER BY ir.created_at ASC';
@@ -107,15 +120,19 @@ class InfantRegistrationService {
     /**
      * Duplicate Check: Multi-factor detection
      */
-    async checkDuplicates(data) {
+    async checkDuplicates(data, actor = null) {
         const { first_name, last_name, dob, mothers_maiden_name } = data;
+        const scopedBarangay = actor?.role === ROLES.SUPER_ADMIN ? this._normalizeBarangay(data.barangay) : this._normalizeBarangay(actor?.assigned_barangay || data.barangay);
+        const barangayClause = scopedBarangay ? ' AND TRIM(barangay) = ?' : '';
+        const barangayParams = scopedBarangay ? [scopedBarangay] : [];
         
         // Exact match
         const [exact] = await this.db.execute(`
             SELECT id, reference_id, first_name, last_name, dob 
             FROM infants 
             WHERE first_name = ? AND last_name = ? AND dob = ?
-        `, [first_name, last_name, dob]);
+            ${barangayClause}
+        `, [first_name, last_name, dob, ...barangayParams]);
 
         if (exact.length > 0) return { type: 'EXACT', matches: exact };
 
@@ -126,7 +143,8 @@ class InfantRegistrationService {
             WHERE (first_name ILIKE ? OR last_name ILIKE ?) 
             AND dob = ?
             AND mothers_maiden_name ILIKE ?
-        `, [`%${first_name}%`, `%${last_name}%`, dob, `%${mothers_maiden_name}%`]);
+            ${barangayClause}
+        `, [`%${first_name}%`, `%${last_name}%`, dob, `%${mothers_maiden_name || ''}%`, ...barangayParams]);
 
         if (fuzzy.length > 0) return { type: 'FUZZY', matches: fuzzy };
 
@@ -139,22 +157,20 @@ class InfantRegistrationService {
     /**
      * Midwife Approval: Promote to infants table
      */
-    async approveAndPromote(registrationId, reviewerId, userRole, notes) {
+    async approveAndPromote(registrationId, actorOrReviewerId, legacyRoleOrNotes, legacyNotes) {
+        const actor = this._actor(actorOrReviewerId, legacyNotes === undefined ? null : legacyRoleOrNotes);
+        const notes = legacyNotes === undefined ? legacyRoleOrNotes : legacyNotes;
+        this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can approve infant registrations.');
+
         const connection = await this.db.getConnection();
         try {
             await connection.beginTransaction();
 
             // 1. Fetch registration
-            const [regRows] = await connection.execute(
-                'SELECT * FROM infant_registrations WHERE id = ? FOR UPDATE',
-                [registrationId]
-            );
-
-            if (regRows.length === 0) throw new Error('Registration not found');
-            const reg = regRows[0];
+            const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
             const data = typeof reg.registration_data === 'string' ? JSON.parse(reg.registration_data) : reg.registration_data;
 
-            if (reg.status !== 'PENDING_VALIDATION') {
+            if (reg.status !== REGISTRATION_STATUS.PENDING_VALIDATION) {
                 throw new Error(`Forbidden: Cannot approve from ${reg.status}. Registration must be PENDING_VALIDATION.`);
             }
 
@@ -177,10 +193,10 @@ class InfantRegistrationService {
             const referenceId = reg.reference_id;
 
             // Build review history for the registration record
-            const history = Array.isArray(reg.review_history) ? reg.review_history : [];
+            const history = this._parseHistory(reg.review_history);
             history.push({
-                reviewer_id: reviewerId,
-                action: 'APPROVED',
+                reviewer_id: actor.id,
+                action: REGISTRATION_STATUS.APPROVED,
                 notes: notes,
                 timestamp: new Date().toISOString()
             });
@@ -244,10 +260,10 @@ class InfantRegistrationService {
             `, [
                 uuidv4(),
                 registrationId,
-                reviewerId,
-                userRole,
+                actor.id,
+                actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: 'APPROVED', promoted_infant_id: infantId }),
+                JSON.stringify({ status: REGISTRATION_STATUS.APPROVED, promoted_infant_id: infantId }),
                 notes || 'Approved via Validation Center'
             ]);
 
@@ -332,12 +348,12 @@ class InfantRegistrationService {
                     dose.dose_number,
                     'AT-BIRTH',
                     dose.site_of_injection,
-                    reviewerId,
+                    actor.id,
                     'Midwife (Approval)',
                     dose.administered_date,
                     'Auto-logged at-birth dose upon Midwife validation approval.',
-                    reviewerId,
-                    userRole // 14th parameter: recorded_by_role
+                    actor.id,
+                    actor.role
                 ]);
 
                 // Mark the schedule entry as COMPLETED (with actual_date set)
@@ -367,33 +383,26 @@ class InfantRegistrationService {
     /**
      * Midwife Rejection: Permanently reject the registration
      */
-    async rejectRegistration(registrationId, reviewerId, userRole, reason) {
-        console.log(`[REJECT SERVICE] Attempting to reject ${registrationId} by ${reviewerId} (${userRole})`);
+    async rejectRegistration(registrationId, actorOrReviewerId, legacyRoleOrReason, legacyReason) {
+        const actor = this._actor(actorOrReviewerId, legacyReason === undefined ? null : legacyRoleOrReason);
+        const reason = legacyReason === undefined ? legacyRoleOrReason : legacyReason;
+        this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can reject infant registrations.');
+
+        console.log(`[REJECT SERVICE] Attempting to reject ${registrationId} by ${actor.id} (${actor.role})`);
         const connection = await this.db.getConnection();
         try {
             await connection.beginTransaction();
 
-            const [rows] = await connection.execute(
-                'SELECT status, review_history FROM infant_registrations WHERE id = ? FOR UPDATE',
-                [registrationId]
-            );
+            const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
 
-            console.log(`[REJECT SERVICE] Query returned ${rows?.length} rows for ID: ${registrationId}`);
-
-            if (!rows || rows.length === 0) {
-                console.warn(`[REJECT SERVICE] Registration ${registrationId} not found in database.`);
-                throw new Error('Registration not found');
-            }
-            const reg = rows[0];
-
-            if (reg.status !== 'PENDING_VALIDATION') {
+            if (reg.status !== REGISTRATION_STATUS.PENDING_VALIDATION) {
                 throw new Error(`Forbidden: Cannot reject from ${reg.status}. Registration must be PENDING_VALIDATION.`);
             }
 
-            const history = Array.isArray(reg.review_history) ? reg.review_history : [];
+            const history = this._parseHistory(reg.review_history);
             history.push({
-                reviewer_id: reviewerId,
-                action: 'REJECTED',
+                reviewer_id: actor.id,
+                action: REGISTRATION_STATUS.REJECTED,
                 notes: reason,
                 timestamp: new Date().toISOString()
             });
@@ -409,10 +418,10 @@ class InfantRegistrationService {
             `, [
                 uuidv4(),
                 registrationId,
-                reviewerId,
-                userRole,
+                actor.id,
+                actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: 'REJECTED' }),
+                JSON.stringify({ status: REGISTRATION_STATUS.REJECTED }),
                 reason
             ]);
 
@@ -429,25 +438,23 @@ class InfantRegistrationService {
     /**
      * Midwife Return: Back to BHW for correction
      */
-    async returnForCorrection(registrationId, reviewerId, userRole, notes) {
+    async returnForCorrection(registrationId, actorOrReviewerId, legacyRoleOrNotes, legacyNotes) {
+        const actor = this._actor(actorOrReviewerId, legacyNotes === undefined ? null : legacyRoleOrNotes);
+        const notes = legacyNotes === undefined ? legacyRoleOrNotes : legacyNotes;
+        this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can return infant registrations for correction.');
+
         const connection = await this.db.getConnection();
         try {
             await connection.beginTransaction();
 
-            const [regRows] = await connection.execute(
-                'SELECT status, review_history, correction_cycle_count FROM infant_registrations WHERE id = ? FOR UPDATE',
-                [registrationId]
-            );
-            if (regRows.length === 0) throw new Error('Registration not found');
-            
-            const reg = regRows[0];
-            if (reg.status !== 'PENDING_VALIDATION') {
+            const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
+            if (reg.status !== REGISTRATION_STATUS.PENDING_VALIDATION) {
                 throw new Error(`Forbidden: Cannot return from ${reg.status}. Registration must be PENDING_VALIDATION.`);
             }
 
-            const history = Array.isArray(reg.review_history) ? reg.review_history : [];
+            const history = this._parseHistory(reg.review_history);
             history.push({
-                reviewer_id: reviewerId,
+                reviewer_id: actor.id,
                 action: 'RETURNED_FOR_CORRECTION',
                 notes: notes,
                 timestamp: new Date().toISOString()
@@ -469,10 +476,10 @@ class InfantRegistrationService {
             `, [
                 uuidv4(),
                 registrationId,
-                reviewerId,
-                userRole,
+                actor.id,
+                actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: 'NEEDS_CORRECTION' }),
+                JSON.stringify({ status: REGISTRATION_STATUS.NEEDS_CORRECTION }),
                 notes
             ]);
 
@@ -489,20 +496,18 @@ class InfantRegistrationService {
     /**
      * Midwife Correction: Direct alteration of registration data
      */
-    async updateRegistrationData(registrationId, reviewerId, userRole, updatedData) {
+    async updateRegistrationData(registrationId, actorOrReviewerId, legacyRoleOrData, legacyData) {
+        const actor = this._actor(actorOrReviewerId, legacyData === undefined ? null : legacyRoleOrData);
+        const updatedData = legacyData === undefined ? legacyRoleOrData : legacyData;
+        this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can directly correct pending registrations.');
+
         const connection = await this.db.getConnection();
         try {
             await connection.beginTransaction();
 
-            const [rows] = await connection.execute(
-                'SELECT status, registration_data FROM infant_registrations WHERE id = ? FOR UPDATE',
-                [registrationId]
-            );
+            const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
 
-            if (rows.length === 0) throw new Error('Registration not found');
-            const reg = rows[0];
-
-            if (reg.status !== 'PENDING_VALIDATION') {
+            if (reg.status !== REGISTRATION_STATUS.PENDING_VALIDATION) {
                 throw new Error(`Forbidden: Direct corrections only allowed during PENDING_VALIDATION.`);
             }
 
@@ -532,8 +537,8 @@ class InfantRegistrationService {
             `, [
                 uuidv4(),
                 registrationId,
-                reviewerId,
-                userRole,
+                actor.id,
+                actor.role,
                 JSON.stringify({ registration_data: oldData }),
                 JSON.stringify({ registration_data: updatedData, diff }),
                 `Direct correction of: ${Object.keys(diff).join(', ')}`
@@ -592,10 +597,135 @@ class InfantRegistrationService {
         return rows;
     }
 
+    async getRegistrationById(registrationId, actor) {
+        const [rows] = await this.db.execute(`
+            SELECT *
+            FROM infant_registrations
+            WHERE id = ?
+        `, [registrationId]);
+
+        if (rows.length === 0) {
+            throw this._httpError('Registration not found', 404);
+        }
+
+        const reg = rows[0];
+        if (actor.role === ROLES.BHW && reg.created_by !== actor.id) {
+            throw this._httpError('Registration not found', 404);
+        }
+
+        if (!this._canAccessBarangay(actor, reg.barangay)) {
+            throw this._httpError('Registration not found', 404);
+        }
+
+        return {
+            ...reg,
+            registration_data: typeof reg.registration_data === 'string'
+                ? JSON.parse(reg.registration_data)
+                : reg.registration_data
+        };
+    }
+
     _generateReferenceId() {
         const year = new Date().getFullYear();
         const random = Math.floor(1000 + Math.random() * 9000);
         return `REG-${year}-${random}`;
+    }
+
+    _actor(actorOrUserId, legacyRole) {
+        if (actorOrUserId && typeof actorOrUserId === 'object') {
+            return {
+                id: actorOrUserId.id,
+                role: actorOrUserId.role,
+                assigned_barangay: this._normalizeBarangay(actorOrUserId.assigned_barangay),
+                assigned_barangays: (actorOrUserId.assigned_barangays || [])
+                    .map((barangay) => this._normalizeBarangay(barangay))
+                    .filter(Boolean)
+            };
+        }
+
+        return {
+            id: actorOrUserId,
+            role: legacyRole,
+            assigned_barangay: null,
+            assigned_barangays: []
+        };
+    }
+
+    _normalizeBarangay(barangay) {
+        if (barangay === undefined || barangay === null) return null;
+        const value = barangay.toString().trim();
+        return value || null;
+    }
+
+    _normalizeBhwSaveStatus(status) {
+        const value = status || REGISTRATION_STATUS.DRAFT;
+        const normalized = value.toString().trim().toUpperCase().replace(/\s+/g, '_');
+
+        if (normalized === 'PENDING' || normalized === REGISTRATION_STATUS.PENDING_VALIDATION) {
+            return REGISTRATION_STATUS.PENDING_VALIDATION;
+        }
+
+        if (normalized === REGISTRATION_STATUS.DRAFT) {
+            return REGISTRATION_STATUS.DRAFT;
+        }
+
+        throw this._httpError('BHWs may only save DRAFT registrations or submit PENDING_VALIDATION registrations.', 400);
+    }
+
+    _parseHistory(history) {
+        if (Array.isArray(history)) return history;
+        if (!history) return [];
+
+        try {
+            const parsed = typeof history === 'string' ? JSON.parse(history) : history;
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    _requireRole(actor, allowedRoles, message) {
+        if (!actor?.id || !allowedRoles.includes(actor.role)) {
+            throw this._httpError(message || 'Forbidden', 403);
+        }
+    }
+
+    _canAccessBarangay(actor, barangay) {
+        if (!actor || actor.role === ROLES.SUPER_ADMIN) return true;
+        const normalized = this._normalizeBarangay(barangay);
+        const assignments = new Set((actor.assigned_barangays || [])
+            .map((value) => this._normalizeBarangay(value)?.toLowerCase())
+            .filter(Boolean));
+
+        if (actor.assigned_barangay) {
+            assignments.add(actor.assigned_barangay.toLowerCase());
+        }
+
+        return normalized ? assignments.has(normalized.toLowerCase()) : false;
+    }
+
+    async _getRegistrationForActor(connection, registrationId, actor, lock = false) {
+        const [rows] = await connection.execute(
+            `SELECT * FROM infant_registrations WHERE id = ?${lock ? ' FOR UPDATE' : ''}`,
+            [registrationId]
+        );
+
+        if (rows.length === 0) {
+            throw this._httpError('Registration not found', 404);
+        }
+
+        const reg = rows[0];
+        if (!this._canAccessBarangay(actor, reg.barangay)) {
+            throw this._httpError('Registration not found', 404);
+        }
+
+        return reg;
+    }
+
+    _httpError(message, status) {
+        const error = new Error(message);
+        error.status = status;
+        return error;
     }
 }
 

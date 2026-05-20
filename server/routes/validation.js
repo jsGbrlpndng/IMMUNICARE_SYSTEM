@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const InfantRegistrationService = require('../services/InfantRegistrationService');
 const db = require('../db');
+const { ROLES } = require('../constants/domain');
 
 const registrationService = new InfantRegistrationService(db);
 
@@ -11,9 +12,11 @@ const registrationService = new InfantRegistrationService(db);
  */
 router.get('/queue', async (req, res) => {
     try {
-        const barangay = req.user?.assigned_barangay || req.query.barangay;
-        const trimmedBarangay = barangay ? barangay.toString().trim() : null;
-        const queue = await registrationService.getValidationQueue(trimmedBarangay);
+        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only Midwives and Super Admins can view the validation queue.' });
+        }
+
+        const queue = await registrationService.getValidationQueue(req.query.barangay || req.user.assigned_barangay, req.user);
         
         // Fetch daily stats from audit_trail instead of dropped legacy approval_audit table
         const [statsRow] = await db.execute(`
@@ -46,18 +49,16 @@ router.post('/:id/approve', async (req, res) => {
     try {
         const { id } = req.params;
         const { notes } = req.body;
-        const reviewerId = req.headers['x-user-id'];
-        const userRole = req.headers['x-user-role'];
 
-        if (!['MIDWIFE', 'NURSE', 'ADMIN'].includes(userRole?.toUpperCase())) {
+        if (req.user.role !== ROLES.MIDWIFE) {
             return res.status(403).json({ success: false, error: 'Insufficient permissions for approval.' });
         }
 
-        const result = await registrationService.approveAndPromote(id, reviewerId, userRole, notes);
+        const result = await registrationService.approveAndPromote(id, req.user, notes);
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('[Validation Approval] Error:', err);
-        res.status(err.message.includes('Forbidden') ? 409 : 500).json({ success: false, error: err.message });
+        res.status(err.status || (err.message.includes('Forbidden') ? 409 : 500)).json({ success: false, error: err.message });
     }
 });
 
@@ -69,20 +70,18 @@ router.post('/:id/reject', async (req, res) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
-        const reviewerId = req.headers['x-user-id'];
-        const userRole = req.headers['x-user-role'];
 
-        console.log(`[REJECT ROUTE] Received request for ID: ${id}, Role: ${userRole}`);
+        console.log(`[REJECT ROUTE] Received request for ID: ${id}, Role: ${req.user.role}`);
 
         if (!reason || reason.trim() === '') {
             return res.status(400).json({ success: false, error: 'Rejection reason is required.' });
         }
 
-        if (!['MIDWIFE', 'NURSE', 'ADMIN'].includes(userRole?.toUpperCase())) {
+        if (req.user.role !== ROLES.MIDWIFE) {
             return res.status(403).json({ success: false, error: 'Insufficient permissions for rejection.' });
         }
 
-        await registrationService.rejectRegistration(id, reviewerId, userRole, reason);
+        await registrationService.rejectRegistration(id, req.user, reason);
         console.log(`[REJECT ROUTE] Success for ID: ${id}`);
         res.json({ success: true });
     } catch (err) {
@@ -101,14 +100,16 @@ router.post('/:id/needs-revision', async (req, res) => {
     try {
         const { id } = req.params;
         const { notes } = req.body;
-        const reviewerId = req.headers['x-user-id'];
-        const userRole = req.headers['x-user-role'];
 
         if (!notes || notes.trim() === '') {
             return res.status(400).json({ success: false, error: 'Revision notes are required.' });
         }
 
-        await registrationService.returnForCorrection(id, reviewerId, userRole, notes);
+        if (req.user.role !== ROLES.MIDWIFE) {
+            return res.status(403).json({ success: false, error: 'Insufficient permissions for revision.' });
+        }
+
+        await registrationService.returnForCorrection(id, req.user, notes);
         res.json({ success: true });
     } catch (err) {
         console.error('[Validation Revision] Error:', err);
@@ -124,18 +125,16 @@ router.patch('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { data } = req.body;
-        const reviewerId = req.headers['x-user-id'];
-        const userRole = req.headers['x-user-role'];
 
         if (!data || typeof data !== 'object') {
             return res.status(400).json({ success: false, error: 'Updated data object is required.' });
         }
 
-        if (!['MIDWIFE', 'NURSE', 'ADMIN'].includes(userRole?.toUpperCase())) {
+        if (req.user.role !== ROLES.MIDWIFE) {
             return res.status(403).json({ success: false, error: 'Insufficient permissions for direct corrections.' });
         }
 
-        const result = await registrationService.updateRegistrationData(id, reviewerId, userRole, data);
+        const result = await registrationService.updateRegistrationData(id, req.user, data);
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('[Validation Correction] Error:', err);
@@ -150,7 +149,7 @@ router.patch('/:id', async (req, res) => {
 router.post('/check-duplicates', async (req, res) => {
     try {
         const { data } = req.body;
-        const result = await registrationService.checkDuplicates(data);
+        const result = await registrationService.checkDuplicates(data || {}, req.user);
         res.json({ success: true, ...result });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

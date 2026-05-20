@@ -5,15 +5,23 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const InfantService = require('../services/InfantService');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const VaccinationService = require('../services/VaccinationService');
+const { ROLES } = require('../constants/domain');
 
 // Initialize Services
 const infantService = new InfantService(db);
 const nipScheduleService = new NIPScheduleService(db);
 const vaccinationService = new VaccinationService(db);
 
+// Protect all infant routes with canonical token auth and barangay scope.
+router.use(clinicalAuth);
+
 // POST /api/infants/check-duplicates
 router.post('/check-duplicates', async (req, res) => {
     try {
+        if (req.user.role !== ROLES.SUPER_ADMIN) {
+            req.body.barangay = req.user.assigned_barangay;
+        }
+
         const matches = await infantService.duplicateService.findPotentialDuplicates(req.body);
         res.json({ success: true, matches });
     } catch (error) {
@@ -21,9 +29,6 @@ router.post('/check-duplicates', async (req, res) => {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
-
-// Protect all infant routes - Admin cannot access
-router.use(clinicalAuth);
 
 // GET /api/infants/recently-approved
 router.get('/recently-approved', async (req, res) => {
@@ -78,107 +83,26 @@ router.get('/:id/schedule', async (req, res) => {
 
 // PUT /api/infants/:id/approve
 router.put('/:id/approve', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { remarks } = req.body;
-        const approver_id = req.headers['x-user-id'] || 'midwife-001';
-        const approver_role = req.headers['x-user-role'] || 'Midwife';
-
-        const result = await infantService.approveRegistration(id, approver_id, approver_role, remarks, req.query.barangay);
-        
-        if (result.alreadyApproved) {
-            return res.status(409).json({
-                success: false,
-                error: 'Registration already approved',
-                code: 'ALREADY_APPROVED',
-                approved_at: result.approvedAt
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Registration approved successfully',
-            data: {
-                infant_id: id,
-                name: `${result.infant.first_name} ${result.infant.last_name}`,
-                reference_id: result.infant.reference_id,
-                registration_status: 'Approved',
-                approved_by: approver_id,
-                approved_at: result.timestamp.toISOString(),
-                next_destination: 'NIP Schedule Page'
-            }
-        });
-    } catch (error) {
-        console.error('Error approving registration:', error);
-        const status = error.message.includes('not found') ? 404 : (error.message.includes('Concurrent') ? 409 : 500);
-        res.status(status).json({ success: false, error: error.message });
-    }
+    res.status(410).json({
+        success: false,
+        error: 'Legacy infant approval endpoint is disabled. Use /api/validation/:id/approve for the canonical registration workflow.'
+    });
 });
 
 // PUT /api/infants/:id/reject
 router.put('/:id/reject', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { rejection_reason } = req.body;
-        const rejected_by = req.headers['x-user-id'] || 'midwife-001';
-        const approver_role = req.headers['x-user-role'] || 'Midwife';
-
-        const result = await infantService.rejectRegistration(id, rejected_by, approver_role, rejection_reason, req.query.barangay);
-
-        if (result.alreadyRejected) {
-            return res.status(409).json({
-                success: false,
-                error: 'Registration already rejected',
-                code: 'ALREADY_REJECTED',
-                rejected_at: result.rejectedAt
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Registration rejected successfully',
-            data: {
-                infant_id: id,
-                name: `${result.infant.first_name} ${result.infant.last_name}`,
-                reference_id: result.infant.reference_id,
-                registration_status: 'Rejected',
-                rejection_reason: rejection_reason.trim(),
-                rejected_by,
-                rejected_at: result.timestamp.toISOString()
-            }
-        });
-    } catch (error) {
-        console.error('Error rejecting registration:', error);
-        const status = error.message.includes('not found') ? 404 : (error.message.includes('Concurrent') ? 409 : 500);
-        res.status(status).json({ success: false, error: error.message });
-    }
+    res.status(410).json({
+        success: false,
+        error: 'Legacy infant rejection endpoint is disabled. Use /api/validation/:id/reject for the canonical registration workflow.'
+    });
 });
 
 // POST /api/infants - Unified registration
 router.post('/', async (req, res) => {
-    try {
-        const userId = req.headers['x-user-id'] || req.user?.id;
-        const userRole = req.headers['x-user-role'] || req.user?.role;
-
-        const result = await infantService.registerInfant(req.body, userId, userRole, req.user?.assigned_barangay);
-
-        res.status(201).json({
-            success: true,
-            message: result.finalStatus === 'VALIDATED'
-                ? 'Infant registered and validated'
-                : result.finalStatus === 'DRAFT' ? 'Draft saved successfully' : 'Registration submitted for validation',
-            data: result
-        });
-    } catch (error) {
-        console.error('Registration Failure:', error);
-        const status = error.code === 'VALIDATION_ERROR' || error.code === 'PROTOCOL_VIOLATION' ? 400 : 500;
-        res.status(status).json({ 
-            success: false, 
-            error: error.message,
-            code: error.code,
-            details: error.details
-        });
-    }
+    res.status(410).json({
+        success: false,
+        error: 'Direct infant registration is disabled. Create a draft through /api/registrations and submit it for Midwife validation.'
+    });
 });
 
 // GET /api/infants/:id (Smart Routing: supports internal UUID or Reference ID)
