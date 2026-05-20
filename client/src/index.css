@@ -1,0 +1,272 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-green: #15803d;
+  --primary-dark: #0F172A;
+  --text-main: #1E293B;
+  --text-muted: #64748B;
+  --bg-light: #F8FAFC;
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth antialiased;
+  }
+
+  body {
+    @apply bg-white font-sans text-slate-900;
+  }
+
+  /* Enhanced scrollbar styling for modals */
+  .modal-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #CBD5E1 #F1F5F9;
+  }
+
+  .modal-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .modal-scroll::-webkit-scrollbar-track {
+    background: #F1F5F9;
+    border-radius: 4px;
+  }
+
+  .modal-scroll::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+
+  .modal-scroll::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+}
+
+@layer components {
+  .section-container {
+    @apply max-w-7xl mx-auto px-6 lg:px-8 py-12;
+  }
+
+  .btn-primary {
+    @apply bg-green-700 hover:bg-green-800 text-white font-bold transition-all py-3 px-8 rounded-lg inline-flex items-center justify-center active:scale-[0.98];
+  }
+
+  .btn-outline {
+    @apply bg-white text-slate-600 border border-slate-200 font-semibold py-3 px-8 rounded-lg transition-all duration-300 hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98] inline-flex items-center justify-center;
+  }
+
+  /* Global Table Density Refinement */
+  .clinical-card {
+    @apply bg-white p-4 border border-slate-200 shadow-sm rounded-lg;
+  }
+
+  .clinical-table-th {
+    @apply bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] font-black px-4 py-2 text-left border-b border-slate-200;
+  }
+
+  .clinical-table-td {
+    @apply px-4 py-2 border-b border-slate-100 text-sm font-semibold text-slate-800;
+  }
+
+  .nav-link {
+    @apply text-sm font-medium transition-all duration-500 transform;
+  }
+
+  .nav-link:hover {
+    @apply scale-102;
+  }
+
+  .card-premium {
+    @apply bg-white rounded-3xl border border-slate-50;
+    box-shadow: 0 40px 100px rgba(0, 0, 0, 0.04);
+  }
+
+  .badge-blue {
+    @apply bg-green-50 text-green-700 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-green-100/50;
+  }
+
+  .glass-nav {
+    @apply sticky top-0 bg-white/90 backdrop-blur-lg border-b border-slate-100 z-[100] shadow-sm;
+  }
+
+  /* Enhanced Modal Styles */
+  .modal-container {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+    animation: modalFadeIn 0.3s ease-out;
+  }
+
+  .modal-content {
+    @apply bg-white rounded-3xl shadow-2xl border border-slate-200;
+    animation: modalSlideIn 0.3s ease-out;
+    max-height: 95vh;
+    overflow: hidden;
+  }
+
+  .modal-scroll-area {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #CBD5E1 #F1F5F9;
+  }
+
+  .modal-scroll-area::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .modal-scroll-area::-webkit-scrollbar-track {
+    background: #F1F5F9;
+    border-radius: 4px;
+  }
+
+  .modal-scroll-area::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+
+  .modal-scroll-area::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+}
+
+/* Custom Utilities from Reference */
+.shadow-large {
+  box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.12), 0 30px 60px -30px rgba(0, 0, 0, 0.15);
+}
+
+.text-gradient-blue {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-green-700 to-green-500;
+}
+
+/* Enhanced Navigation Animations */
+@keyframes subtle-pulse {
+
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+/* Modal Animations */
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Scale utilities for hover effects */
+.scale-102 {
+  transform: scale(1.02);
+}
+
+.scale-105 {
+  transform: scale(1.05);
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* --- Clinical DSS Styling Extensions --- */
+
+/* Leaflet Popup Polish */
+.custom-leaflet-popup .leaflet-popup-content-wrapper {
+  @apply rounded-3xl border-0 shadow-2xl p-0 overflow-hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+.custom-leaflet-popup .leaflet-popup-content {
+  @apply m-0 p-0 !important;
+  width: 256px !important;
+}
+
+.custom-leaflet-popup .leaflet-popup-tip-container {
+  @apply hidden; /* Cleaner without the default tip */
+}
+
+/* Custom Scrollbar for Clinical Panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+}
+
+/* Clinical Depth Utilities */
+.clinical-surface {
+  @apply bg-[#F8FAFC]; /* Very light slate */
+}
+
+.clinical-card-elevated {
+  @apply bg-white rounded-[2rem] border border-slate-100 shadow-sm transition-all duration-300;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04);
+}
+
+.clinical-card-elevated:hover {
+  @apply shadow-xl border-slate-200;
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08);
+}

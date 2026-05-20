@@ -1,0 +1,22 @@
+# Logs
+*.log
+*_log.txt
+
+# Test output
+*_results.txt
+
+# Temporary files
+schema_dump.json
+audit_indexes.txt
+audit_schema.txt
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment
+.env
+.env.local
