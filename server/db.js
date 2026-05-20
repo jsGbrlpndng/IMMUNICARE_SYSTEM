@@ -1,122 +1,87 @@
-const mysql = require('mysql2');
 const { Pool } = require('pg');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const usePg = process.env.USE_PG === 'true';
+const pool = new Pool({
+  host: process.env.PG_HOST || 'localhost',
+  user: process.env.PG_USER || 'postgres',
+  password: process.env.PG_PASSWORD,
+  database: process.env.PG_DATABASE || 'immunicare',
+  port: Number(process.env.PG_PORT || 5432),
+  max: Number(process.env.PG_POOL_MAX || 10),
+  idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000)
+});
 
-let pool;
+const isSelectLike = (sql) => {
+  const normalized = sql.trim().toUpperCase();
+  return normalized.startsWith('SELECT') ||
+    normalized.startsWith('WITH') ||
+    normalized.startsWith('SHOW') ||
+    normalized.startsWith('EXPLAIN');
+};
 
-if (usePg) {
-  console.log('[DB] Using PostgreSQL Foundation');
-  pool = new Pool({
-    host: process.env.PG_HOST,
-    user: process.env.PG_USER,
-    password: process.env.PG_PASSWORD,
-    database: process.env.PG_DATABASE,
-    port: process.env.PG_PORT || 5432
-  });
+const translatePlaceholders = (sql, params = []) => {
+  if (!Array.isArray(params)) {
+    return { sql, params: [] };
+  }
 
-  // Internal translation logic
-  const translateSql = (sql, params) => {
-    let pgSql = sql;
-    let pgParams = [...params];
+  if (sql.toLowerCase().includes('values ?') && Array.isArray(params[0]) && Array.isArray(params[0][0])) {
+    const rows = params[0];
+    const values = [];
+    const placeholders = rows.map((row) => {
+      const rowPlaceholders = row.map((value) => {
+        values.push(value);
+        return `$${values.length}`;
+      });
+      return `(${rowPlaceholders.join(', ')})`;
+    }).join(', ');
 
-    // Handle MySQL-style bulk inserts: INSERT INTO table (...) VALUES ?
-    if (pgSql.toLowerCase().includes('values ?') && Array.isArray(params[0]) && Array.isArray(params[0][0])) {
-      const rows = params[0];
-      const placeholders = rows.map((row, rowIndex) =>
-        '(' + row.map((_, colIndex) => `$${rowIndex * row.length + colIndex + 1}`).join(', ') + ')'
-      ).join(', ');
-      pgSql = pgSql.replace('?', placeholders);
-      pgParams = rows.flat();
-    } else {
-      // Standard ? to $n translation
-      let i = 1;
-      pgSql = pgSql.replace(/\?/g, () => `$${i++}`);
-    }
+    return {
+      sql: sql.replace(/values\s+\?/i, `VALUES ${placeholders}`),
+      params: values
+    };
+  }
 
-    // SQL Dialect Conversions
-    if (pgSql.toUpperCase().includes('UPDATE') || pgSql.toUpperCase().includes('DELETE')) {
-      pgSql = pgSql.replace(/ LIMIT 1/gi, '');
-    }
-    pgSql = pgSql.replace(/CURDATE\(\)/gi, 'CURRENT_DATE');
-    pgSql = pgSql.replace(/NOW\(\)/gi, 'CURRENT_TIMESTAMP');
-    pgSql = pgSql.replace(/IFNULL\(/gi, 'COALESCE(');
-    pgSql = pgSql.replace(/SHOW TABLES LIKE/gi, "SELECT tablename FROM pg_catalog.pg_tables WHERE tablename LIKE");
-    pgSql = pgSql.replace(/DATE_(SUB|ADD)\(([^,]+),\s*INTERVAL\s+(\?|\d+)\s+(DAY|WEEK|MONTH|YEAR)\)/gi, (match, op, base, val, unit) => {
-      const operator = op.toUpperCase() === 'ADD' ? '+' : '-';
-      return `${base} ${operator} (INTERVAL '1 ${unit}' * ${val})`;
-    });
+  let index = 0;
+  const translated = sql.replace(/\?/g, () => `$${++index}`);
+  return { sql: translated, params };
+};
 
-    return { pgSql, pgParams };
-  };
+const formatResult = (sql, result) => {
+  if (isSelectLike(sql)) {
+    return [result.rows, result.fields];
+  }
 
-  const formatRows = (rows) => {
-    return rows.map(row => {
-      for (let key in row) {
-        if (typeof row[key] === 'string' && /^\d+$/.test(row[key]) && row[key].length < 15) {
-          const num = Number(row[key]);
-          if (!isNaN(num)) row[key] = num;
-        }
-      }
-      return row;
-    });
-  };
+  return [{
+    affectedRows: result.rowCount,
+    rowCount: result.rowCount,
+    rows: result.rows
+  }, result.fields];
+};
 
-  const pgWrapper = {
-    execute: async (sql, params = []) => {
-      const { pgSql, pgParams } = translateSql(sql, params);
-      const res = await pool.query(pgSql, pgParams);
-      if (pgSql.trim().toUpperCase().startsWith('SELECT')) {
-        return [formatRows(res.rows), res.fields];
-      }
-      return [{ affectedRows: res.rowCount }, res.fields];
-    },
-    query: async (sql, params = []) => {
-      return pgWrapper.execute(sql, params);
-    },
-    getConnection: async () => {
-      const client = await pool.connect();
-      // Wrap the client to match mysql2 connection interface
-      const wrappedClient = {
-        execute: async (sql, params = []) => {
-          const { pgSql, pgParams } = translateSql(sql, params);
-          const res = await client.query(pgSql, pgParams);
-          if (pgSql.trim().toUpperCase().startsWith('SELECT')) {
-            return [formatRows(res.rows), res.fields];
-          }
-          return [{ affectedRows: res.rowCount }, res.fields];
-        },
-        query: async (sql, params = []) => {
-          return wrappedClient.execute(sql, params);
-        },
-        beginTransaction: () => client.query('BEGIN'),
-        commit: () => client.query('COMMIT'),
-        rollback: () => client.query('ROLLBACK'),
-        release: () => client.release(),
-        // mysql2 compatibility
-        release: () => client.release(),
-        release: () => client.release(),
-      };
-      return wrappedClient;
-    },
-    end: () => pool.end()
-  };
+const executeOn = async (client, sql, params = []) => {
+  const translated = translatePlaceholders(sql, params);
+  const result = await client.query(translated.sql, translated.params);
+  return formatResult(translated.sql, result);
+};
 
-  module.exports = pgWrapper;
+const db = {
+  execute: async (sql, params = []) => executeOn(pool, sql, params),
+  query: async (sql, params = []) => executeOn(pool, sql, params),
+  getConnection: async () => {
+    const client = await pool.connect();
 
-} else {
-  console.log('[DB] Using MySQL Legacy Foundation');
-  const mysqlPool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-  });
+    return {
+      execute: async (sql, params = []) => executeOn(client, sql, params),
+      query: async (sql, params = []) => executeOn(client, sql, params),
+      beginTransaction: () => client.query('BEGIN'),
+      commit: () => client.query('COMMIT'),
+      rollback: () => client.query('ROLLBACK'),
+      release: () => client.release()
+    };
+  },
+  end: () => pool.end(),
+  pool
+};
 
-  module.exports = mysqlPool.promise();
-}
+module.exports = db;
