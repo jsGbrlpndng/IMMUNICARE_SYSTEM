@@ -1,3 +1,4 @@
+﻿import React from 'react';
 /**
  * InfoCard Component
  * Reusable card component for displaying information sections

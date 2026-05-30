@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import {
     ClipboardList,
@@ -22,26 +23,26 @@ import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 
-/* ─── Helpers ─────────────────────────────────────────────── */
+/* â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Format a UTC/ISO timestamp into a local, human-readable string.
- * e.g. "Feb 21, 2026 – 11:48 AM"
+ * e.g. "Feb 21, 2026 â€“ 11:48 AM"
  */
 const formatDate = (raw) => {
-    if (!raw) return '—';
+    if (!raw) return 'â€”';
     const d = new Date(raw);
     if (isNaN(d)) return raw;
     const date = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
     const time = d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true });
-    return `${date} – ${time}`;
+    return `${date} â€“ ${time}`;
 };
 
 /**
  * Map raw action_type codes to plain-language descriptions.
  */
 const friendlyAction = (action) => {
-    if (!action) return '—';
+    if (!action) return 'â€”';
     const map = {
         USER_CREATED: 'Created user',
         USER_UPDATED: 'Updated user',
@@ -86,8 +87,8 @@ const friendlyStatus = (log) => {
     const raw = log.status || log.result || '';
     if (!raw) return isSuccess(log) ? 'Success' : null;
     if (raw.toLowerCase() === 'success' || raw.toLowerCase() === 'ok') return 'Success';
-    // Prefix with "Failed –" for error strings
-    if (!isSuccess(log)) return `Failed – ${raw}`;
+    // Prefix with "Failed â€“" for error strings
+    if (!isSuccess(log)) return `Failed â€“ ${raw}`;
     return raw;
 };
 
@@ -101,7 +102,7 @@ const friendlyTarget = (log) => {
         const d = log.details || {};
         if (d.target_name) return d.target_name;
         if (d.full_name) return `User: ${d.full_name}`;
-        return '—';
+        return 'â€”';
     }
     return target;
 };
@@ -179,7 +180,7 @@ const MetaSummaryCard = ({ details }) => {
     );
 };
 
-/* ─── Main Component ──────────────────────────────────────── */
+/* â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const AuditLogs = () => {
     const { user } = useAuth();
@@ -259,7 +260,7 @@ const AuditLogs = () => {
                     <div>
                         <h1 className="text-xl font-bold text-slate-900">Activity History</h1>
                         <p className="text-sm text-slate-500 mt-0.5">
-                            {selectedBarangay === 'all' ? 'Municipal Overview' : `Barangay ${selectedBarangay}`} • A record of all actions taken by staff.
+                            {selectedBarangay === 'all' ? 'Municipal Overview' : `Barangay ${selectedBarangay}`} â€¢ A record of all actions taken by staff.
                         </p>
                     </div>
                 </div>
@@ -369,7 +370,7 @@ const AuditLogs = () => {
                                     <td colSpan="5" className="px-5 py-14 text-center">
                                         <div className="flex flex-col items-center gap-2 text-slate-400">
                                             <Activity className="w-6 h-6 animate-pulse" />
-                                            <span className="text-sm">Loading activity history…</span>
+                                            <span className="text-sm">Loading activity historyâ€¦</span>
                                         </div>
                                     </td>
                                 </tr>
@@ -411,7 +412,7 @@ const AuditLogs = () => {
                                             <td className="px-5 py-3.5">
                                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-bold">
                                                     <User className="w-3 h-3 text-slate-400" />
-                                                    {log.admin_id || log.midwife_id || '—'}
+                                                    {log.user_id || log.midwife_id || 'â€”'}
                                                 </span>
                                             </td>
                                             <td className="px-5 py-3.5">
@@ -424,7 +425,7 @@ const AuditLogs = () => {
                                             </td>
                                             <td className="px-5 py-3.5 text-sm text-slate-700 font-medium max-w-xs truncate">
                                                 {activeTab === 'clinical' ? (
-                                                    <span className="text-slate-400 italic text-xs">Protected – clinical data</span>
+                                                    <span className="text-slate-400 italic text-xs">Protected â€“ clinical data</span>
                                                 ) : (
                                                     friendlyTarget(log)
                                                 )}
@@ -458,7 +459,7 @@ const AuditLogs = () => {
                     <p className="text-xs font-medium text-slate-500">
                         {pagination.total === 0
                             ? 'No entries'
-                            : `Showing ${Math.max(1, (pagination.page - 1) * pagination.limit + 1)}–${Math.min(pagination.page * pagination.limit, pagination.total ?? 0)} of ${pagination.total ?? 0}`}
+                            : `Showing ${Math.max(1, (pagination.page - 1) * pagination.limit + 1)}â€“${Math.min(pagination.page * pagination.limit, pagination.total ?? 0)} of ${pagination.total ?? 0}`}
                     </p>
                     <div className="flex items-center gap-1.5">
                         <button
@@ -526,7 +527,7 @@ const AuditLogs = () => {
                                     <div className="flex items-center gap-2">
                                         <User className="w-4 h-4 text-slate-400" />
                                         <span className="text-sm font-bold bg-slate-200 px-2.5 py-0.5 rounded-md text-slate-800">
-                                            {selectedLog.admin_id || selectedLog.midwife_id || '—'}
+                                            {selectedLog.user_id || selectedLog.midwife_id || 'â€”'}
                                         </span>
                                     </div>
                                 </div>

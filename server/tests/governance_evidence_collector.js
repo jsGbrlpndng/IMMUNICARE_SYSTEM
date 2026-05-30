@@ -71,7 +71,7 @@ async function collectEvidence() {
 
     // 3. AUDIT REQUIREMENT
     console.log('\n3. Verifying Audit Logs...');
-    const [audit] = await connection.execute('SELECT admin_id, action_type, target_entity, target_id, timestamp, details FROM system_audit_logs WHERE target_entity = "doh_compliance_rules" ORDER BY timestamp DESC LIMIT 1');
+    const [audit] = await connection.execute('SELECT user_id, action_type, target_entity, target_id, timestamp, details FROM system_audit_logs WHERE target_entity = "doh_compliance_rules" ORDER BY timestamp DESC LIMIT 1');
     console.log('[EVIDENCE] system_audit_logs entry:');
     console.table(audit);
 

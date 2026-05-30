@@ -1,89 +1,157 @@
-/**
- * Admin M1 Reports page
- *
- * Identical content to the Clinical Reports page.
- * Wrapped in AdminLayout instead of StaffLayout.
- * Same M1ReportView component — same API call — same data.
- */
-
-import { useState } from 'react';
-import { FileText } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CalendarDays, FileText, Lock, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import M1ReportView from '../../components/M1ReportView';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
+import M1ReportView from '../../components/M1ReportView';
+
+const BARANGAYS = [
+    'LANGGAM', 'CALENDOLA', 'GSIS', 'MAGSAYSAY', 'SAMPAGUITA',
+    'UBL', 'UB', 'LARAM', 'ESTRELLA', 'BAGONG SILANG',
+    'RIVERSIDE', 'NARRA'
+];
 
 const MONTHS = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
 ];
 
 const currentDate = new Date();
 
 const AdminM1Reports = () => {
     const { user } = useAuth();
-    const { selectedBarangay } = useBarangayFilter();
-
+    const { selectedBarangay, setSelectedBarangay } = useBarangayFilter();
     const [month, setMonth] = useState(currentDate.getMonth() + 1);
     const [year, setYear] = useState(currentDate.getFullYear());
 
-    const yearOptions = Array.from(
-        { length: 6 },
-        (_, i) => currentDate.getFullYear() - i
+    const yearOptions = useMemo(
+        () => Array.from({ length: 6 }, (_, index) => currentDate.getFullYear() - index),
+        []
     );
 
+    const isSuperAdmin = user?.role === 'Super Admin';
+    const currentSelectedBarangay = selectedBarangay || 'all';
+    const scopedBarangay = isSuperAdmin
+        ? (currentSelectedBarangay === 'all' ? undefined : currentSelectedBarangay)
+        : undefined;
+    const reportMode = scopedBarangay ? 'micro' : (isSuperAdmin ? 'macro' : 'micro');
+    const scopeLabel = isSuperAdmin
+        ? (currentSelectedBarangay === 'all' ? 'RHU I Aggregate' : `Barangay ${currentSelectedBarangay}`)
+        : `Barangay ${user?.assigned_barangay || 'Assigned Scope'}`;
+    const selectedMonthLabel = MONTHS?.[month - 1] || 'Selected Month';
+
     return (
-        <div className="space-y-6">
-            {/* ── Page header ───────────────────────────────────────────── */}
-            <div className="bg-white border border-slate-200 rounded-xl p-6">
-                <div className="flex items-center space-x-3 mb-1">
-                    <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
-                        <FileText className="w-4 h-4 text-slate-600" />
+        <div className="min-h-screen bg-slate-50 p-6 lg:p-8 print:bg-white print:p-0">
+            <div className="mx-auto max-w-7xl space-y-6">
+                <section className="border border-slate-200 bg-white p-6 shadow-sm print:hidden">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-11 w-11 items-center justify-center bg-emerald-900 text-white">
+                                <FileText className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-800">
+                                    Official DOH Reporting
+                                </p>
+                                <h1 className="mt-1 text-3xl font-black text-slate-950">DOH NIP Reporting Suite</h1>
+                                <p className="mt-1 text-sm font-semibold text-slate-500">
+                                    {scopeLabel} - live NIP accomplishment reporting
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                                <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                    Report
+                                </label>
+                                <div className="border border-slate-300 bg-slate-100 px-4 py-2 text-xs font-black uppercase tracking-wider text-slate-700">
+                                    {reportMode === 'macro' ? 'Macro Grid' : 'Micro Monthly Sheet'}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                    Month
+                                </label>
+                                <select
+                                    value={month}
+                                    onChange={(event) => setMonth(Number(event.target.value))}
+                                    className="border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-emerald-800"
+                                >
+                                    {(MONTHS || []).map((label, index) => (
+                                        <option key={label} value={index + 1}>{label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                    Year
+                                </label>
+                                <select
+                                    value={year}
+                                    onChange={(event) => setYear(Number(event.target.value))}
+                                    className="border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-emerald-800"
+                                >
+                                    {yearOptions.map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {isSuperAdmin ? (
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                        Scope
+                                    </label>
+                                    <div className="flex items-center gap-2 border border-slate-300 bg-white px-3 py-2">
+                                        <MapPin className="h-4 w-4 text-emerald-800" />
+                                        <select
+                                            value={currentSelectedBarangay}
+                                            onChange={(event) => setSelectedBarangay?.(event?.target?.value || 'all')}
+                                            className="min-w-48 bg-white text-sm font-bold text-slate-900 outline-none"
+                                        >
+                                            <option value="all">RHU I - All Barangays</option>
+                                            {(BARANGAYS || []).map((barangayName) => (
+                                                <option key={barangayName} value={barangayName}>{barangayName}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                        Scope
+                                    </label>
+                                    <div className="flex items-center gap-2 border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                                        <Lock className="h-4 w-4 text-slate-500" />
+                                        {user?.assigned_barangay || 'Assigned Barangay'}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-emerald-800">
+                                <CalendarDays className="h-4 w-4" />
+                                {selectedMonthLabel} {year || currentDate.getFullYear()}
+                            </div>
+                        </div>
                     </div>
-                    <h1 className="text-xl font-bold text-slate-900">
-                        Infant Immunization Report (0–11 Months)
-                    </h1>
-                </div>
-                <p className="text-sm text-slate-500 ml-11">
-                    Focused exclusively on the M1 infant immunization portion · {user?.role}
-                </p>
+                </section>
+
+                <M1ReportView
+                    key={`${month}-${year}-${scopedBarangay || 'municipal-or-admin-scope'}`}
+                    month={month}
+                    year={year}
+                    barangay={scopedBarangay}
+                    reportMode={reportMode}
+                />
             </div>
-
-            {/* ── Filter bar ────────────────────────────────────────────── */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap gap-4 items-end print:hidden">
-                <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Month</label>
-                    <select
-                        value={month}
-                        onChange={e => setMonth(Number(e.target.value))}
-                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    >
-                        {MONTHS.map((m, i) => (
-                            <option key={m} value={i + 1}>{m}</option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year</label>
-                    <select
-                        value={year}
-                        onChange={e => setYear(Number(e.target.value))}
-                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    >
-                        {yearOptions.map(y => (
-                            <option key={y} value={y}>{y}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
-            {/* ── Report content ────────────────────────────────────────── */}
-            <M1ReportView
-                key={`${month}-${year}-${selectedBarangay}`}
-                month={month}
-                year={year}
-                barangay={selectedBarangay === 'all' ? undefined : selectedBarangay}
-            />
         </div>
     );
 };

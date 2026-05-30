@@ -1,3 +1,4 @@
+﻿import React from 'react';
 /**
  * ProgressBar Component
  * Displays vaccination progress with visual bar and percentage

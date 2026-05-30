@@ -18,6 +18,14 @@ import ReviewSection from './registration/ReviewSection';
 // Validation Logic
 import { validateField, isStepValid } from '../../utils/registrationValidation';
 import { getBarangayCenter } from '../../utils/barangayConfig';
+import {
+    getBarangayFromAddress,
+    isInsideSanPedro,
+    normalizeAddressResult,
+    rankSuggestions,
+    reverseGeocodeLatLng
+} from '../../utils/addressGeocoding';
+import { hasValidCoordinate, toDecimalFloat } from './registration/LocationPicker';
 
 const initialFormState = {
     first_name: '',
@@ -52,10 +60,21 @@ const initialFormState = {
     registration_status: '',
     latitude: null,
     longitude: null,
+    precision: '',
+    location_precision: '',
     is_location_verified: false,
     // BHW/Emergency fields
     is_emergency: false,
     emergency_justification: ''
+};
+
+const readApiError = async (response, fallbackMessage) => {
+    try {
+        const data = await response.json();
+        return data?.details || data?.message || data?.error || fallbackMessage;
+    } catch {
+        return fallbackMessage;
+    }
 };
 
 export default function InfantRegistrationForm({ userRole: forcedRole, onComplete }) {
@@ -92,15 +111,18 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
     const currentStatus = (formData.status || formData.registration_status || '').toUpperCase();
     const isReadOnly = ['PENDING', 'PENDING_VALIDATION', 'REJECTED'].includes(currentStatus);
+    const correctionMessage = formData.correction_notes || '';
 
     // Geocoding States
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [noResultsFound, setNoResultsFound] = useState(false);
+    const [addressLookupError, setAddressLookupError] = useState('');
+    const [addressLookupWarning, setAddressLookupWarning] = useState('');
     const [mapCenter, setMapCenter] = useState([14.3596, 121.0426]); 
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const skipNextFetch = useRef(false);
-    const searchTimeoutRef = useRef(null);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const searchDebounceRef = useRef(null);
+    const searchAbortRef = useRef(null);
     const STEPS = useMemo(() => [
         { id: 1, title: 'Identity' },
         { id: 2, title: 'Guardian' },
@@ -117,9 +139,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setCurrentStep(1);
         setIsSuccess(false);
         setSubmissionError(null);
+        setAddressLookupError('');
+        setAddressLookupWarning('');
         setDuplicateMatches([]);
         setOverrideReason('');
+        setRegisteredInfantInfo(null);
         setSearchResults([]);
+        setShowSuggestions(false);
         setMapCenter([center.lat, center.lng]);
     }, [user?.assigned_barangay]);
 
@@ -131,79 +157,97 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setMapCenter([center.lat, center.lng]);
     }, [user?.assigned_barangay]);
 
-    // --- Address Search Debounce Effect ---
     useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearchTerm(formData.exact_address);
-        }, 350);
-        return () => clearTimeout(timer);
-    }, [formData.exact_address]);
+        return () => {
+            if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+            searchAbortRef.current?.abort();
+        };
+    }, []);
 
-    // --- Address Search Fetch Effect ---
-    useEffect(() => {
-        if (skipNextFetch.current) return;
-        
-        if (!debouncedSearchTerm || debouncedSearchTerm.length < 3) {
+    const runAddressSuggestionSearch = useCallback(async (query, { selectFirst = false } = {}) => {
+        const trimmedQuery = (query || '').trim();
+
+        searchAbortRef.current?.abort();
+
+        if (!trimmedQuery || trimmedQuery.length < 3) {
             setSearchResults([]);
             setNoResultsFound(false);
+            setAddressLookupError('');
+            setShowSuggestions(false);
             return;
         }
 
         const controller = new AbortController();
-        
-        const performSearch = async () => {
-            setIsSearching(true);
-            setNoResultsFound(false);
-            setSubmissionError(null);
+        searchAbortRef.current = controller;
+        setIsSearching(true);
+        setNoResultsFound(false);
+        setSubmissionError(null);
 
-            try {
-                const userBarangay = user?.assigned_barangay || '';
-                const strictQuery = userBarangay 
-                    ? `${debouncedSearchTerm}, ${userBarangay}, San Pedro, Laguna`
-                    : `${debouncedSearchTerm}, San Pedro, Laguna`;
+        try {
+            const userBarangay = user?.assigned_barangay || formData.barangay || '';
+            const params = new URLSearchParams({
+                q: trimmedQuery,
+                barangay: userBarangay,
+                city: 'San Pedro',
+                state: 'Laguna',
+                country: 'Philippines',
+                addressdetails: '1'
+            });
 
-                const response = await apiClient.get(`/geo/search?q=${encodeURIComponent(strictQuery)}`, {
-                    signal: controller.signal
-                });
+            const response = await apiClient.get(`/geo/search?${params.toString()}`, {
+                signal: controller.signal
+            });
 
-                if (response.status === 429) {
-                    throw new Error('RATE_LIMIT');
-                }
-
-                if (!response.ok) throw new Error('FETCH_ERROR');
-
-                let data = await response.json();
-
-                // Fallback ONLY if result is truly empty and status is 200 OK
-                if ((!data || data.length === 0) && userBarangay) {
-                    const fallbackQuery = `${debouncedSearchTerm}, San Pedro, Laguna, Philippines`;
-                    const fallbackRes = await apiClient.get(`/geo/search?q=${encodeURIComponent(fallbackQuery)}`, {
-                        signal: controller.signal
-                    });
-                    
-                    if (fallbackRes.status === 429) throw new Error('RATE_LIMIT');
-                    if (fallbackRes.ok) data = await fallbackRes.json();
-                }
-
-                setSearchResults(data || []);
-                setNoResultsFound(!data || data.length === 0);
-            } catch (err) {
-                if (err.name === 'AbortError') return; // Silent background fail
-                
-                if (err.message === 'RATE_LIMIT') {
-                    setSubmissionError("Geocoding server busy. Please wait a few seconds...");
-                } else {
-                    console.error("Geocoding failure:", err);
-                }
-                setSearchResults([]);
-            } finally {
-                setIsSearching(false);
+            if (response.status === 429) {
+                throw new Error('RATE_LIMIT');
             }
-        };
 
-        performSearch();
-        return () => controller.abort();
-    }, [debouncedSearchTerm, user?.assigned_barangay]);
+            if (!response.ok) throw new Error('FETCH_ERROR');
+
+            const data = await response.json();
+            const rankedResults = rankSuggestions(
+                (data || []).map(normalizeAddressResult).filter(Boolean),
+                trimmedQuery,
+                userBarangay
+            );
+
+            if (selectFirst) {
+                setSearchResults([]);
+                setNoResultsFound(rankedResults.length === 0);
+                setShowSuggestions(false);
+
+                if (rankedResults.length === 0) {
+                    setAddressLookupError('Could not find a San Pedro address match. Please click the map to pin the exact household point.');
+                    return;
+                }
+
+                handleSelectSuggestion(rankedResults[0]);
+                return;
+            }
+
+            setSearchResults(rankedResults);
+            setShowSuggestions(true);
+            setNoResultsFound(rankedResults.length === 0);
+            setAddressLookupError(rankedResults.length === 0 ? 'Could not find an exact address. Please click the map or refine the search.' : '');
+            setAddressLookupWarning(
+                rankedResults.length > 0 && rankedResults.every((result) => result.precision === 'barangay')
+                    ? 'Only barangay-level result found. Type a street/purok/landmark or click the exact map location.'
+                    : ''
+            );
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+
+            if (err.message === 'RATE_LIMIT') {
+                setSubmissionError("Geocoding server busy. Please wait a few seconds...");
+            } else {
+                console.error("Geocoding failure:", err);
+            }
+            setSearchResults([]);
+            setShowSuggestions(false);
+        } finally {
+            setIsSearching(false);
+        }
+    }, [user?.assigned_barangay, formData.barangay]);
 
     // --- Load Existing Data (for Drafts/Corrections) ---
     useEffect(() => {
@@ -235,8 +279,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         }
                         
                         // Update map center if coordinates exist
-                        if (flatData.latitude && flatData.longitude) {
-                            setMapCenter([flatData.latitude, flatData.longitude]);
+                        const existingLat = toDecimalFloat(flatData.latitude);
+                        const existingLng = toDecimalFloat(flatData.longitude);
+                        if (hasValidCoordinate(existingLat, existingLng)) {
+                            setFormData(prev => ({ ...prev, latitude: existingLat, longitude: existingLng }));
+                            setMapCenter([existingLat, existingLng]);
                         }
                     }
                 } catch (err) {
@@ -251,82 +298,210 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
 
 
-    const handleSelectSuggestion = (res) => {
-        skipNextFetch.current = true;
-        const lat = parseFloat(res.lat);
-        const lon = parseFloat(res.lon);
-        
-        let identifiedBarangay = user?.assigned_barangay || formData.barangay || 'Langgam';
-        const address = res.display_name;
-        const barangayOptions = ['Langgam', 'Calendola', 'GSIS', 'Magsaysay', 'Sampaguita', 'UBL', 'UB', 'Laram', 'Estrella', 'Bagong Silang', 'Riverside', 'Narra'];
-        for (const b of barangayOptions) {
-            if (address.toLowerCase().includes(b.toLowerCase())) {
-                identifiedBarangay = b;
-                break;
-            }
+    const updateLocationFields = useCallback((locationData = {}) => {
+        const lat = toDecimalFloat(locationData.latitude ?? locationData.lat);
+        const lng = toDecimalFloat(locationData.longitude ?? locationData.lng ?? locationData.lon);
+
+        if (!hasValidCoordinate(lat, lng)) {
+            setAddressLookupError('Location coordinates are invalid. Please select another San Pedro address or click the map.');
+            return false;
+        }
+
+        const addressLabel = locationData.exact_address || locationData.current_address || '';
+        if (!isInsideSanPedro(lat, lng, addressLabel)) {
+            setAddressLookupError('Selected location is outside San Pedro, Laguna.');
+            return false;
         }
 
         setFormData(prev => ({
             ...prev,
+            ...(locationData.exact_address ? { exact_address: locationData.exact_address } : {}),
+            ...(locationData.current_address ? { current_address: locationData.current_address } : {}),
+            ...(locationData.locality ? { locality: locationData.locality } : {}),
+            ...(locationData.barangay ? { barangay: locationData.barangay } : {}),
+            latitude: lat,
+            longitude: lng,
+            precision: locationData.precision || prev.precision || 'approximate',
+            location_precision: locationData.location_precision || locationData.precision || prev.location_precision || 'approximate',
+            is_location_verified: locationData.is_location_verified ?? true
+        }));
+        setErrors(prev => ({ ...prev, exact_address: '' }));
+        setMapCenter([lat, lng]);
+        return true;
+    }, []);
+
+    const buildRegistrationPayload = useCallback((data, overrides = {}) => ({
+        data: {
+            ...data,
+            sex: data.sex === 'M' || data.sex === 'F' ? data.sex : '',
+            latitude: toDecimalFloat(data.latitude),
+            longitude: toDecimalFloat(data.longitude),
+            exact_address: data.exact_address || '',
+            current_address: data.current_address || data.exact_address || '',
+            registration_status: data.registration_status,
+            ...overrides
+        }
+    }), []);
+
+    const handleSelectSuggestion = (res) => {
+        const normalizedResult = normalizeAddressResult(res);
+        if (!normalizedResult) return;
+
+        const lat = toDecimalFloat(normalizedResult.lat);
+        const lon = toDecimalFloat(normalizedResult.lon);
+        const address = normalizedResult.display_name;
+        const identifiedBarangay = normalizedResult.barangay || user?.assigned_barangay || formData.barangay || '';
+        const precision = normalizedResult.precision || 'approximate';
+        const assignedBarangay = (user?.assigned_barangay || '').toUpperCase();
+        const isBarangayMismatch = assignedBarangay && identifiedBarangay && assignedBarangay !== identifiedBarangay.toUpperCase();
+        const lowPrecisionWarning = precision === 'barangay'
+            ? 'Barangay-level only - type street/purok/landmark or click exact location on map.'
+            : precision === 'approximate'
+                ? 'Address label is approximate. Click the exact map location if needed.'
+                : '';
+
+        updateLocationFields({
             exact_address: address,
             current_address: address,
             locality: identifiedBarangay,
             latitude: lat,
             longitude: lon,
+            precision,
+            location_precision: precision,
             barangay: identifiedBarangay,
             is_location_verified: true
-        }));
+        });
         
-        setMapCenter([lat, lon]);
         setSearchResults([]);
+        setShowSuggestions(false);
+        setNoResultsFound(false);
+        setAddressLookupError('');
+        setAddressLookupWarning(isBarangayMismatch ? 'Location is inside San Pedro but outside your assigned barangay.' : lowPrecisionWarning);
+    };
+
+    const handleAddressSearchSubmit = async () => {
+        const query = (formData.exact_address || '').trim();
+        if (query.length < 3) return;
+
+        if (searchResults.length > 0) {
+            handleSelectSuggestion(searchResults[0]);
+            return;
+        }
+
+        setAddressLookupError('');
+        setAddressLookupWarning('');
+        runAddressSuggestionSearch(query, { selectFirst: true });
     };
 
     const handleReverseGeocode = async (lat, lon) => {
+        const controller = new AbortController();
         setIsSearching(true);
+        setSearchResults([]);
+        setShowSuggestions(false);
+        setNoResultsFound(false);
+        setAddressLookupError('');
+        setAddressLookupWarning('');
         try {
-            const response = await apiClient.get(`/geo/reverse?lat=${lat}&lon=${lon}`);
-            if (response.ok) {
-                const data = await response.json();
-                const address = data.display_name;
-                
-                let identifiedBarangay = user?.assigned_barangay || formData.barangay || 'Langgam';
-                const barangayOptions = ['Langgam', 'Calendola', 'GSIS', 'Magsaysay', 'Sampaguita', 'UBL', 'UB', 'Laram', 'Estrella', 'Bagong Silang', 'Riverside', 'Narra'];
-                for (const b of barangayOptions) {
-                    if (address.toLowerCase().includes(b.toLowerCase())) {
-                        identifiedBarangay = b;
-                        break;
-                    }
+            const result = await reverseGeocodeLatLng({ apiClient, lat, lng: lon, signal: controller.signal, clicked: true });
+            if (!result) {
+                if (!isInsideSanPedro(lat, lon)) {
+                    setAddressLookupError('Selected location is outside San Pedro, Laguna.');
+                    return;
                 }
 
-                setFormData(prev => ({
-                    ...prev,
-                    exact_address: address,
-                    current_address: address,
-                    locality: identifiedBarangay,
+                const fallbackBarangay = user?.assigned_barangay || formData.barangay || 'San Pedro';
+                const fallbackAddress = `Pinned GPS point, ${fallbackBarangay}, San Pedro, Laguna, Philippines`;
+                updateLocationFields({
+                    exact_address: fallbackAddress,
+                    current_address: fallbackAddress,
+                    locality: fallbackBarangay,
                     latitude: lat,
                     longitude: lon,
-                    barangay: identifiedBarangay,
+                    precision: 'approximate',
+                    location_precision: 'approximate',
+                    barangay: fallbackBarangay,
                     is_location_verified: true
-                }));
-                setMapCenter([lat, lon]); 
+                });
+                setSearchResults([]);
+                setShowSuggestions(false);
+                setNoResultsFound(false);
+                setAddressLookupWarning('Exact GPS point saved. Address label is approximate.');
+                return;
             }
+
+            const address = result.display_name;
+            const identifiedBarangay = result.barangay || getBarangayFromAddress(result) || user?.assigned_barangay || formData.barangay || '';
+            const precision = result.precision || 'approximate';
+            const assignedBarangay = (user?.assigned_barangay || '').toUpperCase();
+            const isBarangayMismatch = assignedBarangay && identifiedBarangay && assignedBarangay !== identifiedBarangay.toUpperCase();
+            const lowPrecisionWarning = precision === 'approximate' || precision === 'barangay'
+                ? 'Exact GPS point saved. Address label is approximate.'
+                : '';
+
+            updateLocationFields({
+                exact_address: address,
+                current_address: address,
+                locality: identifiedBarangay,
+                latitude: lat,
+                longitude: lon,
+                precision,
+                location_precision: precision,
+                barangay: identifiedBarangay,
+                is_location_verified: true
+            });
+            setSearchResults([]);
+            setShowSuggestions(false);
+            setNoResultsFound(false);
+            setAddressLookupWarning(isBarangayMismatch ? 'Location is inside San Pedro but outside your assigned barangay.' : lowPrecisionWarning);
         } catch (err) {
-            console.error("Reverse geocoding error:", err);
+            if (err.name !== 'AbortError') {
+                console.error("Reverse geocoding error:", err);
+                if (isInsideSanPedro(lat, lon)) {
+                    const fallbackBarangay = user?.assigned_barangay || formData.barangay || 'San Pedro';
+                    const fallbackAddress = `Pinned GPS point, ${fallbackBarangay}, San Pedro, Laguna, Philippines`;
+                    updateLocationFields({
+                        exact_address: fallbackAddress,
+                        current_address: fallbackAddress,
+                        locality: fallbackBarangay,
+                        latitude: lat,
+                        longitude: lon,
+                        precision: 'approximate',
+                        location_precision: 'approximate',
+                        barangay: fallbackBarangay,
+                        is_location_verified: true
+                    });
+                    setAddressLookupWarning('Exact GPS point saved. Address label is approximate.');
+                } else {
+                    setAddressLookupError('Selected location is outside San Pedro, Laguna.');
+                }
+            }
         } finally {
             setIsSearching(false);
         }
     };
 
     const handleMapClick = (lat, lng) => {
-        setFormData(prev => ({ ...prev, latitude: lat, longitude: lng, is_location_verified: true }));
-        setMapCenter([lat, lng]);
-        handleReverseGeocode(lat, lng);
+        const latitude = toDecimalFloat(lat);
+        const longitude = toDecimalFloat(lng);
+        if (!hasValidCoordinate(latitude, longitude)) return;
+        searchAbortRef.current?.abort();
+        setSearchResults([]);
+        setShowSuggestions(false);
+        setNoResultsFound(false);
+        updateLocationFields({ latitude, longitude, precision: 'approximate', location_precision: 'approximate', is_location_verified: true });
+        handleReverseGeocode(latitude, longitude);
     };
 
     const handleDragEnd = (lat, lng) => {
-        setFormData(prev => ({ ...prev, latitude: lat, longitude: lng, is_location_verified: true }));
-        setMapCenter([lat, lng]);
-        handleReverseGeocode(lat, lng);
+        const latitude = toDecimalFloat(lat);
+        const longitude = toDecimalFloat(lng);
+        if (!hasValidCoordinate(latitude, longitude)) return;
+        searchAbortRef.current?.abort();
+        setSearchResults([]);
+        setShowSuggestions(false);
+        setNoResultsFound(false);
+        updateLocationFields({ latitude, longitude, precision: 'approximate', location_precision: 'approximate', is_location_verified: true });
+        handleReverseGeocode(latitude, longitude);
     };
 
     // --- Form Handlers ---
@@ -334,13 +509,26 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         const { name, type, checked, value } = e.target;
         
         if (name === 'exact_address') {
-            skipNextFetch.current = false;
+            setAddressLookupWarning('');
+            setSearchResults([]);
+            setShowSuggestions(false);
         }
 
         let newFormData = {
             ...formData,
             [name]: type === 'checkbox' ? checked : value
         };
+
+        if (name === 'exact_address') {
+            newFormData = {
+                ...newFormData,
+                latitude: null,
+                longitude: null,
+                precision: '',
+                location_precision: '',
+                is_location_verified: false
+            };
+        }
 
 
 
@@ -381,6 +569,28 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setFormData(newFormData);
         const errorMessage = validateField(name, type === 'checkbox' ? checked : value);
         setErrors(prev => ({ ...prev, [name]: errorMessage }));
+    };
+
+    const handleAddressInputChange = (event) => {
+        handleChange(event);
+
+        const query = event.target.value || '';
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+        setAddressLookupWarning('');
+        setAddressLookupError('');
+        setNoResultsFound(false);
+
+        if (query.trim().length < 3) {
+            searchAbortRef.current?.abort();
+            setSearchResults([]);
+            setShowSuggestions(false);
+            return;
+        }
+
+        searchDebounceRef.current = setTimeout(() => {
+            runAddressSuggestionSearch(query);
+        }, 350);
     };
 
     const handleBlur = (e) => {
@@ -443,18 +653,16 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setIsSavingDraft(true);
         setSubmissionError(null);
         try {
-            const res = await apiClient.post('/registrations', {
-                data: { ...formData, registration_status: 'DRAFT' }
-            });
+            const res = await apiClient.post('/registrations', buildRegistrationPayload(formData, { registration_status: 'DRAFT' }));
             if (res.ok) {
                 setToast('Draft Saved Successfully');
                 setTimeout(() => setToast(null), 3000);
             } else {
-                const err = await res.json();
-                setSubmissionError(err.error || 'Failed to save draft');
+                const errorMessage = await readApiError(res, 'Failed to save draft');
+                setSubmissionError(errorMessage);
             }
         } catch (e) {
-            setSubmissionError('Network error while saving draft');
+            setSubmissionError(e.message || 'Network error while saving draft');
         } finally {
             setIsSavingDraft(false);
         }
@@ -466,14 +674,17 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         try {
             const normalizedFormData = {
                 ...formData,
-                barangay: formData.barangay?.toUpperCase()
+                barangay: formData.barangay?.toUpperCase(),
+                sex: formData.sex === 'M' || formData.sex === 'F' ? formData.sex : '',
+                latitude: toDecimalFloat(formData.latitude),
+                longitude: toDecimalFloat(formData.longitude),
+                exact_address: formData.exact_address || '',
+                current_address: formData.current_address || formData.exact_address || ''
             };
             let res;
             if (userRole === 'BHW') {
                 // BHW Workflow: Submit for validation
-                res = await apiClient.post('/registrations', {
-                    data: { ...normalizedFormData, status: 'Pending', registration_status: 'PENDING_VALIDATION' }
-                });
+                res = await apiClient.post('/registrations', buildRegistrationPayload(normalizedFormData, { status: 'Pending', registration_status: 'PENDING_VALIDATION' }));
             } else if (formData.is_emergency) {
                 // Midwife Emergency Workflow: Direct promotion with justification
                 res = await apiClient.post('/registrations/emergency', {
@@ -490,9 +701,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 const returnedData = data.data || data;
 
                 if (userRole === 'BHW') {
-                    isMounted.current = false;
-                    navigate('/bhw/dashboard', { replace: true });
-                    if (onComplete) onComplete();
+                    setRegisteredInfantInfo({
+                        id: returnedData.id || returnedData.infantId,
+                        name: `${formData.first_name} ${formData.last_name}`,
+                        referenceId: returnedData.reference_id || returnedData.referenceId
+                    });
+                    setIsSuccess(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
 
@@ -505,11 +720,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 if (onComplete) onComplete();
             } else {
-                const data = await res.json();
-                setSubmissionError(data.error || 'Registration failed.');
+                const errorMessage = await readApiError(res, 'Registration failed.');
+                setSubmissionError(errorMessage);
             }
         } catch(e) {
-            setSubmissionError('Network error connecting to Backend.');
+            setSubmissionError(e.message || 'Network error connecting to Backend.');
         } finally {
             if (isMounted.current) {
                 setIsSubmitting(false);
@@ -519,30 +734,54 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
 
     if (isSuccess) {
+        const isBhwSuccess = userRole === 'BHW';
         return (
             <div className="min-h-screen bg-[#F4F7F4] -m-4 md:-m-8 pb-24 font-sans flex items-center justify-center p-6">
-                <div className="bg-white max-w-lg w-full rounded-3xl shadow-2xl border border-slate-200 p-12 text-center animate-in zoom-in-95 fade-in duration-500">
-                    <div className="w-24 h-24 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-10">
-                        <div className="w-16 h-16 bg-[#065f46] rounded-full flex items-center justify-center shadow-lg shadow-green-200">
-                            <CheckCircle className="w-8 h-8 text-white" />
-                        </div>
+                <div className="fixed inset-0 bg-slate-900/40"></div>
+                <div className="bg-white max-w-lg w-full rounded-md shadow-sm border border-slate-200 p-8 text-center relative z-10 animate-in zoom-in-95 fade-in duration-300">
+                    <div className="w-14 h-14 mx-auto bg-emerald-50 rounded-md flex items-center justify-center mb-6 border border-emerald-100">
+                        <CheckCircle className="w-8 h-8 text-emerald-800" />
                     </div>
-                    <h1 className="text-3xl font-black text-slate-800 mb-4">Registration Complete</h1>
-                    <p className="text-slate-500 font-medium mb-12 leading-relaxed">
-                        <span className="font-black text-slate-800">{registeredInfantInfo?.name}</span> has been securely added to the registry. 
-                        {user?.role === 'BHW' ? ' Midwife validation is now required.' : ' Schedules and clinical records are now active.'}
+                    <h1 className="text-xl font-black text-slate-900 mb-3">
+                        {isBhwSuccess ? 'Registration Submitted Successfully' : 'Registration Complete'}
+                    </h1>
+                    <p className="text-sm text-slate-600 font-semibold mb-8 leading-relaxed">
+                        {isBhwSuccess
+                            ? 'Registration Submitted Successfully. This record is now pending validation by the assigned Midwife.'
+                            : (
+                                <>
+                                    <span className="font-black text-slate-800">{registeredInfantInfo?.name}</span> has been securely added to the registry. Schedules and clinical records are now active.
+                                </>
+                            )}
                     </p>
-                    <div className="flex flex-col gap-4">
-                        <button 
-                            onClick={() => navigate(userRole === 'BHW' ? `/bhw/infants/${registeredInfantInfo?.id}` : `/clinical/infants/${registeredInfantInfo?.id}`)}
-                            className="w-full bg-[#065f46] hover:bg-[#064E3B] text-white py-3 px-8 rounded-md font-semibold text-sm uppercase tracking-wide shadow-md transition-all active:scale-95">
-                            View Infant Record
-                        </button>
-                        <button 
-                            onClick={resetForm}
-                            className="w-full border-2 border-[#065f46] text-[#065f46] bg-transparent hover:bg-emerald-50 py-3 px-8 rounded-md font-semibold text-sm uppercase tracking-wide transition-all">
-                            Register Another Infant
-                        </button>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                        {isBhwSuccess ? (
+                            <>
+                                <button
+                                    onClick={resetForm}
+                                    className="flex-1 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 py-3 px-5 rounded-md font-black text-xs uppercase tracking-wider transition-colors">
+                                    Register Another Infant
+                                </button>
+                                <button
+                                    onClick={() => navigate('/bhw/dashboard')}
+                                    className="flex-1 bg-emerald-800 hover:bg-emerald-900 text-white py-3 px-5 rounded-md font-black text-xs uppercase tracking-wider transition-colors">
+                                    Go to Dashboard
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={() => navigate(`/clinical/infants/${registeredInfantInfo?.id}`)}
+                                    className="flex-1 bg-emerald-800 hover:bg-emerald-900 text-white py-3 px-5 rounded-md font-black text-xs uppercase tracking-wider transition-colors">
+                                    View Infant Record
+                                </button>
+                                <button 
+                                    onClick={resetForm}
+                                    className="flex-1 border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 py-3 px-5 rounded-md font-black text-xs uppercase tracking-wider transition-colors">
+                                    Register Another Infant
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -576,12 +815,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     </div>
                 </div>
 
-                {((formData.status === 'Needs Correction' || formData.status === 'NEEDS_CORRECTION' || formData.registration_status === 'NEEDS_CORRECTION' || formData.registration_status === 'Needs Correction') && formData.correction_notes) && (
+                {((formData.status === 'Needs Correction' || formData.status === 'NEEDS_CORRECTION' || formData.registration_status === 'NEEDS_CORRECTION' || formData.registration_status === 'Needs Correction') && correctionMessage) && (
                     <div className="mb-8 bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
                         <AlertTriangle className="w-6 h-6 text-amber-500 shrink-0" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-amber-800 uppercase tracking-[0.15em]">âš ï¸ Midwife Notes / Correction Required</span>
-                            <span className="text-sm font-bold text-amber-950 mt-1">{formData.correction_notes}</span>
+                            <span className="text-[10px] font-black text-amber-800 uppercase tracking-[0.15em]">Return for Correction</span>
+                            <span className="text-sm font-bold text-amber-950 mt-1">{correctionMessage}</span>
                         </div>
                     </div>
                 )}
@@ -602,9 +841,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     <div className="mb-8 bg-red-50 border-2 border-red-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
                         <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">âŒ Record Rejected</span>
+                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">Record Rejected</span>
                             <span className="text-sm font-bold text-red-950 mt-1">
-                                RECORD REJECTED: {formData.correction_notes || 'No reason specified.'}
+                                RECORD REJECTED: {correctionMessage || 'No reason specified.'}
                             </span>
                         </div>
                     </div>
@@ -623,8 +862,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                 handleSelectSuggestion={handleSelectSuggestion}
                                 searchResults={searchResults}
                                 isSearching={isSearching}
+                                addressLookupError={addressLookupError}
+                                addressLookupWarning={addressLookupWarning}
                                 noResultsFound={noResultsFound}
                                 mapCenter={mapCenter}
+                                handleAddressSearchSubmit={handleAddressSearchSubmit}
+                                handleAddressInputChange={handleAddressInputChange}
+                                showSuggestions={showSuggestions}
                                 handleMapClick={handleMapClick}
                                 handleDragEnd={handleDragEnd}
                             />

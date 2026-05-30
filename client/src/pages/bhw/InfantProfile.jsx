@@ -1,3 +1,4 @@
+﻿import React from 'react';
 /**
  * Infant Profile Page
  * 
@@ -15,9 +16,9 @@ import {
     ChevronLeft,
     CheckCircle2,
     ShieldAlert,
-    MapPin
+    MapPin,
+    X
 } from 'lucide-react';
-import RecordVaccinationModal from '../../components/RecordVaccinationModal';
 import NipScheduleTable from '../../components/NipScheduleTable';
 import { formatDate, formatAge } from '../../utils/formatters';
 
@@ -32,9 +33,6 @@ const InfantProfile = () => {
     const [schedule, setSchedule] = useState(null);
     const [error, setError] = useState(null);
 
-    // Modal & Toast State
-    const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
-    const [selectedVaccine, setSelectedVaccine] = useState(null);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
 
     useEffect(() => {
@@ -71,12 +69,6 @@ const InfantProfile = () => {
         }
     };
 
-    const handleRecordClick = (vaccineData) => {
-        console.log('[DEBUG] handleRecordClick - standardized data:', vaccineData);
-        setSelectedVaccine(vaccineData);
-        setIsRecordModalOpen(true);
-    };
-
     const handleRecordSuccess = () => {
         fetchInfantData();
         setShowSuccessToast(true);
@@ -108,7 +100,7 @@ const InfantProfile = () => {
     if (error) return <div className="p-8 text-center text-red-500 font-medium">{error}</div>;
     if (!infant) return <div className="p-8 text-center text-gray-500 font-medium">Infant not found</div>;
 
-    const isClinicalStaff = user?.role === 'Midwife' || user?.role === 'Nurse' || user?.role === 'BHW';
+    const isClinicalStaff = false;
 
     return (
         <div className="space-y-6">
@@ -187,25 +179,10 @@ const InfantProfile = () => {
             <NipScheduleTable
                 schedule={schedule}
                 isClinicalStaff={isClinicalStaff}
-                onRecordClick={handleRecordClick}
+                onRecordClick={() => {}}
                 registrationStatus={infant.registration_status}
                 userRole={user?.role}
                 onApproveClick={handleApproveClick}
-            />
-
-            {/* Record Vaccination Modal */}
-            <RecordVaccinationModal
-                isOpen={isRecordModalOpen}
-                onClose={() => setIsRecordModalOpen(false)}
-                infant={{
-                    id: infant.id,
-                    name: infant.name,
-                    reference_id: infant.reference_id,
-                    registration_status: infant.registration_status
-                }}
-                selectedVaccine={selectedVaccine}
-                user={user}
-                onRecordSuccess={handleRecordSuccess}
             />
 
             {/* Success Toast */}

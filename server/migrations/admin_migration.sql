@@ -28,14 +28,14 @@ DEALLOCATE PREPARE alterIfNotExists;
 -- 2. Create system_audit_logs
 CREATE TABLE IF NOT EXISTS system_audit_logs (
     id VARCHAR(36) PRIMARY KEY,
-    admin_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
     action_type VARCHAR(50) NOT NULL COMMENT 'e.g. USER_CREATE, RULE_UPDATE, SYSTEM_CONFIG',
     target_entity VARCHAR(100) NOT NULL COMMENT 'Table or Feature affected',
     target_id VARCHAR(36) DEFAULT NULL,
     details JSON DEFAULT NULL,
     ip_address VARCHAR(45) DEFAULT NULL,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_admin_id (admin_id),
+    INDEX idx_user_id (user_id),
     INDEX idx_action_type (action_type),
     INDEX idx_timestamp (timestamp)
 );

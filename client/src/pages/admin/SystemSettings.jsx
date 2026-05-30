@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import {
     Settings,
@@ -349,7 +350,7 @@ const SystemSettings = () => {
                                         <div className="font-bold text-slate-900">{change.key}</div>
                                         <div className="text-slate-500">
                                             <span className="text-red-600">{change.before}</span>
-                                            {' → '}
+                                            {' â†’ '}
                                             <span className="text-emerald-600">{change.after}</span>
                                         </div>
                                     </div>

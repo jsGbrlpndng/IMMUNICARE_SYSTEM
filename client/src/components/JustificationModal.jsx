@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
@@ -146,7 +147,7 @@ const JustificationModal = ({ isOpen, onClose, onSubmit, infantName, vaccine, ov
                                 )}
                                 {isValid && (
                                     <span className="text-emerald-600 font-medium">
-                                        ✓ Valid justification
+                                        âœ“ Valid justification
                                     </span>
                                 )}
                             </div>

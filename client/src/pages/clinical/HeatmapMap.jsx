@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, memo, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Circle, Polygon, useMap, Popup, ScaleControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, GeoJSON, Polygon, useMap, Popup, ScaleControl } from 'react-leaflet';
 import L from 'leaflet';
 import { 
     Loader2,
@@ -10,6 +10,7 @@ import {
     Crosshair
 } from 'lucide-react';
 import { computeConvexHull } from '../../utils/spatialUtils';
+import { barangayBoundaryStyle } from '../../utils/barangayBoundaries';
 import 'leaflet/dist/leaflet.css';
 
 // --- CSS Override for CDSS Popup ---
@@ -38,6 +39,11 @@ const mapStyles = `
 const isValidCoordinate = (lat, lng) =>
     lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0;
 
+const toMapFloat = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
 // --- Clinical Icon Factory ---
 const createClinicalIcon = (color, urgency, computed_map_status) => {
     let html = '';
@@ -45,7 +51,7 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
     let anchor = [8, 8];
 
     // Normalize parameters in case it's a single argument call where color = urgency
-    let actualUrgency = urgency || (['defaulter', 'overdue', 'due_today', 'upcoming', 'completed', 'due_soon'].includes(color) ? color : null);
+    let actualUrgency = urgency || (['DEFAULTER', 'defaulter', 'due_today', 'upcoming', 'completed', 'due_soon'].includes(color) ? color : null);
     let actualColor = actualUrgency === color ? null : color;
 
     // Force exact matching for Leaflet marker colors based on computed_map_status.
@@ -56,14 +62,14 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
         computed_map_status === 'ON_TRACK'                             ? '#10B981' : // Green (on schedule, not yet FIC)
         computed_map_status === 'COMPLETED'                            ? '#64748B' : // Grey (Fully Immunized)
         actualColor || (
-            actualUrgency === 'defaulter'                              ? '#EF4444' :
+            actualUrgency === 'DEFAULTER' || actualUrgency === 'defaulter' ? '#EF4444' :
             actualUrgency === 'due_soon' || actualUrgency === 'due_today' ? '#F59E0B' :
             actualUrgency === 'on_track'                              ? '#10B981' :
             actualUrgency === 'completed'                             ? '#64748B' : '#94A3B8'
         );
 
-    if (computed_map_status === 'DEFAULTER' || actualUrgency === 'defaulter') {
-        // Elevated Diamond for Defaulters — high-visibility clinical alert shape
+    if (computed_map_status === 'DEFAULTER' || actualUrgency === 'DEFAULTER' || actualUrgency === 'defaulter') {
+        // Elevated diamond for defaulters.
         html = `
             <div class="flex items-center justify-center">
                 <svg width="22" height="22" viewBox="0 0 24 24" style="filter: drop-shadow(0 4px 8px rgba(239,68,68,0.6))">
@@ -221,7 +227,7 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
         {
             id: 'defaulter_group',
             statuses: ['defaulter'],
-            label: 'Defaulter / Overdue',
+            label: 'Defaulters',
             color: '#EF4444',
             icon: 'diamond',
             count: derivedCounts.total_defaulters ?? derivedCounts.mappedDefaulter ?? 0
@@ -311,29 +317,30 @@ const HeatmapMap = memo(({
     markerRefsCallback,
     activeFilters,
     setActiveFilters,
-    derivedCounts
+    derivedCounts,
+    barangayBoundaryData
 }) => {
     const validMarkers = useMemo(() => {
         return (allMarkersForMode || []).map(pt => {
             const coords = normalizeCoords(pt);
-            return { ...pt, displayLat: coords.lat, displayLng: coords.lng };
+            return { ...pt, displayLat: toMapFloat(coords.lat), displayLng: toMapFloat(coords.lng) };
         }).filter(pt => isValidCoordinate(pt.displayLat, pt.displayLng));
     }, [allMarkersForMode, normalizeCoords]);
 
     const validClusters = useMemo(() => {
-        return (mapState?.clusters || []).filter(c => isValidCoordinate(c.lat, c.lng));
+        return (mapState?.clusters || [])
+            .map(cluster => ({
+                ...cluster,
+                lat: toMapFloat(cluster.lat),
+                lng: toMapFloat(cluster.lng),
+                points: (cluster.points || []).map(point => ({
+                    ...point,
+                    lat: toMapFloat(point.lat),
+                    lng: toMapFloat(point.lng)
+                }))
+            }))
+            .filter(c => isValidCoordinate(c.lat, c.lng));
     }, [mapState?.clusters]);
-
-    // Noise points in cluster mode (single cases outside any cluster)
-    const noisePoints = useMemo(() => {
-        if (mode !== 'priority') return [];
-        const clusterPointIds = new Set(
-            (mapState?.clusters || []).flatMap(c => (c.points || []).map(p => p.id))
-        );
-        return (mapState?.noise || [])
-            .filter(pt => !clusterPointIds.has(pt.id) && isValidCoordinate(pt.lat, pt.lng))
-            .filter(pt => (activeFilters?.statuses || []).includes(pt.urgency));
-    }, [mode, mapState, activeFilters]);
 
     // Collect marker refs so parent can open a popup imperatively
     const markerRefs = useRef({});
@@ -355,16 +362,11 @@ const HeatmapMap = memo(({
             let statusColor = '#64748b';
             let actionText = 'Routine Clinical Follow-Up';
 
-            if (pt.urgency === 'defaulter') {
+            if (pt.urgency === 'defaulter' || pt.computed_map_status === 'DEFAULTER') {
                 statusLabel = 'Defaulter';
                 statusColor = '#e11d48';
                 const vaccine = doseCount > 0 ? (pt.vaccination_needs[0].vaccine_name || pt.vaccination_needs[0].vaccine_code) : null;
                 actionText = vaccine ? `Urgent: Administer ${vaccine}` : 'Urgent Follow-Up Required';
-            } else if (pt.urgency === 'overdue') {
-                statusLabel = 'Overdue';
-                statusColor = '#e11d48';
-                const vaccine = doseCount > 0 ? (pt.vaccination_needs[0].vaccine_name || pt.vaccination_needs[0].vaccine_code) : null;
-                actionText = vaccine ? `Administer ${vaccine}` : 'Follow-Up Required';
             } else if (pt.urgency === 'due_today' || pt.urgency === 'due_soon') {
                 statusLabel = 'Due Soon';
                 statusColor = '#d97706';
@@ -386,7 +388,7 @@ const HeatmapMap = memo(({
                     ref={(r) => collectRef(pt.id, r)}
                     position={[pt.displayLat, pt.displayLng]}
                     icon={createClinicalIcon(pt.marker_color, pt.urgency, pt.computed_map_status)}
-                    zIndexOffset={pt.computed_map_status === 'DEFAULTER' || pt.urgency === 'defaulter' ? 5000 : (pt.computed_map_status === 'DUE_SOON' || pt.urgency === 'overdue' ? 4000 : 1000)}
+                    zIndexOffset={pt.computed_map_status === 'DEFAULTER' || pt.urgency === 'defaulter' ? 5000 : (pt.computed_map_status === 'DUE_SOON' ? 4000 : 1000)}
                     eventHandlers={{
                         click: () => setSelectedInfantId(pt.id)
                     }}
@@ -500,6 +502,14 @@ const HeatmapMap = memo(({
 
                     <ScaleControl position="bottomleft" />
 
+                    {barangayBoundaryData && (
+                        <GeoJSON
+                            key="barangay-boundary"
+                            data={barangayBoundaryData}
+                            style={barangayBoundaryStyle}
+                        />
+                    )}
+
                     {/* Priority Area Polygons + Area Labels */}
                     {mode === 'priority' && validClusters.map((cluster, i) => {
                         const hullPoints = computeConvexHull(cluster.points || []);
@@ -510,70 +520,16 @@ const HeatmapMap = memo(({
 
                         return (
                             <React.Fragment key={`hotspot-${i}`}>
-                                {hullPoints.length >= 3 ? (
+                                {hullPoints.length >= 3 && (
                                     <Polygon
                                         positions={hullPoints}
                                         pathOptions={{ color, fillColor: color, fillOpacity: 0.08, weight: 2, dashArray: '8, 6' }}
                                     />
-                                ) : (
-                                    <Circle
-                                        center={[cluster.lat, cluster.lng]}
-                                        radius={70}
-                                        pathOptions={{ color, fillColor: color, fillOpacity: 0.08, weight: 2, dashArray: '8, 6' }}
-                                    />
                                 )}
 
-                                {/* Rank label pinned to the GEOMETRIC center of the hull, not the medoid */}
-                                {(() => {
-                                    const labelPos = hullPoints.length >= 3
-                                        ? computeHullCentroid(hullPoints)
-                                        : { lat: cluster.lat, lng: cluster.lng };
-                                    if (!labelPos) return null;
-                                    return (
-                                        <Marker
-                                            position={[labelPos.lat, labelPos.lng]}
-                                            icon={createCentroidIcon(cluster.rank)}
-                                            zIndexOffset={3000}
-                                            interactive={false}
-                                        />
-                                    );
-                                })()}
                             </React.Fragment>
                         );
                     })}
-
-                    {/* Noise / isolated-case markers in priority mode */}
-                    {mode === 'priority' && noisePoints.map(pt => (
-                        <Marker
-                            key={`noise-${pt.id}`}
-                            position={[pt.lat, pt.lng]}
-                            icon={createClinicalIcon(pt.urgency)}
-                            zIndexOffset={2000}
-                        >
-                            <Popup className="clinical-cdss-popup" closeButton={false}>
-                                <div style={{ width: 260, background: '#fff', fontFamily: 'system-ui,sans-serif' }}>
-                                    <div style={{ padding: '10px 12px', borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                                            <span style={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>{pt.patient_name}</span>
-                                            <span style={{ fontSize: 9, fontWeight: 800, color: '#e11d48', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Isolated Case</span>
-                                        </div>
-                                        <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Outside priority area · Direct follow-up</div>
-                                    </div>
-                                    <div style={{ padding: '8px 12px' }}>
-                                        <p style={{ fontSize: 11, color: '#475569', fontWeight: 600, margin: 0 }}>
-                                            {(pt.vaccination_needs || []).length} dose{(pt.vaccination_needs || []).length !== 1 ? 's' : ''} pending
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={() => window.location.href = `/clinical/infants/${pt.id}`}
-                                        style={{ width: '100%', padding: '9px 12px', background: '#047857', color: '#fff', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', cursor: 'pointer' }}
-                                    >
-                                        View Profile →
-                                    </button>
-                                </div>
-                            </Popup>
-                        </Marker>
-                    ))}
 
                     {renderedMarkers}
                 </MapContainer>

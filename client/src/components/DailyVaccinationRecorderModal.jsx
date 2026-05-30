@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Search, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -5,8 +6,8 @@ import apiClient from '../services/apiClient';
 
 // Philippine NIP Vaccine List (14 vaccines)
 const PHILIPPINE_NIP_VACCINES = [
-  { code: 'BCG', name: 'BCG (Bacillus Calmette-Guérin)', group: 'At Birth', doseNumber: 1 },
-  { code: 'HEPB', name: 'Hepatitis B (birth dose)', group: 'At Birth', doseNumber: 1 },
+  { code: 'BCG', name: 'BCG (Bacillus Calmette-GuÃ©rin)', group: 'At Birth', doseNumber: 1 },
+  { code: 'HEPB', name: 'Hepatitis B Birth Dose', group: 'At Birth', doseNumber: 1 },
   { code: 'PENTA-1', name: 'Pentavalent Dose 1', group: '6 Weeks', doseNumber: 1 },
   { code: 'OPV-1', name: 'OPV Dose 1 (Oral Polio Vaccine)', group: '6 Weeks', doseNumber: 1 },
   { code: 'PCV-1', name: 'PCV Dose 1 (Pneumococcal Conjugate)', group: '6 Weeks', doseNumber: 1 },
@@ -16,9 +17,10 @@ const PHILIPPINE_NIP_VACCINES = [
   { code: 'PENTA-3', name: 'Pentavalent Dose 3', group: '14 Weeks', doseNumber: 3 },
   { code: 'OPV-3', name: 'OPV Dose 3 (Oral Polio Vaccine)', group: '14 Weeks', doseNumber: 3 },
   { code: 'PCV-3', name: 'PCV Dose 3 (Pneumococcal Conjugate)', group: '14 Weeks', doseNumber: 3 },
-  { code: 'IPV', name: 'IPV (Inactivated Polio Vaccine)', group: '14 Weeks', doseNumber: 1 },
-  { code: 'MMR-1', name: 'MMR Dose 1 (Measles, Mumps, Rubella)', group: '9-12 Months', doseNumber: 1 },
-  { code: 'MMR-2', name: 'MMR Dose 2 (Measles, Mumps, Rubella)', group: '9-12 Months', doseNumber: 2 }
+  { code: 'IPV-1', name: 'IPV 1 (Inactivated Polio Vaccine)', group: '14 Weeks', doseNumber: 1 },
+  { code: 'IPV-2', name: 'IPV 2 (Inactivated Polio Vaccine)', group: '9-12 Months', doseNumber: 2 },
+  { code: 'MCV-1', name: 'Measles 1 (MCV1)', group: '9-12 Months', doseNumber: 1 },
+  { code: 'MCV-2', name: 'Measles 2 (MCV2)', group: '9-12 Months', doseNumber: 2 }
 ];
 
 // Group vaccines by schedule timing
@@ -68,9 +70,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
     
     setLoadingInfants(true);
     try {
-      const response = await apiClient.get('/infants?status=approved', {
-        headers: { 'x-user-id': user.id }
-      });
+      const response = await apiClient.get('/infants?status=APPROVED');
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -174,9 +174,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
           recorded_by: user.id
         };
 
-        const response = await apiClient.post('/vaccinations', vaccinationData, {
-          headers: { 'x-user-id': user.id }
-        });
+        const response = await apiClient.post('/vaccinations', vaccinationData);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -330,7 +328,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
         <div className="px-8 py-6 border-b border-slate-200 bg-gradient-to-r from-pink-50 to-slate-50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-2xl font-bold text-slate-900">📋 Record Daily Vaccinations</h3>
+              <h3 className="text-2xl font-bold text-slate-900">ðŸ“‹ Record Daily Vaccinations</h3>
               <p className="text-sm text-slate-600 mt-1">
                 Step {currentStep} of 4: {getStepTitle()}
               </p>
@@ -366,7 +364,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="🔍 Search by infant name, ID, or mother's name..."
+                  placeholder="ðŸ” Search by infant name, ID, or mother's name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:border-pink-500 focus:ring-4 focus:ring-pink-500/10 transition-all outline-none"
@@ -407,7 +405,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                           {infant.first_name} {infant.last_name}
                         </p>
                         <p className="text-sm text-slate-500">
-                          {infant.reference_id} • {calculateAge(infant.dob)} • {infant.sex === 'M' ? 'Male' : 'Female'}
+                          {infant.reference_id} â€¢ {calculateAge(infant.dob)} â€¢ {infant.sex === 'M' ? 'Male' : 'Female'}
                         </p>
                             {(infant.mothers_maiden_name || infant.mother_name) && (
                           <p className="text-xs text-slate-400 mt-0.5">
@@ -464,7 +462,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                         <div className="flex-1">
                           <p className="font-bold text-slate-900">{vaccine.name}</p>
                           <p className="text-sm text-slate-500">
-                            Code: {vaccine.code} • Given at: {vaccine.group}
+                            Code: {vaccine.code} â€¢ Given at: {vaccine.group}
                           </p>
                         </div>
                       </label>
@@ -567,7 +565,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
               {/* Summary Card */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
                 <h3 className="font-bold text-blue-900 mb-4 flex items-center">
-                  📋 Vaccination Summary
+                  ðŸ“‹ Vaccination Summary
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
@@ -631,7 +629,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
               {/* Warning Message */}
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
                 <p className="text-sm text-yellow-800 flex items-start">
-                  <span className="mr-2">⚠️</span>
+                  <span className="mr-2">âš ï¸</span>
                   <span>
                     This will create <strong>{selectedInfantIds.length} vaccination record{selectedInfantIds.length !== 1 ? 's' : ''}</strong>.
                     The infant profiles will be updated immediately and cannot be undone.
@@ -684,7 +682,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                   disabled={submitting}
                   className="bg-green-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
-                  {submitting ? 'Saving...' : '✅ Save All Records'}
+                  {submitting ? 'Saving...' : 'âœ… Save All Records'}
                 </button>
               )}
             </div>

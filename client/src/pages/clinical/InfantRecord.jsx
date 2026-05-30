@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -23,7 +24,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import RecordVaccinationModal from '../../components/RecordVaccinationModal';
 
 /**
- * InfantRecord – High-density clinical patient profile.
+ * InfantRecord - High-density clinical patient profile.
  * Provides real-time NIP tracking and Dose Recording capabilities.
  */
 export default function InfantRecord() {
@@ -56,6 +57,7 @@ export default function InfantRecord() {
     }, [fetchRecord]);
 
     const handleRecordDose = (dose) => {
+        if (user?.role === 'BHW' || data?.infant?.status === 'Archived') return;
         setSelectedDose(dose);
         setShowRecordModal(true);
     };
@@ -83,8 +85,10 @@ export default function InfantRecord() {
     );
 
     const { infant, record, summary, age_metrics } = data;
-    const isOverdue = (summary.defaulter || summary.overdue) > 0;
+    const isOverdue = (summary.defaulter || summary.DEFAULTED || summary.overdue) > 0;
     const isFullyImmunized = summary.completed === summary.total_doses;
+    const isArchived = infant?.status === 'Archived';
+    const isBhw = user?.role === 'BHW';
 
     return (
         <div className="flex flex-col gap-8 pb-20">
@@ -116,7 +120,7 @@ export default function InfantRecord() {
                                 </span>
                             ) : isOverdue ? (
                                 <span className="bg-red-50 text-red-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-100 flex items-center gap-1.5 shadow-sm">
-                                    <AlertCircle size={12} /> Defaulter ({summary.defaulter || summary.overdue})
+                                    <AlertCircle size={12} /> DEFAULTER ({summary.defaulter || summary.DEFAULTED || summary.overdue})
                                 </span>
                             ) : summary.due_today > 0 ? (
                                 <span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-orange-100 flex items-center gap-1.5 shadow-sm">
@@ -147,6 +151,15 @@ export default function InfantRecord() {
                 </div>
             </div>
 
+            {isArchived && (
+                <div className="border border-slate-200 bg-slate-100 px-5 py-4 text-slate-900">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-600">Archived Record</div>
+                    <p className="mt-1 text-sm font-bold leading-6">
+                        ARCHIVED RECORD: {infant?.archive_reason || 'No reason recorded'} - {infant?.archive_notes || 'No archive notes recorded.'}
+                    </p>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* 2. DEMOGRAPHICS & SPATIAL PANEL */}
                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -175,7 +188,7 @@ export default function InfantRecord() {
                                      {infant.exact_address || 'No Registered Street Address'}
                                 </span>
                                 <span className="text-[10px] text-slate-500 font-bold uppercase mt-1 block tracking-tight">
-                                    {infant.landmark || 'No Landmark Recorded'} • Subdiv/Purok Not Defined
+                                    {infant.landmark || 'No Landmark Recorded'} &bull; Subdiv/Purok Not Defined
                                 </span>
                                 <span className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-1.5 block">Verified Geographic Node</span>
                             </div>
@@ -242,9 +255,9 @@ export default function InfantRecord() {
                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Completed</span>
                             <div className="text-2xl font-black mt-1 text-slate-800">{summary.completed} <span className="text-xs text-slate-400">/ {summary.total_doses}</span></div>
                         </div>
-                        <div className={`p-4 rounded-2xl border ${(summary.defaulter || summary.overdue) > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Defaulter</span>
-                            <div className={`text-2xl font-black mt-1 ${(summary.defaulter || summary.overdue) > 0 ? 'text-red-600' : 'text-slate-800'}`}>{summary.defaulter || summary.overdue}</div>
+                        <div className={`p-4 rounded-2xl border ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">DEFAULTER</span>
+                            <div className={`text-2xl font-black mt-1 ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'text-red-600' : 'text-slate-800'}`}>{summary.defaulter || summary.DEFAULTED || summary.overdue}</div>
                         </div>
                         <div className="col-span-2 bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50 flex items-center justify-between">
                             <div>
@@ -292,7 +305,8 @@ export default function InfantRecord() {
                         </thead>
                         <tbody className="divide-y divide-slate-50 uppercase text-[11px] font-bold">
                             {data.record.map((vax, idx) => {
-                                const isOverdueRow = vax.original_schedule_status === 'OVERDUE' || vax.original_schedule_status === 'DEFAULTER' || vax.original_schedule_status === 'DROPOUT';
+                                const isOverdueRow = ['DEFAULTER', 'DEFAULTED', 'OVERDUE'].includes(vax.original_schedule_status);
+                                const isIneligibleRow = vax.original_schedule_status === 'INELIGIBLE';
                                 const isCompletedRow = vax.status === 'COMPLETED_VALIDATED';
                                 const isPendingRow = vax.status === 'PENDING_VALIDATION';
                                 
@@ -300,10 +314,11 @@ export default function InfantRecord() {
                                 const isPremature = vax.actual_date && vax.earliest_allowed_date && 
                                                    new Date(vax.actual_date) < new Date(vax.earliest_allowed_date);
 
-                                const rowBg = vax.original_schedule_status === 'DEFAULTER' || vax.original_schedule_status === 'DROPOUT' ? 'bg-red-100/40' :
+                                const rowBg = ['DEFAULTER', 'DEFAULTED'].includes(vax.original_schedule_status) ? 'bg-red-100/40' :
                                               isOverdueRow ? 'bg-red-50/30' : 
                                               vax.original_schedule_status === 'DUE_TODAY' ? 'bg-orange-50/30' : 
                                               vax.original_schedule_status === 'DUE_SOON' ? 'bg-amber-50/20' : 
+                                              isIneligibleRow ? 'bg-slate-50' :
                                               isCompletedRow ? 'bg-emerald-50/10' : '';
 
                                 return (
@@ -311,7 +326,7 @@ export default function InfantRecord() {
                                         <td className="px-6 py-4">
                                             <div className="text-slate-800 font-black">{vax.vaccine_name}</div>
                                             <div className="text-[9px] text-slate-400 tracking-widest flex items-center gap-1 mt-0.5">
-                                                {vax.vaccine_code} • DOSE {vax.dose_number}
+                                                {vax.vaccine_code} &bull; DOSE {vax.dose_number}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-slate-500 font-medium">
@@ -330,6 +345,8 @@ export default function InfantRecord() {
                                                 <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={12} /> COMPLETED</span>
                                             ) : isPendingRow ? (
                                                 <span className="text-amber-500 flex items-center gap-1"><Clock size={12} /> PENDING VALIDATION</span>
+                                            ) : isIneligibleRow ? (
+                                                <span className="text-slate-500 flex items-center gap-1"><AlertCircle size={12} /> INELIGIBLE</span>
                                             ) : isOverdueRow ? (
                                                 <span className="text-red-600 flex items-center gap-1"><AlertCircle size={12} /> {vax.original_schedule_status}</span>
                                             ) : (
@@ -337,15 +354,24 @@ export default function InfantRecord() {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-slate-500">
-                                            {vax.actual_date ? new Date(vax.actual_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                                            {vax.actual_date ? new Date(vax.actual_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            {isCompletedRow || isPendingRow ? (
+                                            {isIneligibleRow ? (
+                                                <div className="flex items-center justify-end gap-2 text-slate-400">
+                                                    <span className="text-[9px] font-black uppercase tracking-widest italic">Not Clinically Eligible</span>
+                                                    <AlertCircle size={14} className="text-slate-400" />
+                                                </div>
+                                            ) : isCompletedRow || isPendingRow ? (
                                                 <div className="flex items-center justify-end gap-2 text-slate-400">
                                                     <span className="text-[9px] font-black uppercase tracking-widest italic">Record Finalized</span>
                                                     <ShieldCheck size={14} className="text-emerald-600/50" />
                                                 </div>
-                                            ) : user?.role === 'BHW' ? (
+                                            ) : isArchived ? (
+                                                <div className="flex items-center justify-end text-slate-400 pr-2">
+                                                    <span className="text-[9px] font-black uppercase tracking-widest italic">Archived Read-Only</span>
+                                                </div>
+                                            ) : isBhw ? (
                                                 <div className="flex items-center justify-end text-slate-400 pr-2">
                                                     <span className="text-[9px] font-black uppercase tracking-widest italic">Read-Only</span>
                                                 </div>
@@ -371,7 +397,7 @@ export default function InfantRecord() {
             </div>
 
             {/* RECORD DOSE MODAL */}
-            {showRecordModal && selectedDose && (
+            {!isBhw && !isArchived && showRecordModal && selectedDose && (
                 <RecordVaccinationModal
                     isOpen={showRecordModal}
                     onClose={() => {

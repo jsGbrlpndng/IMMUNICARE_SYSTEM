@@ -16,14 +16,105 @@ const VACCINATION_ERRORS = {
 
 const toDateOnlyString = (value) => {
     if (!value) return null;
-    const raw = value instanceof Date ? value.toISOString() : value.toString();
+    if (value instanceof Date) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    const raw = value.toString().trim();
     const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
     if (isoMatch) return isoMatch[1];
 
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().split('T')[0];
+    return toDateOnlyString(parsed);
 };
+
+const dateStringToDayNumber = (dateString) => {
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return Date.UTC(year, month - 1, day) / 86400000;
+};
+
+const getDoseSeriesKey = (vaccineCode) => {
+    const match = String(vaccineCode || '').toUpperCase().match(/^(.+?)-?(\d+)$/);
+    if (!match) return null;
+    return {
+        prefix: match[1].replace(/[-_\s]+$/g, ''),
+        dose: parseInt(match[2], 10)
+    };
+};
+
+const sameDoseSeries = (leftCode, rightCode) => {
+    const left = getDoseSeriesKey(leftCode);
+    const right = getDoseSeriesKey(rightCode);
+    return !!left && !!right && left.prefix === right.prefix;
+};
+
+const addDaysToDateString = (dateString, days) => {
+    const date = new Date(`${dateString}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+};
+
+const DOH_MIN_INTERVAL_GRACE_DAYS = 4;
+
+const getGraceAdjustedIntervalDays = (minIntervalDays) => {
+    const strictDays = Number(minIntervalDays || 0);
+    if (!strictDays) return 0;
+    return Math.max(strictDays - DOH_MIN_INTERVAL_GRACE_DAYS, 0);
+};
+
+const FIC_REQUIRED_CODES = ['BCG', 'HEPB', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'MCV-1'];
+const CIC_REQUIRED_NON_BIRTH_CODES = ['BCG', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'MCV-1'];
+const CATCH_UP_MAX_MONTHS = 60;
+
+const isRoutineCatchUpVaccine = (vaccineCode) => {
+    const normalized = String(vaccineCode || '').toUpperCase().replace(/[_\s]+/g, '-');
+    return /^(PENTA|OPV|PCV|IPV|MCV|MEASLES)/.test(normalized);
+};
+
+const canonicalPrimaryCode = (vaccineCode, vaccineName, doseNumber) => {
+    const raw = `${vaccineCode || ''} ${vaccineName || ''}`.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const embeddedDose = raw.match(/(?:PENTA|OPV|MCV|MEASLES)(\d)/)?.[1];
+    const dose = Number(doseNumber || embeddedDose || 1);
+
+    if (raw.includes('BCG')) return 'BCG';
+    if (raw.includes('HEPB') || raw.includes('HEPATITISB')) return 'HEPB';
+    if (raw.includes('PENTA')) return `PENTA-${dose}`;
+    if (raw.includes('OPV') || raw.includes('ORALPOLIO')) return `OPV-${dose}`;
+    if (raw.includes('MCV') || raw.includes('MEASLES')) return `MCV-${dose}`;
+    return null;
+};
+
+const addMonthsToDateString = (dateString, months) => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    date.setUTCMonth(date.getUTCMonth() + months);
+    return date.toISOString().slice(0, 10);
+};
+
+const classifyWithin24HoursStatus = (administeredDate, dob) => {
+    const administered = new Date(administeredDate);
+    const birth = new Date(dob);
+    if (Number.isNaN(administered.getTime()) || Number.isNaN(birth.getTime())) {
+        return 'Given';
+    }
+
+    const hoursAfterBirth = (administered.getTime() - birth.getTime()) / (1000 * 60 * 60);
+    return hoursAfterBirth >= 0 && hoursAfterBirth <= 24
+        ? 'Given within 24 hours'
+        : 'Given more than 24 hours';
+};
+
+const clinicalViolation = (message, code = 'CLINICAL_RULE_VIOLATION') => ({
+    valid: false,
+    error: `CLINICAL VIOLATION: ${message}`,
+    code
+});
 
 class VaccinationService {
     static ERRORS = VACCINATION_ERRORS;
@@ -80,6 +171,17 @@ class VaccinationService {
                     dose_number: parseInt(vaccinationData.dose_number, 10)
                 };
             }
+            if (!Number.isInteger(vaccinationData.dose_number)) {
+                const err = new Error(VACCINATION_ERRORS.MISSING_FIELD('dose_number'));
+                err.code = 'INVALID_DOSE_NUMBER';
+                throw err;
+            }
+
+            if (vaccinationData.recorded_by_role === ROLES.BHW) {
+                const err = new Error('GOVERNANCE ERROR: BHW users are not authorized to record or edit vaccination doses.');
+                err.code = 'BHW_DOSE_MUTATION_FORBIDDEN';
+                throw err;
+            }
 
             const validation = await this.validateVaccination(vaccinationData, connection);
             if (!validation.valid) {
@@ -90,7 +192,9 @@ class VaccinationService {
 
             const vaccinationId = uuidv4();
             const now = new Date();
-            const isEarlyOverride = !!vaccinationData.override_early_dose;
+            const scheduleEntry = validation.scheduleEntry;
+            const administeredDate = vaccinationData.administered_date || now;
+            const scheduleId = vaccinationData.schedule_id || scheduleEntry?.id || null;
 
             const insertQuery = `
                 INSERT INTO vaccinations (
@@ -105,7 +209,7 @@ class VaccinationService {
             await connection.execute(insertQuery, [
                 vaccinationId,
                 vaccinationData.infant_id,
-                vaccinationData.schedule_id || null,
+                scheduleId,
                 vaccinationData.vaccine_name,
                 vaccinationData.vaccine_code,
                 vaccinationData.dose_number,
@@ -114,25 +218,43 @@ class VaccinationService {
                 vaccinationData.site_of_injection,
                 vaccinationData.vaccinator_id,
                 vaccinationData.vaccinator_name,
-                vaccinationData.administered_date || now,
+                administeredDate,
                 vaccinationData.notes || null,
                 vaccinationData.validation_status || 'PENDING_VALIDATION',
-                isEarlyOverride,
+                false,
                 vaccinationData.recorded_by || vaccinationData.vaccinator_id,
                 vaccinationData.recorded_by_role || 'BHW',
                 now
             ]);
 
-            const isValidated = vaccinationData.validation_status === 'VALIDATED';
             await this.nipScheduleService.recordVaccination(
                 vaccinationData.infant_id,
                 vaccinationData.vaccine_code,
                 vaccinationData.dose_number,
-                vaccinationData.administered_date || now,
+                administeredDate,
                 connection,
-                vaccinationData.schedule_id,
-                isValidated
+                scheduleId,
+                vaccinationData.validation_status === 'VALIDATED'
             );
+
+            if (
+                String(vaccinationData.vaccine_code || '').toUpperCase() === 'BCG' &&
+                (vaccinationData.validation_status || 'PENDING_VALIDATION') === 'VALIDATED'
+            ) {
+                const [infantRows] = await connection.execute(
+                    'SELECT dob FROM infants WHERE id = ?',
+                    [vaccinationData.infant_id]
+                );
+                const bcgStatus = classifyWithin24HoursStatus(administeredDate, infantRows[0]?.dob);
+                await connection.execute(
+                    'UPDATE infants SET bcg_status = ?, bcg_date = ? WHERE id = ?',
+                    [bcgStatus, toDateOnlyString(administeredDate), vaccinationData.infant_id]
+                );
+            }
+
+            if ((vaccinationData.validation_status || 'PENDING_VALIDATION') === 'VALIDATED') {
+                await this.updateInfantImmunizationStatus(vaccinationData.infant_id, connection);
+            }
 
             if (shouldManageTransaction) {
                 await connection.commit();
@@ -149,6 +271,14 @@ class VaccinationService {
             if (shouldManageTransaction) {
                 await connection.rollback();
             }
+            console.error('[VaccinationService.recordVaccination] Database transaction failed:', {
+                message: error.message,
+                code: error.code,
+                detail: error.detail,
+                constraint: error.constraint,
+                table: error.table,
+                column: error.column
+            });
             throw error;
         } finally {
             if (shouldManageTransaction) {
@@ -204,6 +334,8 @@ class VaccinationService {
                 vaccination.schedule_id
             );
 
+            await this.updateInfantImmunizationStatus(vaccination.infant_id, connection);
+
             await connection.commit();
             await this.computeNextDose(vaccination.infant_id);
             return { success: true, message: 'Dose validated successfully' };
@@ -238,6 +370,8 @@ class VaccinationService {
             }
         }
 
+        await this.nipScheduleService.updateScheduleStatuses(vaccinationData.infant_id, db);
+
         // Check if infant exists and has been approved
         const [infants] = await db.execute(
             'SELECT id, dob, registration_status FROM infants WHERE id = ?',
@@ -266,13 +400,8 @@ class VaccinationService {
         }
 
         // Validate dates
-        const administeredDate = vaccinationData.administered_date ? new Date(vaccinationData.administered_date) : new Date();
-        administeredDate.setHours(0, 0, 0, 0);
-        const administeredDateString = toDateOnlyString(vaccinationData.administered_date || administeredDate);
-
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const todayString = toDateOnlyString(now);
+        const administeredDateString = toDateOnlyString(vaccinationData.administered_date || new Date());
+        const todayString = toDateOnlyString(new Date());
 
         if (!administeredDateString || administeredDateString > todayString) {
             return {
@@ -337,40 +466,103 @@ class VaccinationService {
             };
         }
 
-        // Validate interval using strict WHO Grace Period / Hard Stop Math
-        const dueDate = new Date(scheduleEntry.recommended_date);
-        administeredDate.setHours(0, 0, 0, 0);
-        dueDate.setHours(0, 0, 0, 0);
+        if (scheduleEntry.status === 'INELIGIBLE') {
+            return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} is marked ineligible in the NIP schedule and cannot be administered.`, 'INELIGIBLE_DOSE');
+        }
 
-        const diffDays = Math.round((administeredDate - dueDate) / (1000 * 60 * 60 * 24));
+        if (scheduleEntry.status === 'PENDING_VALIDATION') {
+            return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} is already pending validation and cannot be recorded again.`, 'PENDING_VALIDATION_EXISTS');
+        }
 
-        if (diffDays <= -5) {
-            // Hard Stop condition: 5 or more days early
-            // Check for override
-            if (vaccinationData.override_early_dose === true) {
-                // RBAC Check: Admins/Head Nurses, Midwives, and Super Admins can authorize early-dose overrides.
-                const allowedRoles = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.SUPER_ADMIN];
-                if (!allowedRoles.includes(vaccinationData.recorded_by_role)) {
-                    return {
-                        valid: false,
-                        error: `GOVERNANCE ERROR: Only Admins, Midwives, and Super Admins can authorize early-dose overrides. Current role: ${vaccinationData.recorded_by_role}`,
-                        field: 'administered_date'
-                    };
-                }
-                // Allowed with override
-                console.log(`[VaccinationService] Early dose override authorized by ${vaccinationData.recorded_by_role} for ${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number}`);
-            } else {
-                return {
-                    valid: false,
-                    error: `INVALID: Minimum interval not met. Early administration destroys immunity. Action blocked. (Due: ${dueDate.toISOString().split('T')[0]})`,
-                    field: 'administered_date'
-                };
+        const administeredDayNumber = dateStringToDayNumber(administeredDateString);
+        const dobDayNumber = dateStringToDayNumber(dobString);
+        const ageInDays = administeredDayNumber !== null && dobDayNumber !== null
+            ? administeredDayNumber - dobDayNumber
+            : null;
+
+        if (String(scheduleEntry.vaccine_code || '').toUpperCase() === 'HEPB' && ageInDays !== null && ageInDays > 0) {
+            return clinicalViolation('Hepatitis B Birth Dose must be administered within 24 hours of birth. This dose is expired and must remain ineligible.', 'HEPB_BIRTH_DOSE_EXPIRED');
+        }
+
+        const ruleRows = await this.nipScheduleService.getActiveRules(db);
+        const activeRule = ruleRows.find(rule =>
+            String(rule.vaccine_code).toUpperCase() === String(scheduleEntry.vaccine_code).toUpperCase()
+        );
+
+        const minIntervalDays = Number(activeRule?.min_interval_days || 0);
+        const graceAdjustedIntervalDays = getGraceAdjustedIntervalDays(minIntervalDays);
+        const scheduleSeries = getDoseSeriesKey(scheduleEntry.vaccine_code);
+
+        const earliestAllowedDateString = toDateOnlyString(scheduleEntry.earliest_allowed_date || scheduleEntry.recommended_date);
+        const graceAdjustedEarliestDateString = activeRule?.min_interval_days && earliestAllowedDateString
+            ? addDaysToDateString(earliestAllowedDateString, -DOH_MIN_INTERVAL_GRACE_DAYS)
+            : earliestAllowedDateString;
+        if (graceAdjustedEarliestDateString && administeredDateString < graceAdjustedEarliestDateString) {
+            return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} cannot be administered before ${graceAdjustedEarliestDateString}.`, 'EARLIEST_ALLOWED_DATE_NOT_MET');
+        }
+
+        const latestAllowedDateString = isRoutineCatchUpVaccine(scheduleEntry.vaccine_code)
+            ? addMonthsToDateString(dobString, CATCH_UP_MAX_MONTHS)
+            : toDateOnlyString(scheduleEntry.latest_allowed_date);
+        if (latestAllowedDateString && administeredDateString > latestAllowedDateString) {
+            return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} expired after ${latestAllowedDateString}.`, 'LATEST_ALLOWED_DATE_EXPIRED');
+        }
+
+        if (activeRule && ageInDays !== null) {
+            const effectiveMinAgeDays = activeRule.min_interval_days
+                ? Math.max(Number(activeRule.min_age_days) - DOH_MIN_INTERVAL_GRACE_DAYS, 0)
+                : Number(activeRule.min_age_days);
+            if (Number.isFinite(effectiveMinAgeDays) && ageInDays < effectiveMinAgeDays) {
+                return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} requires minimum age of ${effectiveMinAgeDays} days.`, 'MINIMUM_AGE_NOT_MET');
+            }
+
+            const enforceRuleMaxAge = !isRoutineCatchUpVaccine(scheduleEntry.vaccine_code);
+            if (enforceRuleMaxAge && activeRule.max_age_days !== null && activeRule.max_age_days !== undefined && ageInDays > activeRule.max_age_days) {
+                return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} exceeded maximum age of ${activeRule.max_age_days} days.`, 'MAXIMUM_AGE_EXPIRED');
             }
         }
-        // diffDays >= -4 && diffDays <= -1 is Grace Period (Valid unconditionally)
-        // diffDays >= 0 is standard Valid (At or past due date)
 
-        return { valid: true };
+        if (scheduleSeries && scheduleSeries.dose > 1 && minIntervalDays > 0) {
+            const [previousRows] = await db.execute(
+                `
+                SELECT vaccine_code, dose_number, actual_date, recommended_date
+                FROM infant_schedules
+                WHERE infant_id = ?
+                  AND status = 'COMPLETED'
+                  AND actual_date IS NOT NULL
+                ORDER BY dose_number DESC, actual_date DESC
+                `,
+                [vaccinationData.infant_id]
+            );
+
+            const previousDose = previousRows.find(row =>
+                sameDoseSeries(row.vaccine_code, scheduleEntry.vaccine_code) &&
+                Number(row.dose_number) === Number(vaccinationData.dose_number) - 1
+            );
+
+            if (!previousDose) {
+                return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} requires the previous dose in the series before administration.`, 'PREVIOUS_DOSE_REQUIRED');
+            }
+
+            const previousActualDateString = toDateOnlyString(previousDose.actual_date);
+            const intervalAllowedDate = addDaysToDateString(previousActualDateString, graceAdjustedIntervalDays);
+            if (administeredDateString < intervalAllowedDate) {
+                return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} requires a minimum ${graceAdjustedIntervalDays}-day interval after the previous dose. Earliest allowed date is ${intervalAllowedDate}.`, 'MINIMUM_INTERVAL_NOT_MET');
+            }
+        }
+
+        const dueDateString = toDateOnlyString(scheduleEntry.recommended_date);
+        const dueDayNumber = dateStringToDayNumber(dueDateString);
+        const diffDays = administeredDayNumber !== null && dueDayNumber !== null
+            ? administeredDayNumber - dueDayNumber
+            : 0;
+
+        const recommendedGraceDays = activeRule?.min_interval_days ? DOH_MIN_INTERVAL_GRACE_DAYS : 0;
+        if (diffDays < -recommendedGraceDays) {
+            return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} cannot be administered before its recommended date ${dueDateString}.`, 'RECOMMENDED_DATE_NOT_MET');
+        }
+
+        return { valid: true, scheduleEntry };
     }
 
     /**
@@ -407,7 +599,17 @@ class VaccinationService {
                 };
             }
 
-            if (rule.max_age_days && ageInDays > rule.max_age_days) {
+            if (isRoutineCatchUpVaccine(vaccineCode)) {
+                const latestAllowedDate = addMonthsToDateString(toDateOnlyString(dob), CATCH_UP_MAX_MONTHS);
+                const administeredDateString = toDateOnlyString(administeredDate);
+                if (administeredDateString > latestAllowedDate) {
+                    return {
+                        valid: false,
+                        error: `Infant is too old for ${vaccineName}. Catch-up doses are allowed only up to ${CATCH_UP_MAX_MONTHS} months of age`,
+                        field: 'vaccine_name'
+                    };
+                }
+            } else if (rule.max_age_days && ageInDays > rule.max_age_days) {
                 return {
                     valid: false,
                     error: `Infant is too old for ${vaccineName}. Maximum age is ${rule.max_age_days} days`,
@@ -417,6 +619,58 @@ class VaccinationService {
         }
 
         return { valid: true };
+    }
+
+    async updateInfantImmunizationStatus(infantId, connection = null) {
+        const db = connection || this.db;
+        const [infants] = await db.execute(
+            'SELECT id, dob FROM infants WHERE id = ?',
+            [infantId]
+        );
+        if (infants.length === 0) return null;
+
+        const dobString = toDateOnlyString(infants[0].dob);
+        const firstBirthday = addMonthsToDateString(dobString, 12);
+        const [rows] = await db.execute(
+            `
+            SELECT vaccine_code, vaccine_name, dose_number, administered_date
+            FROM vaccinations
+            WHERE infant_id = ?
+              AND UPPER(COALESCE(validation_status::text, 'VALIDATED')) = 'VALIDATED'
+            `,
+            [infantId]
+        );
+
+        const completed = new Map();
+        for (const row of rows) {
+            const canonical = canonicalPrimaryCode(row.vaccine_code, row.vaccine_name, row.dose_number);
+            if (!canonical || !FIC_REQUIRED_CODES.includes(canonical)) continue;
+
+            const administeredDate = toDateOnlyString(row.administered_date);
+            const existing = completed.get(canonical);
+            if (!existing || administeredDate < existing) completed.set(canonical, administeredDate);
+        }
+
+        let immunizationStatus = 'INCOMPLETE';
+        const hasFullFicSeries = FIC_REQUIRED_CODES.every(code => completed.has(code));
+        const hasCompleteNonExpiredRoutineSeries = CIC_REQUIRED_NON_BIRTH_CODES.every(code => completed.has(code));
+
+        if (hasFullFicSeries) {
+            const completionDate = FIC_REQUIRED_CODES
+                .map(code => completed.get(code))
+                .sort()
+                .at(-1);
+            immunizationStatus = completionDate < firstBirthday ? 'FIC' : 'CIC';
+        } else if (hasCompleteNonExpiredRoutineSeries && !completed.has('HEPB')) {
+            immunizationStatus = 'CIC';
+        }
+
+        await db.execute(
+            'UPDATE infants SET immunization_status = ? WHERE id = ?',
+            [immunizationStatus, infantId]
+        );
+
+        return immunizationStatus;
     }
 
     /**

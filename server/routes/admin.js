@@ -2,11 +2,750 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const adminAuth = require('../middleware/adminAuth');
+const crypto = require('crypto');
 const { performAuditLog } = require('../utils/auditLogger');
 const { ROLES, STAFF_ROLES } = require('../constants/domain');
+const M1ReportService = require('../services/M1ReportService');
+const InfantService = require('../services/InfantService');
+
+const infantService = new InfantService(db);
 
 // Apply Admin Auth to ALL routes in this file
 router.use(adminAuth);
+
+const monthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const monthLabel = (date) => date.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+const toIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const getAssignedBarangayScope = (req) => {
+    const assignedBarangay = (req.user?.assigned_barangay || '').trim();
+    if (!assignedBarangay) {
+        const error = new Error('Assigned barangay is required for the Admin dashboard.');
+        error.status = 400;
+        throw error;
+    }
+    return assignedBarangay;
+};
+
+const getAdminBarangayScope = async (req) => {
+    const assignedBarangay = getAssignedBarangayScope(req);
+    const [barangayRows] = await db.execute(
+        `
+        SELECT id, name
+        FROM barangays
+        WHERE UPPER(TRIM(name)) = UPPER(TRIM(?))
+        LIMIT 1
+        `,
+        [assignedBarangay]
+    );
+
+    return {
+        barangay: assignedBarangay,
+        barangay_id: barangayRows[0]?.id || null
+    };
+};
+
+const requireSuperAdmin = (req, res) => {
+    if (req.user?.role !== ROLES.SUPER_ADMIN) {
+        res.status(403).json({
+            success: false,
+            error: 'Forbidden: Super Admin authority is required for target configuration.'
+        });
+        return false;
+    }
+    return true;
+};
+
+const parseTargetYear = (value) => {
+    const year = Number(value || new Date().getFullYear());
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        const error = new Error('report_year must be a valid year between 2000 and 2100.');
+        error.status = 400;
+        throw error;
+    }
+    return year;
+};
+
+// GET /api/admin/m1-targets
+router.get('/m1-targets', async (req, res) => {
+    try {
+        if (!requireSuperAdmin(req, res)) return;
+
+        const reportYear = parseTargetYear(req.query.year);
+        const service = new M1ReportService(db);
+        res.json(await service.getTargetConfiguration({ year: reportYear }));
+    } catch (error) {
+        console.error('[GET /api/admin/m1-targets]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.status ? error.message : 'Internal Server Error loading M1 targets'
+        });
+    }
+});
+
+// PUT /api/admin/m1-targets/bulk
+router.put('/m1-targets/bulk', async (req, res) => {
+    try {
+        if (!requireSuperAdmin(req, res)) return;
+
+        const requestBody = Array.isArray(req.body)
+            ? { report_year: req.query?.year, targets: req.body }
+            : (req.body || {});
+        const reportYear = parseTargetYear(requestBody.report_year || requestBody.year);
+        const targets = Array.isArray(requestBody.targets)
+            ? requestBody.targets.map((target) => ({
+                ...target,
+                total_population: parseInt(String(target?.total_population ?? '0'), 10) || 0,
+                eligible_population: parseInt(String(target?.eligible_population ?? '0'), 10) || 0
+            }))
+            : [];
+        const service = new M1ReportService(db);
+        const result = await service.saveTargetConfiguration({
+            year: reportYear,
+            targets,
+            user: req.user,
+            req
+        });
+        res.json({ ...result, message: 'Annual target population saved successfully.' });
+    } catch (error) {
+        console.error('[PUT /api/admin/m1-targets/bulk]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.status ? error.message : 'Internal Server Error saving M1 targets'
+        });
+    }
+});
+
+const buildCoverageTrend = async (barangay) => {
+    const service = new M1ReportService(db);
+    const now = new Date();
+    const trend = [];
+
+    for (let offset = 11; offset >= 0; offset -= 1) {
+        const target = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+        const month = target.getMonth() + 1;
+        const year = target.getFullYear();
+        const report = await service.getM1Report({ month, year, barangay });
+        const row = (report.rows || []).find((point) => point.report_month === month) || {};
+
+        trend.push({
+            month: monthLabel(target),
+            month_key: monthKey(target),
+            fic_rate: Number(row.cumulative_target_population || 0) > 0
+                ? Number(((Number(row.penta3_cumulative || 0) / Number(row.cumulative_target_population || 0)) * 100).toFixed(1))
+                : 0,
+            utilization_rate: Number(row.cumulative_target_population || 0) > 0
+                ? Number(((Number(row.penta3_cumulative || 0) / Number(row.cumulative_target_population || 0)) * 100).toFixed(1))
+                : 0,
+            target_population: Number(row.cumulative_target_population || 0),
+            penta1_count: Number(row.penta1_cumulative || 0),
+            penta3_count: Number(row.penta3_cumulative || 0),
+            dropout_count: Number(row.dropout_count || 0),
+            dropout_rate: Number(row.dropout_rate || 0)
+        });
+    }
+
+    return trend;
+};
+
+const getDashboardKpis = async (barangay) => {
+    const [
+        activeRows,
+        pendingRows,
+        defaulterRows,
+        coverageReport
+    ] = await Promise.all([
+        db.execute(
+            `
+            SELECT COUNT(*)::int AS count
+            FROM infants
+            WHERE status = 'Active'
+              AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+            `,
+            [barangay]
+        ),
+        db.execute(
+            `
+            SELECT COUNT(*)::int AS count
+            FROM infant_registrations
+            WHERE status = 'PENDING_VALIDATION'
+              AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+            `,
+            [barangay]
+        ),
+        db.execute(
+            `
+            SELECT COUNT(DISTINCT i.id)::int AS count
+            FROM infants i
+            JOIN infant_schedules s ON s.infant_id = i.id
+            WHERE i.status = 'Active'
+              AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
+              AND s.status::text IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+            `,
+            [barangay]
+        ),
+        new M1ReportService(db).getCoverageDashboard({ barangay })
+    ]);
+
+    const penta = coverageReport.kpis?.penta || {};
+    const penta1Count = Number(penta.dose1_count || 0);
+    const penta3Count = Number(penta.final_dose_count || 0);
+
+    return {
+        total_active_infants: Number(activeRows[0][0]?.count || 0),
+        pending_midwife_validations: Number(pendingRows[0][0]?.count || 0),
+        total_current_defaulters: Number(defaulterRows[0][0]?.count || 0),
+        target_population: Number(penta.target_population || 0),
+        dropout_count: Number(penta.dropout_count || 0),
+        dropout_rate: Number(penta.dropout_rate || 0),
+        utilization_rate: Number(penta.utilization_rate || 0),
+        penta1_count: penta1Count,
+        penta3_count: penta3Count
+    };
+};
+
+const getAuditSummary = async (barangay) => {
+    const [summaryRows, recentRows] = await Promise.all([
+        db.execute(
+            `
+            SELECT
+                COUNT(*)::int AS total_events,
+                COUNT(*) FILTER (WHERE u.role = 'BHW')::int AS bhw_events,
+                COUNT(*) FILTER (WHERE u.role = 'Midwife')::int AS midwife_events,
+                COUNT(*) FILTER (WHERE sal.timestamp >= DATE_TRUNC('day', CURRENT_DATE))::int AS today_events
+            FROM system_audit_logs sal
+            JOIN users u ON u.id = sal.user_id
+            WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
+              AND u.role IN ('BHW', 'Midwife')
+            `,
+            [barangay]
+        ),
+        db.execute(
+            `
+            SELECT
+                sal.id,
+                sal.action_type,
+                sal.target_entity,
+                sal.timestamp,
+                COALESCE(u.full_name, u.id) AS user_name,
+                u.role AS user_role
+            FROM system_audit_logs sal
+            JOIN users u ON u.id = sal.user_id
+            WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
+              AND u.role IN ('BHW', 'Midwife')
+            ORDER BY sal.timestamp DESC
+            LIMIT 5
+            `,
+            [barangay]
+        )
+    ]);
+
+    return {
+        total_events: Number(summaryRows[0][0]?.total_events || 0),
+        bhw_events: Number(summaryRows[0][0]?.bhw_events || 0),
+        midwife_events: Number(summaryRows[0][0]?.midwife_events || 0),
+        today_events: Number(summaryRows[0][0]?.today_events || 0),
+        recent_events: recentRows[0] || []
+    };
+};
+
+const getUserSummary = async (barangay) => {
+    const [personnelRows] = await db.execute(
+        `
+        SELECT
+            id,
+            full_name,
+            role,
+            assigned_barangay,
+            is_active,
+            created_at
+        FROM users
+        WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+          AND is_active = TRUE
+          AND role IN ('BHW', 'Midwife')
+        ORDER BY role ASC, full_name ASC
+        `,
+        [barangay]
+    );
+    const personnel = personnelRows || [];
+
+    return {
+        total_active_personnel: personnel.length,
+        bhw_count: personnel.filter((person) => person.role === 'BHW').length,
+        midwife_count: personnel.filter((person) => person.role === 'Midwife').length,
+        personnel
+    };
+};
+
+const countMonthlyChange = async ({ table, dateColumn, whereClause = '', params = [] }) => {
+    const [rows] = await db.execute(
+        `
+        SELECT
+            SUM(CASE WHEN ${dateColumn} >= DATE_TRUNC('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS current_month,
+            SUM(
+                CASE
+                    WHEN ${dateColumn} >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+                     AND ${dateColumn} < DATE_TRUNC('month', CURRENT_DATE)
+                    THEN 1 ELSE 0
+                END
+            )::int AS previous_month
+        FROM ${table}
+        WHERE 1 = 1
+          ${whereClause}
+        `,
+        params
+    );
+
+    return {
+        current: Number(rows[0]?.current_month || 0),
+        previous: Number(rows[0]?.previous_month || 0)
+    };
+};
+
+// GET /api/admin/dashboard/dss-kpis
+router.get('/dashboard/dss-kpis', async (req, res) => {
+    try {
+        const assignedBarangay = getAssignedBarangayScope(req);
+
+        const [
+            activeRows,
+            pendingRows,
+            defaulterRows,
+            recentRows,
+            defaulterOutcomeRows,
+            activeMonthly,
+            pendingMonthly,
+            defaulterMonthlyRows,
+            coverageTrend,
+            validationLatencyRows,
+            pentaRows,
+            recentRegistrationRows,
+            spatialData,
+            auditSummaryRows,
+            auditRecentRows,
+            personnelRows
+        ] = await Promise.all([
+            db.execute(
+                `
+                SELECT COUNT(*)::int AS count
+                FROM infants
+                WHERE status = 'Active'
+                  AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT COUNT(*)::int AS count
+                FROM infant_registrations
+                WHERE status = 'PENDING_VALIDATION'
+                  AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT COUNT(DISTINCT i.id)::int AS count
+                FROM infants i
+                JOIN infant_schedules s ON s.infant_id = i.id
+                WHERE i.status = 'Active'
+                  AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
+                  AND s.status::text IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT
+                    id,
+                    reference_id,
+                    first_name,
+                    last_name,
+                    sex,
+                    dob,
+                    created_at,
+                    barangay,
+                    status
+                FROM infants
+                WHERE status = 'Active'
+                  AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+                ORDER BY created_at DESC
+                LIMIT 8
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                WITH latest_defaulter_logs AS (
+                    SELECT DISTINCT ON (ful.infant_id)
+                        ful.infant_id,
+                        ful.outcome
+                    FROM follow_up_logs ful
+                    JOIN infants i ON i.id = ful.infant_id
+                    JOIN infant_schedules s ON s.infant_id = i.id
+                    WHERE i.status = 'Active'
+                      AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
+                      AND s.status::text IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+                    ORDER BY ful.infant_id, ful.created_at DESC
+                )
+                SELECT outcome, COUNT(*)::int AS total
+                FROM latest_defaulter_logs
+                GROUP BY outcome
+                ORDER BY total DESC, outcome ASC
+                `,
+                [assignedBarangay]
+            ),
+            countMonthlyChange({
+                table: 'infants',
+                dateColumn: 'created_at',
+                whereClause: 'AND status = \'Active\' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))',
+                params: [assignedBarangay]
+            }),
+            countMonthlyChange({
+                table: 'infant_registrations',
+                dateColumn: 'created_at',
+                whereClause: 'AND status = \'PENDING_VALIDATION\' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))',
+                params: [assignedBarangay]
+            }),
+            db.execute(
+                `
+                WITH current_defaulters AS (
+                    SELECT DISTINCT i.id
+                    FROM infants i
+                    JOIN infant_schedules s ON s.infant_id = i.id
+                    WHERE i.status = 'Active'
+                      AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
+                      AND s.status::text IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+                ),
+                latest_touch AS (
+                    SELECT DISTINCT ON (ful.infant_id)
+                        ful.infant_id,
+                        ful.created_at
+                    FROM follow_up_logs ful
+                    JOIN current_defaulters cd ON cd.id = ful.infant_id
+                    ORDER BY ful.infant_id, ful.created_at DESC
+                )
+                SELECT
+                    SUM(CASE WHEN created_at >= DATE_TRUNC('month', CURRENT_DATE) THEN 1 ELSE 0 END)::int AS current_month,
+                    SUM(
+                        CASE
+                            WHEN created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+                             AND created_at < DATE_TRUNC('month', CURRENT_DATE)
+                            THEN 1 ELSE 0
+                        END
+                    )::int AS previous_month
+                FROM latest_touch
+                `,
+                [assignedBarangay]
+            ),
+            buildCoverageTrend(assignedBarangay),
+            db.execute(
+                `
+                SELECT
+                    AVG(EXTRACT(EPOCH FROM (reviewed_at - created_at)) / 3600)::numeric(10,2) AS avg_hours
+                FROM infant_registrations
+                WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+                  AND reviewed_at IS NOT NULL
+                  AND status IN ('APPROVED', 'NEEDS_CORRECTION', 'REJECTED')
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT
+                    COUNT(DISTINCT CASE WHEN UPPER(COALESCE(v.vaccine_code, '')) IN ('PENTA1', 'PENTA-1') THEN v.infant_id END)::int AS penta1_count,
+                    COUNT(DISTINCT CASE WHEN UPPER(COALESCE(v.vaccine_code, '')) IN ('PENTA3', 'PENTA-3') THEN v.infant_id END)::int AS penta3_count
+                FROM vaccinations v
+                JOIN infants i ON i.id = v.infant_id
+                WHERE UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
+                  AND v.validation_status = 'VALIDATED'
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT
+                    id,
+                    reference_id,
+                    barangay,
+                    status,
+                    created_at,
+                    registration_data->>'first_name' AS first_name,
+                    registration_data->>'last_name' AS last_name,
+                    registration_data->>'dob' AS dob
+                FROM infant_registrations
+                WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+                ORDER BY created_at DESC
+                LIMIT 5
+                `,
+                [assignedBarangay]
+            ),
+            infantService.getSpatialTriage({
+                barangay: assignedBarangay,
+                eps: 300,
+                minPts: 3,
+                scope: 'defaulter'
+            }),
+            db.execute(
+                `
+                SELECT
+                    COUNT(*)::int AS total_events,
+                    COUNT(*) FILTER (WHERE u.role = 'BHW')::int AS bhw_events,
+                    COUNT(*) FILTER (WHERE u.role = 'Midwife')::int AS midwife_events,
+                    COUNT(*) FILTER (WHERE sal.timestamp >= DATE_TRUNC('day', CURRENT_DATE))::int AS today_events
+                FROM system_audit_logs sal
+                JOIN users u ON u.id = sal.user_id
+                WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
+                  AND u.role IN ('BHW', 'Midwife')
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT
+                    sal.id,
+                    sal.action_type,
+                    sal.target_entity,
+                    sal.timestamp,
+                    COALESCE(u.full_name, u.id) AS user_name,
+                    u.role AS user_role
+                FROM system_audit_logs sal
+                JOIN users u ON u.id = sal.user_id
+                WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
+                  AND u.role IN ('BHW', 'Midwife')
+                ORDER BY sal.timestamp DESC
+                LIMIT 5
+                `,
+                [assignedBarangay]
+            ),
+            db.execute(
+                `
+                SELECT
+                    id,
+                    full_name,
+                    role,
+                    assigned_barangay,
+                    is_active,
+                    created_at
+                FROM users
+                WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+                  AND is_active = TRUE
+                  AND role IN ('BHW', 'Midwife')
+                ORDER BY role ASC, full_name ASC
+                `,
+                [assignedBarangay]
+            )
+        ]);
+
+        const totalActive = Number(activeRows[0][0]?.count || 0);
+        const pendingValidations = Number(pendingRows[0][0]?.count || 0);
+        const currentDefaulters = Number(defaulterRows[0][0]?.count || 0);
+        const defaulterMonthly = {
+            current: Number(defaulterMonthlyRows[0][0]?.current_month || 0),
+            previous: Number(defaulterMonthlyRows[0][0]?.previous_month || 0)
+        };
+        const avgValidationHours = Number(validationLatencyRows[0][0]?.avg_hours || 0);
+        const penta1Count = Number(pentaRows[0][0]?.penta1_count || 0);
+        const penta3Count = Number(pentaRows[0][0]?.penta3_count || 0);
+        const dropoutRate = penta1Count > 0
+            ? Number((((penta1Count - penta3Count) / penta1Count) * 100).toFixed(1))
+            : 0;
+        const outcomeMap = (defaulterOutcomeRows[0] || []).reduce((acc, row) => {
+            const key = String(row.outcome || '').trim().toUpperCase();
+            acc[key] = Number(row.total || 0);
+            return acc;
+        }, {});
+        const clusterCount = Number(spatialData?.clusters?.length || 0);
+        const defaultersInClusters = Number((spatialData?.clusters || []).reduce((sum, cluster) => sum + Number(cluster.total_infants || 0), 0));
+        const auditSummary = auditSummaryRows[0][0] || {};
+        const personnel = personnelRows[0] || [];
+
+        const cardTrend = (current, previous) => ({
+            delta: current - previous,
+            current_period: current,
+            previous_period: previous
+        });
+
+        res.json({
+            success: true,
+            barangay: assignedBarangay,
+            generated_at: new Date().toISOString(),
+            kpis: {
+                total_active_infants: {
+                    value: totalActive,
+                    trend: cardTrend(activeMonthly.current, activeMonthly.previous)
+                },
+                pending_validations: {
+                    value: pendingValidations,
+                    trend: cardTrend(pendingMonthly.current, pendingMonthly.previous)
+                },
+                total_current_defaulters: {
+                    value: currentDefaulters,
+                    trend: cardTrend(defaulterMonthly.current, defaulterMonthly.previous),
+                    latest_outcomes: defaulterOutcomeRows[0] || []
+                },
+                dropout_rate: {
+                    value: dropoutRate,
+                    penta1_count: penta1Count,
+                    penta3_count: penta3Count
+                }
+            },
+            recent_registrations: recentRegistrationRows[0] || [],
+            intake_feed: recentRegistrationRows[0] || [],
+            recent_active_infants: recentRows[0] || [],
+            coverage_trend: coverageTrend,
+            hotspot_preview: {
+                cluster_count: clusterCount,
+                defaulters_in_clusters: defaultersInClusters,
+                disclaimer: 'Results are for outreach planning only and do not constitute clinical diagnosis.'
+            },
+            performance_triage: {
+                validation_latency: {
+                    avg_hours: avgValidationHours
+                },
+                bhw_outcomes_summary: {
+                    not_home: outcomeMap.NOT_HOME || 0,
+                    refused: outcomeMap.REFUSED || 0,
+                    transferred: outcomeMap.TRANSFERRED || 0,
+                    completed: outcomeMap.COMPLETED || 0
+                }
+            },
+            operational_follow_through: {
+                total_events: Number(auditSummary.total_events || 0),
+                bhw_events: Number(auditSummary.bhw_events || 0),
+                midwife_events: Number(auditSummary.midwife_events || 0),
+                today_events: Number(auditSummary.today_events || 0),
+                recent_events: auditRecentRows[0] || []
+            },
+            user_summary: {
+                total_active_personnel: personnel.length,
+                bhw_count: personnel.filter((person) => person.role === 'BHW').length,
+                midwife_count: personnel.filter((person) => person.role === 'Midwife').length,
+                personnel
+            }
+        });
+    } catch (error) {
+        console.error('[ADMIN_DSS_DASHBOARD_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/kpis
+router.get('/dashboard/kpis', async (req, res) => {
+    try {
+        const scope = await getAdminBarangayScope(req);
+        const kpis = await getDashboardKpis(scope.barangay);
+        res.json({
+            success: true,
+            ...scope,
+            kpis
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_KPIS_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/clusters
+router.get('/dashboard/clusters', async (req, res) => {
+    try {
+        const scope = await getAdminBarangayScope(req);
+        const spatialData = await infantService.getSpatialTriage({
+            barangay: scope.barangay,
+            eps: 300,
+            minPts: 3,
+            scope: 'defaulter'
+        });
+        const clusters = (spatialData?.clusters || [])
+            .slice()
+            .sort((a, b) => Number(b.total_infants || b.count || 0) - Number(a.total_infants || a.count || 0));
+
+        res.json({
+            success: true,
+            ...scope,
+            cluster_count: Number(clusters.length || 0),
+            defaulters_in_clusters: Number(clusters.reduce((sum, cluster) => sum + Number(cluster.total_infants || cluster.count || 0), 0)),
+            top_hotspot: clusters[0] || null,
+            clusters,
+            disclaimer: 'Results are for outreach planning only and do not constitute clinical diagnosis.'
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_CLUSTERS_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/audit-summary
+router.get('/dashboard/audit-summary', async (req, res) => {
+    try {
+        const scope = await getAdminBarangayScope(req);
+        const audit = await getAuditSummary(scope.barangay);
+        res.json({
+            success: true,
+            ...scope,
+            audit
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_AUDIT_SUMMARY_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/user-summary
+router.get('/dashboard/user-summary', async (req, res) => {
+    try {
+        const scope = await getAdminBarangayScope(req);
+        const users = await getUserSummary(scope.barangay);
+        res.json({
+            success: true,
+            ...scope,
+            users
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_USER_SUMMARY_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/trends
+router.get('/dashboard/trends', async (req, res) => {
+    try {
+        const scope = await getAdminBarangayScope(req);
+        const trends = await buildCoverageTrend(scope.barangay);
+        res.json({
+            success: true,
+            ...scope,
+            trends
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_TRENDS_ERROR]', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint,
+            stack: error.stack
+        });
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
 
 // --- DASHBOARD STATS ---
 
@@ -19,7 +758,7 @@ router.get('/dashboard/stats', async (req, res) => {
         let userQuery = 'SELECT COUNT(*) as count FROM users WHERE is_active = true';
         let userParams = [];
         if (barangay) {
-            userQuery += ' AND assigned_barangay = ?';
+            userQuery += ' AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))';
             userParams.push(barangay);
         }
         const [userCountRows] = await db.execute(userQuery, userParams);
@@ -29,7 +768,7 @@ router.get('/dashboard/stats', async (req, res) => {
         let pendingQuery = "SELECT COUNT(*) as count FROM infant_registrations WHERE status = 'PENDING_VALIDATION'";
         let pendingParams = [];
         if (barangay) {
-            pendingQuery += ' AND barangay = ?';
+            pendingQuery += ' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))';
             pendingParams.push(barangay);
         }
         const [pendingRows] = await db.execute(pendingQuery, pendingParams);
@@ -39,7 +778,7 @@ router.get('/dashboard/stats', async (req, res) => {
         let regQuery = "SELECT COUNT(*) as count FROM infants WHERE registration_status = 'APPROVED'";
         let regParams = [];
         if (barangay) {
-            regQuery += ' AND barangay = ?';
+            regQuery += ' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))';
             regParams.push(barangay);
         }
         const [registeredRows] = await db.execute(regQuery, regParams);
@@ -54,7 +793,7 @@ router.get('/dashboard/stats', async (req, res) => {
         `;
         let overdueParams = [];
         if (barangay) {
-            overdueQuery += ' AND i.barangay = ?';
+            overdueQuery += ' AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))';
             overdueParams.push(barangay);
         }
         const [overdueRows] = await db.execute(overdueQuery, overdueParams);
@@ -68,7 +807,7 @@ router.get('/dashboard/stats', async (req, res) => {
         `;
         let overrideParams = [];
         if (barangay) {
-            overrideQuery += ' AND i.barangay = ?';
+            overrideQuery += ' AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))';
             overrideParams.push(barangay);
         }
         const [approvedOverridesRows] = await db.execute(overrideQuery, overrideParams);
@@ -120,14 +859,21 @@ router.get('/users', async (req, res) => {
                 WHERE (
                     id = ?
                     OR (
-                        assigned_barangay = ?
+                        UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
                         AND role IN (?, ?)
                     )
                 )
             `;
             params.push(req.user.id, req.user.assigned_barangay, ROLES.MIDWIFE, ROLES.BHW);
+        } else if (req.user.role === ROLES.SUPER_ADMIN) {
+            query += ' WHERE role = ?';
+            params.push(ROLES.ADMIN);
+            if (req.query.barangay) {
+                query += ' AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))';
+                params.push(req.query.barangay);
+            }
         } else if (req.query.barangay) {
-            query += ' WHERE assigned_barangay = ?';
+            query += ' WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))';
             params.push(req.query.barangay);
         }
 
@@ -145,11 +891,23 @@ const bcrypt = require('bcrypt'); // Added dependency
 
 const SCOPED_STAFF_ROLES = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.BHW];
 const STAFF_MANAGED_BY_ADMIN = [ROLES.MIDWIFE, ROLES.BHW];
+const STAFF_MANAGED_BY_SUPER_ADMIN = [ROLES.ADMIN];
 
 const normalizeBarangayInput = (value) => {
     if (value === undefined || value === null) return null;
     const normalized = value.toString().trim().toUpperCase();
     return normalized || null;
+};
+
+const validatePasswordComplexity = (password) => {
+    const value = typeof password === 'string' ? password : '';
+    const failures = [];
+    if (value.length < 10) failures.push('at least 10 characters');
+    if (!/[A-Z]/.test(value)) failures.push('one uppercase letter');
+    if (!/[a-z]/.test(value)) failures.push('one lowercase letter');
+    if (!/[0-9]/.test(value)) failures.push('one number');
+    if (!/[^A-Za-z0-9]/.test(value)) failures.push('one special character');
+    return { valid: failures.length === 0, failures };
 };
 
 // Helper to generate Role-Based ID (e.g., BHW-001, MW-005, SADMIN-001)
@@ -196,6 +954,16 @@ const generateUserId = async (role) => {
     return `${prefix}-${numericSuffix}`;
 };
 
+const generateTemporaryPassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const bytes = crypto.randomBytes(6);
+    let suffix = '';
+    for (const byte of bytes) {
+        suffix += alphabet[byte % alphabet.length];
+    }
+    return `Temp#${suffix}`;
+};
+
 // POST /api/admin/users
 router.post('/users', async (req, res) => {
     try {
@@ -205,9 +973,21 @@ router.post('/users', async (req, res) => {
             return res.status(400).json({ error: 'Name, Role, and Password are required' });
         }
 
+        const passwordCheck = validatePasswordComplexity(password);
+        if (!passwordCheck.valid) {
+            return res.status(400).json({
+                error: `Temporary password must include ${passwordCheck.failures.join(', ')}.`,
+                code: 'WEAK_PASSWORD'
+            });
+        }
+
         const validRoles = STAFF_ROLES;
         if (!validRoles.includes(role)) {
             return res.status(400).json({ error: 'Invalid role' });
+        }
+
+        if (req.user.role === ROLES.SUPER_ADMIN && !STAFF_MANAGED_BY_SUPER_ADMIN.includes(role)) {
+            return res.status(403).json({ error: 'Super Admins can only create Barangay Admin accounts.' });
         }
 
         if (req.user.role === ROLES.ADMIN && !STAFF_MANAGED_BY_ADMIN.includes(role)) {
@@ -244,8 +1024,8 @@ router.post('/users', async (req, res) => {
             await connection.beginTransaction();
 
             await connection.execute(`
-                INSERT INTO users (id, full_name, role, assigned_barangay, is_active, password)
-                VALUES (?, ?, ?, ?, true, ?)
+                INSERT INTO users (id, full_name, role, assigned_barangay, is_active, password, must_change_password)
+                VALUES (?, ?, ?, ?, true, ?, TRUE)
             `, [id, full_name, role, sanitizedBarangay, hashedPassword]);
 
             if (sanitizedBarangay) {
@@ -320,6 +1100,32 @@ router.put('/users/:id/status', async (req, res) => {
         }
 
         const statusValue = is_active === true || is_active === 1 || is_active === 'true';
+        const [targetRows] = await db.execute(`
+            SELECT id, role, assigned_barangay
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+        `, [id]);
+
+        if (targetRows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const target = targetRows[0];
+        if (target.id === req.user.id) {
+            return res.status(403).json({ error: 'You cannot change your own account status.' });
+        }
+
+        if (req.user.role === ROLES.ADMIN) {
+            const sameBarangay = normalizeBarangayInput(target.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
+            if (!STAFF_MANAGED_BY_ADMIN.includes(target.role) || !sameBarangay) {
+                return res.status(403).json({ error: 'Admins can manage only Midwife and BHW accounts in their assigned barangay.' });
+            }
+        } else if (req.user.role === ROLES.SUPER_ADMIN) {
+            if (target.role !== ROLES.ADMIN) {
+                return res.status(403).json({ error: 'Super Admins can manage only Barangay Admin accounts.' });
+            }
+        }
 
         await db.execute('UPDATE users SET is_active = ? WHERE id = ?', [statusValue, id]);
 
@@ -336,23 +1142,64 @@ router.put('/users/:id/status', async (req, res) => {
 router.post('/users/:id/reset-password', async (req, res) => {
     try {
         const { id } = req.params;
+        const [targetRows] = await db.execute(`
+            SELECT id, full_name, role, assigned_barangay
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+        `, [id]);
+
+        if (targetRows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const target = targetRows[0];
+        if (target.id === req.user.id) {
+            return res.status(403).json({ error: 'Use account settings to change your own password.' });
+        }
+
+        if (req.user.role === ROLES.ADMIN) {
+            const sameBarangay = normalizeBarangayInput(target.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
+            if (!STAFF_MANAGED_BY_ADMIN.includes(target.role) || !sameBarangay) {
+                return res.status(403).json({ error: 'Admins can reset only Midwife and BHW accounts in their assigned barangay.' });
+            }
+        } else if (req.user.role === ROLES.SUPER_ADMIN) {
+            if (target.role !== ROLES.ADMIN) {
+                return res.status(403).json({ error: 'Super Admins can reset only Barangay Admin accounts.' });
+            }
+        } else {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
 
         // 1. Generate temporary password
-        const rawPassword = Math.random().toString(36).substring(2, 10);
+        const rawPassword = generateTemporaryPassword();
 
         // 2. Hash using bcrypt
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(rawPassword, saltRounds);
 
         // 3. Update database
-        const [result] = await db.execute('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, id]);
+        const [result] = await db.execute(`
+            UPDATE users
+            SET password = ?,
+                must_change_password = TRUE,
+                last_password_reset_at = CURRENT_TIMESTAMP,
+                failed_login_attempts = 0,
+                locked_until = NULL
+            WHERE id = ?
+        `, [hashedPassword, id]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
 
         // 4. Log in system_audit_logs
-        await performAuditLog(req.user.id, 'USER_PASSWORD_RESET', 'users', id, { status: 'SUCCESS' }, req);
+        await performAuditLog(req.user.id, 'USER_PASSWORD_RESET', 'users', id, {
+            status: 'SUCCESS',
+            target_role: target.role,
+            target_barangay: target.assigned_barangay,
+            must_change_password: true
+        }, req);
 
         // 5. Return temporary password once
         res.json({
@@ -379,7 +1226,7 @@ router.get('/audit/system', async (req, res) => {
         let params = [];
         
         if (barangay) {
-            query += ' WHERE u.assigned_barangay = ?';
+            query += ' WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))';
             params.push(barangay);
         }
         
@@ -428,7 +1275,7 @@ router.get('/audit/clinical', async (req, res) => {
         let params = [];
         
         if (barangay) {
-            query += ' WHERE i.barangay = ?';
+            query += ' WHERE UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))';
             params.push(barangay);
         }
         

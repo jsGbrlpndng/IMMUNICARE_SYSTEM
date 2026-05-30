@@ -14,6 +14,7 @@ const StatusBadge = ({ status }) => {
         upcoming: 'bg-gray-100 text-gray-600 border-gray-200',
         completed: 'bg-green-100 text-green-700 border-green-200',
         pending_validation: 'bg-amber-100 text-amber-700 border-amber-200',
+        ineligible: 'bg-slate-100 text-slate-600 border-slate-200',
         default: 'bg-gray-100 text-gray-600'
     };
 
@@ -22,7 +23,8 @@ const StatusBadge = ({ status }) => {
         due: 'Due Now',
         upcoming: 'Upcoming',
         completed: 'Completed',
-        pending_validation: 'Pending'
+        pending_validation: 'Pending',
+        ineligible: 'Ineligible'
     };
 
     const icon = {
@@ -30,7 +32,8 @@ const StatusBadge = ({ status }) => {
         due: <Clock className="w-3 h-3" />,
         upcoming: <Calendar className="w-3 h-3" />,
         completed: <CheckCircle2 className="w-3 h-3" />,
-        pending_validation: <Clock className="w-3 h-3" />
+        pending_validation: <Clock className="w-3 h-3" />,
+        ineligible: <AlertCircle className="w-3 h-3" />
     };
 
     return (
@@ -47,7 +50,7 @@ const prepareScheduleForDisplay = (scheduleData) => {
     const recordArray = Array.isArray(scheduleData) ? scheduleData : (scheduleData?.record || []);
     if (!recordArray.length) return [];
 
-    const urgencyOrder = { 'overdue': 0, 'due': 1, 'pending_validation': 2, 'upcoming': 3, 'completed': 4 };
+    const urgencyOrder = { overdue: 0, due: 1, pending_validation: 2, upcoming: 3, ineligible: 4, completed: 5 };
 
     return recordArray.map(v => {
         const vaxStatus = v.status || 'NOT_GIVEN';
@@ -62,10 +65,11 @@ const prepareScheduleForDisplay = (scheduleData) => {
         } else if (vaxStatus === 'PENDING_VALIDATION') {
             urgency = 'pending_validation';
         } else {
-            if (scheduleStatus === 'DEFAULTER' || scheduleStatus === 'DROPOUT')     urgency = 'overdue';
-            else if (scheduleStatus === 'DUE_TODAY' || scheduleStatus === 'DUE')    urgency = 'due';
-            else if (scheduleStatus === 'DUE_SOON')                                 urgency = 'due';
-            else                                                                     urgency = 'upcoming';
+            if (scheduleStatus === 'DEFAULTER' || scheduleStatus === 'DEFAULTED' || scheduleStatus === 'OVERDUE') urgency = 'overdue';
+            else if (scheduleStatus === 'DUE_TODAY' || scheduleStatus === 'DUE')                                  urgency = 'due';
+            else if (scheduleStatus === 'DUE_SOON')                                                               urgency = 'due';
+            else if (scheduleStatus === 'INELIGIBLE')                                                             urgency = 'ineligible';
+            else                                                                                                  urgency = 'upcoming';
         }
 
         return {
@@ -77,6 +81,7 @@ const prepareScheduleForDisplay = (scheduleData) => {
             dueDate: v.recommended_date || v.dueDate,
             administeredDate: v.actual_date || v.administeredDate,
             urgency: urgency,
+            scheduleStatus,
             timingStatus,
             vaxStatus,
             vaccinationId: v.vaccination_id || v.vaccinationId
@@ -91,7 +96,7 @@ const prepareScheduleForDisplay = (scheduleData) => {
 
 const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrationStatus, userRole, onApproveClick }) => {
     const allVaccines = prepareScheduleForDisplay(schedule);
-    const canApprove = userRole === 'Midwife' || userRole === 'Nurse';
+    const canApprove = userRole === 'Midwife';
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -116,6 +121,7 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                     <tbody className="divide-y divide-gray-100">
                         {allVaccines.map((vax, idx) => {
                             const isCompleted = vax.urgency === 'completed' && vax.administeredDate;
+                            const isIneligible = vax.urgency === 'ineligible' || vax.scheduleStatus === 'INELIGIBLE';
 
                             return (
                                 <tr key={idx} className="hover:bg-gray-50/50 transition duration-150">
@@ -134,7 +140,13 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         {(() => {
-                                            if (vax.vaxStatus === 'COMPLETED_VALIDATED') {
+                                            if (isIneligible) {
+                                                return (
+                                                    <span className="text-xs text-slate-500 italic font-medium flex justify-end items-center gap-1 pr-4">
+                                                        <AlertCircle className="w-3 h-3" /> Not clinically eligible
+                                                    </span>
+                                                );
+                                            } else if (vax.vaxStatus === 'COMPLETED_VALIDATED') {
                                                 return (
                                                     <div className="flex justify-end pr-4 text-green-600" title="Vaccination Approved & Recorded">
                                                         <CheckCircle2 className="w-6 h-6" />

@@ -190,7 +190,7 @@ router.put('/', async (req, res) => {
         // Write audit log
         await connection.execute(
             `INSERT INTO system_audit_logs 
-             (admin_id, action_type, target_entity, before_value, after_value, details, timestamp) 
+             (user_id, action_type, target_entity, before_value, after_value, details, timestamp) 
              VALUES (?, ?, ?, ?, ?, ?, NOW())`,
             [
                 adminId,

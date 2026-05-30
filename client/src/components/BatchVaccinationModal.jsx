@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { X, Syringe, CheckCircle, AlertCircle, Users, Search } from 'lucide-react';
 import apiClient from '../services/apiClient';
@@ -19,8 +20,8 @@ import Avatar from './Avatar';
 
 // 14 NIP Vaccines as per Philippine DOH National Immunization Program
 const NIP_VACCINES = [
-  { code: 'BCG', name: 'BCG (Bacillus Calmette-Guérin)' },
-  { code: 'HepB-BD', name: 'Hepatitis B Birth Dose' },
+  { code: 'BCG', name: 'BCG (Bacillus Calmette-GuÃ©rin)' },
+  { code: 'HEPB', name: 'Hepatitis B Birth Dose' },
   { code: 'PENTA-1', name: 'Pentavalent 1' },
   { code: 'PENTA-2', name: 'Pentavalent 2' },
   { code: 'PENTA-3', name: 'Pentavalent 3' },
@@ -30,9 +31,10 @@ const NIP_VACCINES = [
   { code: 'PCV-1', name: 'PCV 1 (Pneumococcal Conjugate Vaccine)' },
   { code: 'PCV-2', name: 'PCV 2 (Pneumococcal Conjugate Vaccine)' },
   { code: 'PCV-3', name: 'PCV 3 (Pneumococcal Conjugate Vaccine)' },
-  { code: 'IPV', name: 'IPV (Inactivated Polio Vaccine)' },
-  { code: 'MMR-1', name: 'MMR 1 (Measles, Mumps, Rubella)' },
-  { code: 'MMR-2', name: 'MMR 2 (Measles, Mumps, Rubella)' }
+  { code: 'IPV-1', name: 'IPV 1 (Inactivated Polio Vaccine)' },
+  { code: 'IPV-2', name: 'IPV 2 (Inactivated Polio Vaccine)' },
+  { code: 'MCV-1', name: 'Measles 1 (MCV1)' },
+  { code: 'MCV-2', name: 'Measles 2 (MCV2)' }
 ];
 
 const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSuccess }) => {
@@ -195,6 +197,8 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
         const response = await apiClient.post('/vaccinations', {
           infant_id: infant.id,
           vaccine_name: vaccineName,
+          vaccine_code: selectedVaccineData.code,
+          dose_number: selectedVaccineData.doseNumber,
           batch_number: batchNumber,
           site_of_injection: 'Left upper arm', // Default for batch
           vaccinator_id: currentUser.id,
@@ -337,7 +341,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
               <div className="bg-emerald-50 rounded-xl p-4 max-h-48 overflow-y-auto space-y-2">
                 {results.success.map((result) => (
                   <div key={result.infantId} className="text-sm text-emerald-900">
-                    ✓ {result.infantName} ({result.referenceId})
+                    âœ“ {result.infantName} ({result.referenceId})
                   </div>
                 ))}
               </div>
@@ -355,7 +359,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
                 {results.failed.map((result) => (
                   <div key={result.infantId} className="text-sm">
                     <div className="font-semibold text-red-900">
-                      ✗ {result.infantName} ({result.referenceId})
+                      âœ— {result.infantName} ({result.referenceId})
                     </div>
                     <div className="text-red-700 ml-4">{result.error}</div>
                   </div>
@@ -375,7 +379,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
               onClick={handleViewUpdatedRecords}
               className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
             >
-              View Updated Records →
+              View Updated Records â†’
             </button>
           </div>
         </div>
@@ -610,11 +614,11 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
                             {infant.name}
                           </div>
                           <div className="text-sm text-slate-500">
-                            {infant.reference_id} • {infant.sex} • {infant.age_months}mo
+                            {infant.reference_id} â€¢ {infant.sex} â€¢ {infant.age_months}mo
                           </div>
                           {infant.barangay && (
                             <div className="text-xs text-slate-400">
-                              📍 {infant.barangay}
+                              ðŸ“ {infant.barangay}
                             </div>
                           )}
                         </div>

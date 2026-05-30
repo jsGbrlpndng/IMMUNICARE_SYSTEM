@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -436,7 +437,7 @@ const LandingPage = () => {
 
                     <div className="pt-6 border-t border-slate-200/60 flex flex-col md:flex-row justify-between items-center gap-4">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            © 2026 Immunicare Digital. v2.1.0 Stable
+                            Â© 2026 Immunicare Digital. v2.1.0 Stable
                         </p>
                         <div className="flex items-center space-x-6">
                             <a href="#" className="text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase tracking-widest transition-colors">Terms</a>

@@ -2,22 +2,28 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const clinicalAuth = require('../middleware/clinicalAuth');
+const requireRole = require('../middleware/requireRole');
 const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
+const InfantService = require('../services/InfantService');
 const enhancedEngine = new EnhancedNIPScheduleEngine(db);
+const infantService = new InfantService(db);
 
-const localityHelper = require('../utils/localityHelper');
-
-// Helper: Extract Locality from exact_address
-const getLocalityExpression = () => localityHelper.getLocalitySQL('exact_address', 'purok');
+router.use(clinicalAuth);
+router.use(requireRole(
+    requireRole.CLINICAL_PRIVILEGED,
+    'Only Midwives, Admins, and Super Admins can access dashboard clinical endpoints.'
+));
 
 // GET /api/dashboard/kpis
 router.get('/kpis', async (req, res) => {
     try {
-        const barangay = req.query.barangay;
-        const barangayClause = barangay ? 'AND barangay = ?' : '';
-        const params = barangay ? [barangay] : [];
+        const assignedBarangay = req.user.role === 'Super Admin'
+            ? (req.query.barangay || null)
+            : req.user.assigned_barangay;
+        const barangayClause = assignedBarangay ? 'AND barangay = ?' : '';
+        const params = assignedBarangay ? [assignedBarangay] : [];
 
-        const [totalResult] = await db.query(`SELECT COUNT(*) as count FROM infants WHERE status IN ('Active', 'Defaulter', 'FIC', 'CIC') ${barangayClause}`, params);
+        const [totalResult] = await db.query(`SELECT COUNT(*) as count FROM infants WHERE status = 'Active' ${barangayClause}`, params);
         const totalRegistered = totalResult[0].count;
 
         const [zeroDoseResult] = await db.query(`
@@ -26,21 +32,18 @@ router.get('/kpis', async (req, res) => {
                     COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                     COALESCE(hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
                 FROM infants
-                WHERE status IN ('Active', 'Defaulter') ${barangayClause}
+                WHERE status = 'Active' ${barangayClause}
             ) AS sub
             WHERE bcg_given = FALSE AND hepatitis_b_given = FALSE
         `, params);
         const zeroDoseCount = zeroDoseResult[0].count;
         
         const [ficResult] = await db.query(`
-            SELECT COUNT(*) as count FROM (
-                SELECT 
-                    COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
-                    COALESCE(hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
-                FROM infants
-                WHERE status IN ('Active', 'Defaulter', 'FIC', 'CIC') ${barangayClause}
-            ) AS sub
-            WHERE bcg_given = TRUE AND hepatitis_b_given = TRUE
+            SELECT COUNT(*) as count
+            FROM infants
+            WHERE status = 'Active'
+              AND immunization_status = 'FIC'
+              ${barangayClause}
         `, params);
         const fullyImmunizedCount = ficResult[0].count;
         
@@ -50,7 +53,7 @@ router.get('/kpis', async (req, res) => {
                     COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                     COALESCE(hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
                 FROM infants
-                WHERE status IN ('Active', 'Defaulter', 'FIC', 'CIC') ${barangayClause}
+                WHERE status = 'Active' ${barangayClause}
             ) AS sub
             WHERE (bcg_given = TRUE AND hepatitis_b_given = FALSE) OR (bcg_given = FALSE AND hepatitis_b_given = TRUE)
         `, params);
@@ -60,6 +63,7 @@ router.get('/kpis', async (req, res) => {
 
         res.json({
             success: true,
+            barangay: assignedBarangay,
             kpis: {
                 totalRegistered,
                 fullyImmunized: fullyImmunizedPercentage,
@@ -96,86 +100,29 @@ router.get('/urgent-actions', async (req, res) => {
 // GET /api/dashboard/hotspot-summary
 router.get('/hotspot-summary', async (req, res) => {
     try {
-        const barangay = req.query.barangay;
-        const barangayClause = barangay ? 'AND i.barangay = ?' : '';
-        const params = barangay ? [barangay] : [];
-
-        // Fetch all infants to perform DBSCAN
-        const [infants] = await db.query(`
-            SELECT 
-                i.id,
-                i.first_name,
-                i.last_name,
-                ${getLocalityExpression()} as locality,
-                i.latitude,
-                i.longitude,
-                i.is_location_exact,
-                COUNT(DISTINCT v.id) as validated_doses,
-                SUM(CASE WHEN s.recommended_date <= CURRENT_DATE AND (v.id IS NULL OR v.validation_status != 'VALIDATED') THEN 1 ELSE 0 END) as defaulter_doses
-            FROM infants i
-            LEFT JOIN infant_schedules s ON s.infant_id = i.id
-            LEFT JOIN vaccinations v ON v.infant_id = i.id AND v.vaccine_code = s.vaccine_code AND v.dose_number = s.dose_number AND v.validation_status = 'VALIDATED'
-            WHERE i.status IN ('Active', 'Defaulter', 'FIC', 'CIC') ${barangayClause}
-            GROUP BY i.id, i.first_name, i.last_name, locality, i.latitude, i.longitude, i.is_location_exact
-        `, params);
-        
-        if (!infants || infants.length === 0) {
-            return res.json({ success: true, hotspot: null });
-        }
-
-        // Mock Centroids for Localities
-        const LOCALITY_CENTROIDS = {
-            'St. Joseph': [14.3555, 121.0515],
-            'Genesis': [14.3562, 121.0530],
-            'Filinvest': [14.3540, 121.0545],
-            'Holiday Hills': [14.3525, 121.0490],
-            'Langgam Proper': [14.3550, 121.0500]
-        };
-
-        // Hardened Dataset: Only cluster infants with EXACT spatial data
-        // Removing "Jitter" fallbacks which create false clusters in dashboard metrics.
-        const dataset = infants
-            .filter(row => row.latitude !== null && row.longitude !== null)
-            .map(row => {
-                const validated = Number(row.validated_doses) || 0;
-                const defaulter = Number(row.defaulter_doses) || 0;
-
-                return {
-                    id: row.id,
-                    first_name: row.first_name,
-                    last_name: row.last_name,
-                    lat: row.latitude,
-                    lng: row.longitude,
-                    is_zero_dose: validated === 0,
-                    is_under_immunized: validated > 0 && defaulter > 0,
-                    locality: row.locality
-                };
-            });
-
-        const dbscan = new DBSCANService(300, 3);
-        const clusters = dbscan.cluster(dataset);
-
-        let highestCluster = null;
-        let maxScore = -1;
-
-        clusters.forEach((clusterPts, idx) => {
-            const meta = DBSCANService.getClusterMetadata(clusterPts);
-            if (meta && meta.totalRiskScore > maxScore && meta.totalRiskScore > 0) {
-                maxScore = meta.totalRiskScore;
-                highestCluster = {
-                    locality: localityHelper.deriveClusterLabel(clusterPts),
-                    atRisk: meta.zeroDoseCount + meta.underImmunizedCount,
-                    total_infants: meta.pointCount,
-                    ratio: meta.pointCount > 0 ? (meta.zeroDoseCount + meta.underImmunizedCount) / meta.pointCount : 0,
-                    lat: meta.medoid_lat,
-                    lng: meta.medoid_lng
-                };
-            }
+        const spatialData = await infantService.getSpatialTriage({
+            barangay: req.query.barangay || null,
+            eps: req.query.eps || 300,
+            minPts: req.query.minPts || 3,
+            scope: 'defaulter'
         });
+
+        const highestCluster = (spatialData.clusters || [])[0] || null;
+        const hotspot = highestCluster ? {
+            locality: highestCluster.locality,
+            atRisk: highestCluster.total_infants,
+            total_infants: highestCluster.total_infants,
+            ratio: 1,
+            lat: highestCluster.lat,
+            lng: highestCluster.lng,
+            clusterId: highestCluster.clusterId,
+            severity: highestCluster.severity,
+            total_defaulter_doses: highestCluster.total_defaulter_doses
+        } : null;
 
         res.json({
             success: true,
-            hotspot: highestCluster
+            hotspot
         });
     } catch(e) {
         console.error('Hotspot DB error:', e);
@@ -186,30 +133,19 @@ router.get('/hotspot-summary', async (req, res) => {
 // GET /api/dashboard/dbscan-alerts
 router.get('/dbscan-alerts', async (req, res) => {
     try {
-        const [rows] = await db.query(`
-            SELECT 
-                ${getLocalityExpression()} as locality,
-                COUNT(DISTINCT i.id) as defaulterCount
-            FROM 
-                infants i
-            JOIN 
-                infant_schedules il ON i.id = il.infant_id
-            WHERE 
-                il.status = 'PENDING' 
-                AND il.recommended_date < CURRENT_DATE
-                AND i.status IN ('Active', 'Defaulter', 'FIC', 'CIC')
-                ${req.query.barangay ? 'AND i.barangay = ?' : ''}
-            GROUP BY 
-                locality
-            ORDER BY 
-                defaulterCount DESC
-        `, req.query.barangay ? [req.query.barangay] : []);
+        const spatialData = await infantService.getSpatialTriage({
+            barangay: req.query.barangay || null,
+            eps: req.query.eps || 300,
+            minPts: req.query.minPts || 3,
+            scope: 'defaulter'
+        });
 
-        const formattedAlerts = rows.map((row, index) => ({
+        const formattedAlerts = (spatialData.clusters || []).map((cluster, index) => ({
             id: index + 1,
-            locality: row.locality,
-            defaulterCount: Number(row.defaulterCount || 0),
-            riskLevel: row.defaulterCount > 10 ? 'Critical' : (row.defaulterCount > 5 ? 'High' : 'Moderate')
+            locality: cluster.locality,
+            defaulterCount: Number(cluster.total_infants || 0),
+            riskLevel: cluster.severity === 'critical' ? 'Critical' : (cluster.severity === 'high' ? 'High' : 'Moderate'),
+            clusterId: cluster.clusterId
         }));
 
         res.json({
@@ -234,7 +170,7 @@ router.get('/bhw-outreach', async (req, res) => {
                 users
             WHERE 
                 role = 'BHW' AND is_active = true
-                ${req.query.barangay ? 'AND assigned_barangay = ?' : ''}
+                ${req.query.barangay ? 'AND barangay = ?' : ''}
         `, req.query.barangay ? [req.query.barangay] : []);
         
         res.json({
@@ -259,9 +195,10 @@ router.get('/priority-followups', async (req, res) => {
         const infants = queueData.infants || [];
 
         // 2. Explicit Ranking Logic
-        // Ranking: DEFAULTER > DUE_TODAY > DUE_SOON
+        // Ranking: DEFAULTED > DUE_TODAY > DUE_SOON
         const urgencyOrder = {
-            'DEFAULTER': 0, // Highest priority
+            'DEFAULTER': 0,
+            'DEFAULTED': 0,
             'DUE_TODAY': 1,
             'DUE_SOON': 2,
             'UPCOMING': 3

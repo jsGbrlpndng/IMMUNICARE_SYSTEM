@@ -68,7 +68,7 @@ async function testCompleteFlow() {
         
         console.log('✓ Test log found in results');
         console.log('  Log ID:', testLog.id);
-        console.log('  Admin ID:', testLog.admin_id);
+        console.log('  User ID:', testLog.user_id);
         console.log('  Action:', testLog.action_type);
         console.log('  Target:', testLog.target_entity);
         console.log('  Details:', JSON.stringify(testLog.details));
@@ -82,7 +82,7 @@ async function testCompleteFlow() {
         if (userCreateLogs.length > 0) {
             console.log('\nRecent USER_CREATE logs:');
             userCreateLogs.slice(0, 5).forEach(log => {
-                console.log(`  - ${log.timestamp.toISOString()}: Admin ${log.admin_id} created user (${log.target_entity})`);
+                console.log(`  - ${log.timestamp.toISOString()}: User ${log.user_id} created user (${log.target_entity})`);
             });
         }
         console.log('');

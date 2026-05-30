@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Phone, Syringe, MessageSquare } from 'lucide-react';
 import Avatar from './Avatar';
@@ -49,7 +50,7 @@ const InfantCard = ({
     if (infant.days_overdue && infant.days_overdue > 0) {
       return (
         <span className="text-red-600 font-semibold text-sm">
-          ⚠️ {infant.next_due_vaccine} - {infant.days_overdue} days overdue
+          âš ï¸ {infant.next_due_vaccine} - {infant.days_overdue} days overdue
         </span>
       );
     }
@@ -94,7 +95,7 @@ const InfantCard = ({
                 {infant.name}
               </h4>
               <p className="text-sm text-slate-500 group-hover:text-slate-600 transition-colors duration-300">
-                {infant.reference_id} • {infant.sex} • {infant.age_months}mo
+                {infant.reference_id} â€¢ {infant.sex} â€¢ {infant.age_months}mo
               </p>
             </div>
             
@@ -123,7 +124,7 @@ const InfantCard = ({
             {category === 'cpab' && (
               <div className="bg-teal-50 border border-teal-100 rounded-lg p-3 transition-all duration-300 group-hover:bg-teal-100/50">
                 <p className="text-sm text-teal-800 font-medium">
-                  <span className="font-bold">TT2:</span> {infant.tt2_date ? new Date(infant.tt2_date).toLocaleDateString() : 'N/A'} • 
+                  <span className="font-bold">TT2:</span> {infant.tt2_date ? new Date(infant.tt2_date).toLocaleDateString() : 'N/A'} â€¢ 
                   <span className="font-bold ml-2">TT3:</span> {infant.tt3_date ? new Date(infant.tt3_date).toLocaleDateString() : 'N/A'}
                 </p>
               </div>
@@ -132,7 +133,7 @@ const InfantCard = ({
             {category === 'zero_dose' && infant.zero_dose_days && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 transition-all duration-300 group-hover:bg-red-100/50 animate-pulse">
                 <p className="text-sm text-red-700 font-bold flex items-center gap-2">
-                  <span className="text-lg">⚠️</span>
+                  <span className="text-lg">âš ï¸</span>
                   Zero-dose for {infant.zero_dose_days} days
                 </p>
               </div>
@@ -156,7 +157,7 @@ const InfantCard = ({
               className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg text-sm font-semibold hover:from-blue-700 hover:to-blue-800 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5 transition-all duration-300 flex items-center gap-1"
             >
               View Record
-              <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+              <span className="transition-transform duration-300 group-hover:translate-x-1">â†’</span>
             </button>
             <button
               onClick={() => onSendSMS && onSendSMS(infant)}

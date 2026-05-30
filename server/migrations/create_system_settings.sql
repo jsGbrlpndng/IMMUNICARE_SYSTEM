@@ -48,7 +48,7 @@ ON DUPLICATE KEY UPDATE setting_key=setting_key;
 -- System Audit Logs Table (if not exists)
 CREATE TABLE IF NOT EXISTS system_audit_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    admin_id VARCHAR(50) NOT NULL,
+    user_id VARCHAR(50) NOT NULL,
     action_type VARCHAR(50) NOT NULL,
     target_entity VARCHAR(100),
     before_value TEXT,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS system_audit_logs (
     details JSON,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     ip_address VARCHAR(45),
-    INDEX idx_admin_id (admin_id),
+    INDEX idx_user_id (user_id),
     INDEX idx_action_type (action_type),
     INDEX idx_timestamp (timestamp)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

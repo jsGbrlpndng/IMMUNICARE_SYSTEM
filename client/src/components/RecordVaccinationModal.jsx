@@ -11,6 +11,42 @@ import {
 import apiClient from '../services/apiClient';
 import JustificationModal from './JustificationModal';
 
+const toDateOnlyString = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    const raw = value.toString().trim();
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return toDateOnlyString(parsed);
+};
+
+const dateStringToDayNumber = (dateString) => {
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return Date.UTC(year, month - 1, day) / 86400000;
+};
+
+const readServerError = async (response) => {
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch (error) {
+        return `HTTP ${response.status}`;
+    }
+
+    return payload?.details || payload?.message || payload?.error || `HTTP ${response.status}`;
+};
+
 /**
  * RecordVaccinationModal - Extracted component for recording vaccinations.
  *
@@ -33,7 +69,7 @@ const RecordVaccinationModal = ({
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState(null);
     const [recordForm, setRecordForm] = useState({
-        administered_date: new Date().toISOString().split('T')[0],
+        administered_date: toDateOnlyString(new Date()),
         site_of_injection: 'Left Thigh',
         batch_number: '',
         brand: '',
@@ -59,14 +95,16 @@ const RecordVaccinationModal = ({
     // Dates & Validation Logic
     const getDaysDiff = (adminDateStr, dueDateStr) => {
         if (!dueDateStr) return 0;
-        const dAdmin = new Date(adminDateStr);
-        dAdmin.setHours(0, 0, 0, 0);
-        const dDue = new Date(dueDateStr);
-        dDue.setHours(0, 0, 0, 0);
-        return Math.round((dAdmin - dDue) / (1000 * 60 * 60 * 24));
+        const adminDay = dateStringToDayNumber(toDateOnlyString(adminDateStr));
+        const dueDay = dateStringToDayNumber(toDateOnlyString(dueDateStr));
+        if (adminDay === null || dueDay === null) return 0;
+        return adminDay - dueDay;
     };
 
-    const daysDiff = getDaysDiff(recordForm.administered_date, selectedVaccine?.dueDate);
+    const effectiveAllowedDate = selectedVaccine?.earliestAllowedDate ||
+        selectedVaccine?.earliest_allowed_date ||
+        selectedVaccine?.dueDate;
+    const daysDiff = getDaysDiff(recordForm.administered_date, effectiveAllowedDate);
     const isGracePeriod = daysDiff >= -4 && daysDiff <= -1;
     const isHardStop = daysDiff <= -5;
 
@@ -89,17 +127,16 @@ const RecordVaccinationModal = ({
         }
 
         // PILLAR 1: Temporal Validation (Strict Date Logic)
-        const today = new Date();
-        today.setHours(23, 59, 59, 999); // Allow until end of today
-        const adminDate = new Date(recordForm.administered_date);
-        const dobDate = new Date(infant?.dob || 0);
+        const todayString = toDateOnlyString(new Date());
+        const adminDateString = toDateOnlyString(recordForm.administered_date);
+        const dobDateString = toDateOnlyString(infant?.dob);
 
-        if (adminDate > today) {
+        if (!adminDateString || adminDateString > todayString) {
             setSubmitError('TEMPORAL VIOLATION: Cannot record a vaccination in the future.');
             return;
         }
 
-        if (adminDate < dobDate) {
+        if (dobDateString && adminDateString < dobDateString) {
             setSubmitError('TEMPORAL VIOLATION: Cannot record a vaccination before the infant was born.');
             return;
         }
@@ -155,28 +192,7 @@ const RecordVaccinationModal = ({
             const response = await apiClient.post('/vaccinations', payload);
 
             if (!response.ok) {
-                const errorText = await response.text();
-                let errorMessage = `HTTP ${response.status}`;
-                try {
-                    const errorData = JSON.parse(errorText);
-                    if (errorData.error === 'DUPLICATE_VACCINE_RECORD') {
-                        errorMessage = `${errorData.details || errorData.message} Please review the existing record instead of adding a duplicate.`;
-                    } else if (errorData.error === 'Medical Rule Violation') {
-                        errorMessage = errorData.details || errorData.error;
-                        // Trigger the nurse override option if needed
-                        setOverrideContext({
-                            infantName: infant.name || 'Infant',
-                            vaccine: selectedVaccine.vaccineName || selectedVaccine.vaccine_name || 'Vaccine',
-                            overrideType: 'INTERVAL_VIOLATION'
-                        });
-                        setShowOverrideModal(true);
-                        return;
-                    } else {
-                        errorMessage = errorData.details || errorData.error || errorData.message || errorMessage;
-                    }
-                } catch (e) {
-                    console.error('[ERROR TEXT]', errorText);
-                }
+                const errorMessage = await readServerError(response);
                 throw new Error(errorMessage);
             }
 
@@ -275,7 +291,7 @@ const RecordVaccinationModal = ({
                             <div>
                                 <p className="text-red-900 font-bold text-sm uppercase tracking-wide">Clinical Hard Stop</p>
                                 <p className="text-red-800 text-xs mt-1 leading-relaxed font-medium">
-                                    {selectedVaccine?.dueDate && `(Due: ${new Date(selectedVaccine.dueDate).toLocaleDateString()}) `}
+                                    {effectiveAllowedDate && `(Earliest allowed: ${new Date(effectiveAllowedDate).toLocaleDateString()}) `}
                                     INVALID: Minimum interval not met. Early administration destroys immunity. Action blocked.
                                 </p>
                             </div>
@@ -398,9 +414,9 @@ const RecordVaccinationModal = ({
                 <div className="sticky bottom-0 z-10 px-8 py-5 border-t border-slate-200 bg-white flex items-center justify-between gap-6">
                     <div className="flex-1 overflow-hidden">
                         {submitError && (
-                            <div className="flex items-center gap-2 text-red-600 bg-red-50 px-3 py-2 rounded-[4px] border border-red-100">
+                            <div role="alert" className="flex items-center gap-2 text-red-800 bg-red-50 px-3 py-2 rounded-[4px] border border-red-300 shadow-sm">
                                 <AlertCircle className="w-4 h-4 shrink-0" />
-                                <p className="text-[11px] font-bold leading-tight uppercase tracking-wider">{submitError}</p>
+                                <p className="text-[11px] font-black leading-tight uppercase tracking-wider">{submitError}</p>
                             </div>
                         )}
                     </div>

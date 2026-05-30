@@ -17,7 +17,8 @@ const isSelectLike = (sql) => {
   return normalized.startsWith('SELECT') ||
     normalized.startsWith('WITH') ||
     normalized.startsWith('SHOW') ||
-    normalized.startsWith('EXPLAIN');
+    normalized.startsWith('EXPLAIN') ||
+    /\bRETURNING\b/i.test(sql);
 };
 
 const translatePlaceholders = (sql, params = []) => {

@@ -69,19 +69,21 @@ router.post('/:id/approve', async (req, res) => {
 router.post('/:id/reject', async (req, res) => {
     try {
         const { id } = req.params;
-        const { reason } = req.body;
+        const { rejection_reason } = req.body;
 
         console.log(`[REJECT ROUTE] Received request for ID: ${id}, Role: ${req.user.role}`);
 
-        if (!reason || reason.trim() === '') {
-            return res.status(400).json({ success: false, error: 'Rejection reason is required.' });
+        if (!rejection_reason || rejection_reason.trim() === '') {
+            return res.status(400).json({ success: false, error: 'rejection_reason is required.' });
         }
 
         if (req.user.role !== ROLES.MIDWIFE) {
             return res.status(403).json({ success: false, error: 'Insufficient permissions for rejection.' });
         }
 
-        await registrationService.rejectRegistration(id, req.user, reason);
+        await registrationService.rejectRegistration(id, req.user, {
+            rejection_reason
+        });
         console.log(`[REJECT ROUTE] Success for ID: ${id}`);
         res.json({ success: true });
     } catch (err) {
@@ -93,29 +95,32 @@ router.post('/:id/reject', async (req, res) => {
 });
 
 /**
- * POST /api/validation/:id/needs-revision
+ * POST /api/validation/:id/return
  * Returns a record to the BHW for correction.
  */
-router.post('/:id/needs-revision', async (req, res) => {
+const handleReturnForCorrection = async (req, res) => {
     try {
         const { id } = req.params;
-        const { notes } = req.body;
+        const { correction_notes } = req.body;
 
-        if (!notes || notes.trim() === '') {
-            return res.status(400).json({ success: false, error: 'Revision notes are required.' });
+        if (!correction_notes || correction_notes.trim() === '') {
+            return res.status(400).json({ success: false, error: 'correction_notes is required.' });
         }
 
         if (req.user.role !== ROLES.MIDWIFE) {
             return res.status(403).json({ success: false, error: 'Insufficient permissions for revision.' });
         }
 
-        await registrationService.returnForCorrection(id, req.user, notes);
+        await registrationService.returnForCorrection(id, req.user, { correction_notes });
         res.json({ success: true });
     } catch (err) {
         console.error('[Validation Revision] Error:', err);
         res.status(err.message.includes('Forbidden') ? 409 : 500).json({ success: false, error: err.message });
     }
-});
+};
+
+router.post('/:id/return', handleReturnForCorrection);
+router.post('/:id/needs-revision', handleReturnForCorrection);
 
 /**
  * PATCH /api/validation/:id

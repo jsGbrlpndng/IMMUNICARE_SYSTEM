@@ -21,6 +21,8 @@ class InfantRegistrationService {
             throw this._httpError('Registration data is required.', 400);
         }
 
+        this._validateSaveRegistrationPayload(data);
+
         const id = data.id || uuidv4();
         const reference_id = data.reference_id || this._generateReferenceId();
 
@@ -28,6 +30,7 @@ class InfantRegistrationService {
         if (status === REGISTRATION_STATUS.PENDING_VALIDATION) {
             data.correction_notes = null;
         }
+        data.sex = this._normalizeSex(data.sex);
 
         // Explicitly trim and normalize the barangay string
         const trimmedBarangay = this._normalizeBarangay(actor.assigned_barangay || data.barangay);
@@ -177,12 +180,28 @@ class InfantRegistrationService {
             // CLINICAL VALIDATION GUARDRAILS
             // Verify vaccine dates against Date of Birth
             const dob = new Date(data.dob);
-            if (data.bcg_status?.includes('GIVEN') && data.bcg_date) {
+            const isGivenStatus = (status) => String(status || '').toUpperCase().includes('GIVEN');
+            const classifyBirthDoseStatus = (status, administeredDate, fallbackDate) => {
+                if (!isGivenStatus(status)) return status || 'Not Given';
+                const normalized = String(status || '');
+                if (normalized.toLowerCase().includes('within 24') || normalized.toLowerCase().includes('more than 24')) {
+                    return normalized;
+                }
+
+                const doseDate = new Date(administeredDate || fallbackDate);
+                const birthDate = new Date(fallbackDate);
+                const hoursAfterBirth = (doseDate.getTime() - birthDate.getTime()) / (1000 * 60 * 60);
+                return hoursAfterBirth >= 0 && hoursAfterBirth <= 24
+                    ? 'Given within 24 hours'
+                    : 'Given more than 24 hours';
+            };
+
+            if (isGivenStatus(data.bcg_status) && data.bcg_date) {
                 if (new Date(data.bcg_date) < dob) {
                     throw new Error("Clinical Error: BCG administration date cannot precede the infant's Date of Birth.");
                 }
             }
-            if (data.hepatitis_b_status?.includes('GIVEN') && data.hepatitis_b_date) {
+            if (isGivenStatus(data.hepatitis_b_status) && data.hepatitis_b_date) {
                 if (new Date(data.hepatitis_b_date) < dob) {
                     throw new Error("Clinical Error: Hepatitis B administration date cannot precede the infant's Date of Birth.");
                 }
@@ -191,6 +210,11 @@ class InfantRegistrationService {
             // 2. Map data to infants table
             const infantId = uuidv4();
             const referenceId = reg.reference_id;
+            const assignedBarangay = this._normalizeBarangay(actor.assigned_barangay);
+
+            if (!assignedBarangay) {
+                throw this._httpError('Approving Midwife must have an assigned_barangay.', 400);
+            }
 
             // Build review history for the registration record
             const history = this._parseHistory(reg.review_history);
@@ -198,10 +222,16 @@ class InfantRegistrationService {
                 reviewer_id: actor.id,
                 action: REGISTRATION_STATUS.APPROVED,
                 notes: notes,
+                barangay: assignedBarangay,
                 timestamp: new Date().toISOString()
             });
 
-            const sexValue = data.sex === 'Male' ? 'M' : data.sex === 'Female' ? 'F' : data.sex;
+            const sexValue = this._mapSexToInfantColumn(data.sex);
+            const bcgStatusForStorage = classifyBirthDoseStatus(
+                data.bcg_status || (data.bcg_given ? 'Given' : null),
+                data.bcg_date || data.dob,
+                data.dob
+            );
             
             const promoQuery = `
                 INSERT INTO infants 
@@ -237,8 +267,8 @@ class InfantRegistrationService {
                 data.length_at_birth_cm ? parseFloat(data.length_at_birth_cm) : null,
                 !!(data.initiated_breastfeeding || data.breastfed_immediately_after_birth),
                 data.delivery_facility_name || null,
-                data.bcg_status || null,
-                data.hepatitis_b_status || data.hepa_b_status || null,
+                bcgStatusForStorage,
+                data.hepatitis_b_status || data.hepa_b_status || 'Not Given',
                 data.latitude ? parseFloat(data.latitude) : null,
                 data.longitude ? parseFloat(data.longitude) : null,
                 registrationId
@@ -266,7 +296,7 @@ class InfantRegistrationService {
                 actor.id,
                 actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: REGISTRATION_STATUS.APPROVED, promoted_infant_id: infantId }),
+                JSON.stringify({ status: REGISTRATION_STATUS.APPROVED, promoted_infant_id: infantId, barangay: assignedBarangay }),
                 notes || 'Approved via Validation Center'
             ]);
 
@@ -391,10 +421,22 @@ class InfantRegistrationService {
     /**
      * Midwife Rejection: Permanently reject the registration
      */
-    async rejectRegistration(registrationId, actorOrReviewerId, legacyRoleOrReason, legacyReason) {
-        const actor = this._actor(actorOrReviewerId, legacyReason === undefined ? null : legacyRoleOrReason);
-        const reason = legacyReason === undefined ? legacyRoleOrReason : legacyReason;
+    async rejectRegistration(registrationId, actorOrReviewerId, legacyReasonOrPayload, legacyNotes) {
+        const actor = this._actor(
+            actorOrReviewerId,
+            legacyNotes === undefined && typeof legacyReasonOrPayload !== 'string' ? null : legacyReasonOrPayload
+        );
+        const payload = typeof legacyReasonOrPayload === 'object' && legacyReasonOrPayload !== null
+            ? legacyReasonOrPayload
+            : {
+                rejection_reason: legacyReasonOrPayload || legacyNotes
+            };
+        const rejectionReason = String(payload.rejection_reason || '').trim();
         this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can reject infant registrations.');
+
+        if (!rejectionReason) {
+            throw this._httpError('rejection_reason is required.', 400);
+        }
 
         console.log(`[REJECT SERVICE] Attempting to reject ${registrationId} by ${actor.id} (${actor.role})`);
         const connection = await this.db.getConnection();
@@ -411,13 +453,18 @@ class InfantRegistrationService {
             history.push({
                 reviewer_id: actor.id,
                 action: REGISTRATION_STATUS.REJECTED,
-                notes: reason,
+                rejection_reason: rejectionReason,
                 timestamp: new Date().toISOString()
             });
 
             await connection.execute(
-                'UPDATE infant_registrations SET status = ?, review_history = ?, correction_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                ['REJECTED', JSON.stringify(history), reason, registrationId]
+                `UPDATE infant_registrations
+                 SET status = ?,
+                     review_history = ?,
+                     rejection_reason = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?`,
+                ['REJECTED', JSON.stringify(history), rejectionReason, registrationId]
             );
 
             await connection.execute(`
@@ -429,8 +476,8 @@ class InfantRegistrationService {
                 actor.id,
                 actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: REGISTRATION_STATUS.REJECTED }),
-                reason
+                JSON.stringify({ status: REGISTRATION_STATUS.REJECTED, rejection_reason: rejectionReason }),
+                rejectionReason
             ]);
 
             await connection.commit();
@@ -446,10 +493,20 @@ class InfantRegistrationService {
     /**
      * Midwife Return: Back to BHW for correction
      */
-    async returnForCorrection(registrationId, actorOrReviewerId, legacyRoleOrNotes, legacyNotes) {
-        const actor = this._actor(actorOrReviewerId, legacyNotes === undefined ? null : legacyRoleOrNotes);
-        const notes = legacyNotes === undefined ? legacyRoleOrNotes : legacyNotes;
+    async returnForCorrection(registrationId, actorOrReviewerId, legacyNoteOrPayload, legacyNotes) {
+        const actor = this._actor(
+            actorOrReviewerId,
+            legacyNotes === undefined && typeof legacyNoteOrPayload !== 'string' ? null : legacyNoteOrPayload
+        );
+        const payload = typeof legacyNoteOrPayload === 'object' && legacyNoteOrPayload !== null
+            ? legacyNoteOrPayload
+            : { correction_notes: legacyNoteOrPayload };
+        const correctionNotes = String(payload.correction_notes || '').trim();
         this._requireRole(actor, [ROLES.MIDWIFE], 'Only Midwives can return infant registrations for correction.');
+
+        if (!correctionNotes) {
+            throw this._httpError('correction_notes is required.', 400);
+        }
 
         const connection = await this.db.getConnection();
         try {
@@ -464,7 +521,7 @@ class InfantRegistrationService {
             history.push({
                 reviewer_id: actor.id,
                 action: 'RETURNED_FOR_CORRECTION',
-                notes: notes,
+                correction_notes: correctionNotes,
                 timestamp: new Date().toISOString()
             });
 
@@ -476,7 +533,7 @@ class InfantRegistrationService {
                     correction_notes = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            `, [JSON.stringify(history), notes, registrationId]);
+            `, [JSON.stringify(history), correctionNotes, registrationId]);
 
             await connection.execute(`
                 INSERT INTO audit_trail (id, entity_type, entity_id, action_type, user_id, user_role, old_values, new_values, description)
@@ -487,8 +544,8 @@ class InfantRegistrationService {
                 actor.id,
                 actor.role,
                 JSON.stringify({ status: reg.status }),
-                JSON.stringify({ status: REGISTRATION_STATUS.NEEDS_CORRECTION }),
-                notes
+                JSON.stringify({ status: REGISTRATION_STATUS.NEEDS_CORRECTION, correction_notes: correctionNotes }),
+                correctionNotes
             ]);
 
             await connection.commit();
@@ -520,6 +577,9 @@ class InfantRegistrationService {
             }
 
             const oldData = typeof reg.registration_data === 'string' ? JSON.parse(reg.registration_data) : reg.registration_data;
+            if (Object.prototype.hasOwnProperty.call(updatedData, 'sex')) {
+                updatedData.sex = this._normalizeSex(updatedData.sex);
+            }
             
             // Diff calculation (shallow)
             const diff = {};
@@ -663,6 +723,44 @@ class InfantRegistrationService {
         if (barangay === undefined || barangay === null) return null;
         const value = barangay.toString().trim();
         return value || null;
+    }
+
+    _validateSaveRegistrationPayload(data) {
+        this._requireNonEmptyString(data.first_name, 'first_name is required.');
+        this._requireNonEmptyString(data.last_name, 'last_name is required.');
+        this._requireNonEmptyString(data.dob, 'dob is required.');
+        this._requireNonEmptyString(data.sex, 'sex is required and must be exactly M or F.');
+        this._requireNonEmptyString(data.exact_address, 'exact_address is required.');
+        this._requireNonEmptyString(data.landmark, 'landmark is required.');
+
+        const dobValue = String(data.dob).trim();
+        const dob = new Date(`${dobValue}T00:00:00`);
+        if (Number.isNaN(dob.getTime())) {
+            throw this._httpError('Invalid dob value. Use YYYY-MM-DD format.', 400);
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (dob > today) {
+            throw this._httpError('dob must not be in the future.', 400);
+        }
+    }
+
+    _requireNonEmptyString(value, message) {
+        if (typeof value !== 'string' || value.trim() === '') {
+            throw this._httpError(message, 400);
+        }
+    }
+
+    _normalizeSex(sex) {
+        const value = String(sex || '').trim().toUpperCase();
+        if (value === 'M') return 'M';
+        if (value === 'F') return 'F';
+        throw this._httpError('Invalid sex value. Sex must be exactly M or F.', 400);
+    }
+
+    _mapSexToInfantColumn(sex) {
+        return this._normalizeSex(sex);
     }
 
     _normalizeBhwSaveStatus(status) {

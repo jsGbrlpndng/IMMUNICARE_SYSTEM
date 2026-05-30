@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import Avatar from './Avatar';
@@ -179,7 +180,7 @@ describe('Avatar Component', () => {
 
   describe('Edge Cases', () => {
     it('handles names with special characters', () => {
-      render(<Avatar name="José María" />);
+      render(<Avatar name="JosÃ© MarÃ­a" />);
       expect(screen.getByText('JM')).toBeInTheDocument();
     });
 

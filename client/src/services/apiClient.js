@@ -59,8 +59,15 @@ class ApiClient {
         // Barangay-scoped users are enforced on the backend and should not drive
         // scope by browser session state.
         const user = this.getUser();
+        if (user?.assigned_barangay && !headers['x-admin-barangay']) {
+            headers['x-admin-barangay'] = user.assigned_barangay;
+        }
+        if (user?.barangay_id && !headers['x-admin-barangay-id']) {
+            headers['x-admin-barangay-id'] = String(user.barangay_id);
+        }
+
         const contextBarangay = sessionStorage.getItem('selected_barangay');
-        if (user?.role === 'Super Admin' && contextBarangay && contextBarangay !== 'all') {
+        if (user?.role === 'Super Admin' && contextBarangay && contextBarangay !== 'all' && !/[?&]barangay=/.test(url)) {
             const separator = url.includes('?') ? '&' : '?';
             url += `${separator}barangay=${encodeURIComponent(contextBarangay)}`;
         }
@@ -80,7 +87,12 @@ class ApiClient {
             // Handle 403 Forbidden
             if (response.status === 403) {
                 const data = await response.json();
-                throw new Error(data.error || 'Access forbidden');
+                if (data.code === 'PASSWORD_UPDATE_REQUIRED') {
+                    if (!window.location.pathname.includes('/force-password-change')) {
+                        window.location.href = '/force-password-change';
+                    }
+                }
+                throw new Error(data.message || data.details || data.error || 'Access forbidden');
             }
 
             // Return response for caller to handle
@@ -89,6 +101,9 @@ class ApiClient {
         } catch (error) {
             // Network errors or other issues
             if (error.message === 'Unauthorized - redirecting to login') {
+                throw error;
+            }
+            if (error.name === 'AbortError') {
                 throw error;
             }
             

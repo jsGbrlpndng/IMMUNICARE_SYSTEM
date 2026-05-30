@@ -1,21 +1,22 @@
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Search,
-    Filter,
     Plus,
     FileEdit,
     Eye,
     AlertCircle,
     CheckCircle2,
-    Clock
+    Clock3,
+    ChevronRight
 } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 
+const STATUS_FILTERS = ['All', 'Draft', 'Pending', 'Approved', 'Needs Correction'];
+
 const MySubmissions = () => {
     const { user } = useAuth();
-    const navigate = useNavigate();
     const [infants, setInfants] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -39,12 +40,12 @@ const MySubmissions = () => {
         }
     };
 
-    const filteredInfants = infants.filter(infant => {
+    const filteredInfants = infants.filter((infant) => {
         const matchesSearch =
             (infant.first_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (infant.last_name || '').toLowerCase().includes(searchTerm.toLowerCase());
 
-        const matchesStatus = statusFilter === 'All' || 
+        const matchesStatus = statusFilter === 'All' ||
             (statusFilter === 'Pending' && infant.status === 'PENDING_VALIDATION') ||
             (statusFilter === 'Draft' && infant.status === 'DRAFT') ||
             (statusFilter === 'Approved' && infant.status === 'APPROVED') ||
@@ -53,155 +54,188 @@ const MySubmissions = () => {
         return matchesSearch && matchesStatus;
     });
 
-    const getStatusColor = (status) => {
+    const getStatusIcon = (status) => {
         switch (status) {
-            case 'APPROVED': return 'bg-green-100 text-green-800';
-            case 'PENDING_VALIDATION': return 'bg-blue-100 text-blue-800';
-            case 'DRAFT': return 'bg-gray-100 text-gray-800';
-            case 'NEEDS_CORRECTION': return 'bg-amber-100 text-amber-800';
-            default: return 'bg-gray-100 text-gray-800';
+            case 'APPROVED':
+                return CheckCircle2;
+            case 'PENDING_VALIDATION':
+                return Clock3;
+            case 'NEEDS_CORRECTION':
+                return AlertCircle;
+            case 'DRAFT':
+            default:
+                return FileEdit;
         }
     };
 
-    const getStatusIcon = (status) => {
+    const getStatusClasses = (status) => {
         switch (status) {
-            case 'APPROVED': return CheckCircle2;
-            case 'PENDING_VALIDATION': return Clock;
-            case 'DRAFT': return FileEdit;
-            case 'NEEDS_CORRECTION': return AlertCircle;
-            default: return FileEdit;
+            case 'APPROVED':
+                return 'bg-[#E9F6F0] text-[#0B6E4F]';
+            case 'PENDING_VALIDATION':
+                return 'bg-amber-50 text-amber-700';
+            case 'NEEDS_CORRECTION':
+                return 'bg-rose-50 text-rose-700';
+            case 'DRAFT':
+            default:
+                return 'bg-slate-100 text-slate-700';
         }
     };
+
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 'PENDING_VALIDATION':
+                return 'Pending Review';
+            case 'NEEDS_CORRECTION':
+                return 'Needs Correction';
+            case 'APPROVED':
+                return 'Approved';
+            default:
+                return status;
+        }
+    };
+
+    const getRegistrationRoute = (infant) => `/bhw/registrations/${infant.id}`;
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <section className="flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">My Submissions</h1>
-                    <p className="text-gray-500">Manage your infant registrations</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#0B6E4F]">
+                        Registration Management
+                    </p>
+                    <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">
+                        My Submissions
+                    </h1>
+                    <p className="mt-2 text-sm text-slate-500">
+                        Review staged infant registrations under your barangay workflow.
+                    </p>
                 </div>
+
                 <Link
                     to="/bhw/register"
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#084C39] px-5 py-3 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-sm transition-colors hover:bg-[#07362A]"
                 >
-                    <Plus className="w-5 h-5" />
+                    <Plus className="h-5 w-5" />
                     Register New
                 </Link>
-            </div>
+            </section>
 
-            {/* Filters */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search by name..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
-                    {['All', 'Draft', 'Pending', 'Approved', 'Needs Correction'].map((status) => (
-                        <button
-                            key={status}
-                            onClick={() => setStatusFilter(status)}
-                            className={`
-                                px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
-                                ${statusFilter === status
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }
-                            `}
-                        >
-                            {status}
-                        </button>
-                    ))}
-                </div>
-            </div>
+            <section className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Search by infant name..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full rounded border border-slate-200 bg-white py-2.5 pl-12 pr-4 text-sm text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-1 focus:ring-emerald-200"
+                        />
+                    </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 xl:pb-0">
+                        {STATUS_FILTERS.map((status) => (
+                            <button
+                                key={status}
+                                onClick={() => setStatusFilter(status)}
+                                className={`whitespace-nowrap rounded px-4 py-2 text-sm font-bold transition-colors ${
+                                    statusFilter === status
+                                        ? 'bg-[#084C39] text-white hover:bg-[#07362A]'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                            >
+                                {status}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            <section className="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 border-b border-gray-200">
+                    <table className="w-full min-w-[840px] text-left">
+                        <thead className="border-b border-slate-200 bg-slate-50">
                             <tr>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Infant Name</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Date of Birth</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Last Updated</th>
-                                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right">Actions</th>
+                                <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Infant Name</th>
+                                <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Date of Birth</th>
+                                <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                                <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Last Updated</th>
+                                <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+
+                        <tbody className="divide-y divide-slate-200">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">Loading records...</td>
+                                    <td colSpan="5" className="px-6 py-12 text-center text-sm font-medium text-slate-500">
+                                        Loading records...
+                                    </td>
                                 </tr>
                             ) : filteredInfants.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">No records found matching your criteria.</td>
+                                    <td colSpan="5" className="px-6 py-12 text-center text-sm font-medium text-slate-500">
+                                        No records found matching your criteria.
+                                    </td>
                                 </tr>
                             ) : (
                                 filteredInfants.map((infant) => {
-                                    const canEdit = infant.registration_status === 'Draft' || infant.registration_status === 'Needs Correction';
-                                    const StatusIcon = getStatusIcon(infant.registration_status);
+                                    const StatusIcon = getStatusIcon(infant.status);
+                                    const statusLabel = getStatusLabel(infant.status);
+                                    const actionLabel = infant.status === 'DRAFT' || infant.status === 'NEEDS_CORRECTION' ? 'Continue' : 'Open';
 
                                     return (
-                                         <tr key={infant.id} className="hover:bg-gray-50 transition">
-                                             <td className="px-6 py-4">
-                                                 <div className="font-medium text-gray-900">{infant.first_name} {infant.last_name}</div>
-                                                 <div className="text-xs text-gray-500">{infant.sex === 'M' ? 'Male' : 'Female'}</div>
-                                             </td>
-                                             <td className="px-6 py-4 text-gray-600">
-                                                 {infant.dob ? new Date(infant.dob).toLocaleDateString() : 'N/A'}
-                                             </td>
-                                             <td className="px-6 py-4">
-                                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(infant.status)}`}>
-                                                     <StatusIcon className="w-3.5 h-3.5" />
-                                                     {infant.status === 'PENDING_VALIDATION' ? 'Pending Review' : 
-                                                      infant.status === 'NEEDS_CORRECTION' ? 'Needs Correction' : 
-                                                      infant.status === 'APPROVED' ? 'Approved' : infant.status}
-                                                 </span>
-                                             </td>
-                                             <td className="px-6 py-4 text-gray-500 text-sm">
-                                                 {new Date(infant.updated_at || infant.created_at).toLocaleDateString()}
-                                             </td>
-                                             <td className="px-6 py-4 text-right">
-                                                 {infant.status === 'DRAFT' || infant.status === 'NEEDS_CORRECTION' ? (
-                                                     <Link
-                                                         to={`/bhw/register?id=${infant.id}`}
-                                                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-                                                     >
-                                                         <FileEdit className="w-4 h-4" />
-                                                         Edit
-                                                     </Link>
-                                                 ) : infant.status === 'APPROVED' ? (
-                                                     <Link
-                                                         to={`/bhw/infants/${infant.promoted_infant_id}`}
-                                                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
-                                                     >
-                                                         <Eye className="w-4 h-4" />
-                                                         View Profile
-                                                     </Link>
-                                                 ) : (
-                                                     <Link
-                                                         to={`/bhw/register?id=${infant.id}&view=true`}
-                                                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-                                                     >
-                                                         <Eye className="w-4 h-4" />
-                                                         View Details
-                                                     </Link>
-                                                 )}
-                                             </td>
-                                         </tr>
-                                     );
+                                        <tr key={infant.id} className="transition-colors hover:bg-slate-50">
+                                            <td className="px-6 py-5">
+                                                <div className="font-bold text-slate-900">
+                                                    {infant.first_name} {infant.last_name}
+                                                </div>
+                                                <div className="mt-1 text-xs font-medium text-slate-500">
+                                                    {infant.sex === 'M' ? 'Male' : 'Female'}
+                                                </div>
+                                            </td>
+
+                                            <td className="px-6 py-5 text-sm font-medium text-slate-700">
+                                                {infant.dob ? new Date(infant.dob).toLocaleDateString() : 'N/A'}
+                                            </td>
+
+                                            <td className="px-6 py-5">
+                                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${getStatusClasses(infant.status)}`}>
+                                            <StatusIcon className="h-3.5 w-3.5" />
+                                            {statusLabel}
+                                        </span>
+                                            </td>
+
+                                            <td className="px-6 py-5 text-sm font-medium text-slate-500">
+                                                {new Date(infant.updated_at || infant.created_at).toLocaleDateString()}
+                                            </td>
+
+                                            <td className="px-6 py-5 text-right">
+                                                <Link
+                                                    to={getRegistrationRoute(infant)}
+                                                    className={`inline-flex items-center gap-1 rounded px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] transition-colors ${
+                                                        actionLabel === 'Open'
+                                                            ? 'border border-[#084C39] bg-[#084C39] text-white hover:bg-[#07362A]'
+                                                            : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    {infant.status === 'DRAFT' || infant.status === 'NEEDS_CORRECTION' ? (
+                                                        <FileEdit className="h-4 w-4" />
+                                                    ) : (
+                                                        <Eye className="h-4 w-4" />
+                                                    )}
+                                                    {actionLabel}
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    );
                                 })
                             )}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
     );
 };

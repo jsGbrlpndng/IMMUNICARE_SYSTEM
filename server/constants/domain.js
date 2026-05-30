@@ -1,5 +1,6 @@
 const ROLES = Object.freeze({
   SUPER_ADMIN: 'Super Admin',
+  ADMIN: 'Admin',
   MIDWIFE: 'Midwife',
   BHW: 'BHW',
   CAREGIVER: 'Caregiver'
@@ -7,6 +8,7 @@ const ROLES = Object.freeze({
 
 const STAFF_ROLES = Object.freeze([
   ROLES.SUPER_ADMIN,
+  ROLES.ADMIN,
   ROLES.MIDWIFE,
   ROLES.BHW
 ]);
@@ -32,6 +34,7 @@ const SCHEDULE_STATUS = Object.freeze({
   NOT_YET_DUE: 'NOT_YET_DUE',
   DUE_SOON: 'DUE_SOON',
   DUE_TODAY: 'DUE_TODAY',
+  DEFAULTER: 'DEFAULTER',
   OVERDUE: 'OVERDUE',
   DEFAULTED: 'DEFAULTED',
   COMPLETED: 'COMPLETED',

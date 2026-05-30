@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Shield, Lock, X, AlertCircle, CheckCircle, UserCheck } from 'lucide-react';
 
@@ -181,7 +182,7 @@ const ClinicalAuthorizationModal = ({
                                     {hasComplianceViolations ? (
                                         <div className="space-y-2">
                                             <p className="text-sm text-red-800 font-semibold">
-                                                ⚠️ This authorization violates DOH guidelines and cannot be approved
+                                                âš ï¸ This authorization violates DOH guidelines and cannot be approved
                                             </p>
                                             <ul className="list-disc list-inside text-sm text-red-800 space-y-1">
                                                 {complianceStatus.violatedRules.map((rule, idx) => (
@@ -197,7 +198,7 @@ const ClinicalAuthorizationModal = ({
                                         </div>
                                     ) : (
                                         <p className="text-sm text-emerald-800">
-                                            ✓ This authorization complies with DOH guidelines
+                                            âœ“ This authorization complies with DOH guidelines
                                         </p>
                                     )}
                                 </div>
@@ -249,7 +250,7 @@ const ClinicalAuthorizationModal = ({
                                         )}
                                         {isJustificationValid && (
                                             <span className="text-emerald-600 font-medium">
-                                                ✓ Valid justification
+                                                âœ“ Valid justification
                                             </span>
                                         )}
                                     </div>

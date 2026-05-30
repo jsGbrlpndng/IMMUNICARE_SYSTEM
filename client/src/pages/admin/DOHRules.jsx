@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import {
     Shield,
@@ -254,7 +255,7 @@ const DOHRules = () => {
                                                         <div className="mt-4 pt-3 border-t border-slate-200 flex items-center space-x-2 text-slate-500">
                                                             <User className="w-3 h-3" />
                                                             <span className="text-[9px] font-bold uppercase tracking-widest">{h.created_by}</span>
-                                                            <span className="text-[9px] text-slate-300">•</span>
+                                                            <span className="text-[9px] text-slate-300">â€¢</span>
                                                             <Clock className="w-3 h-3" />
                                                             <span className="text-[9px] font-bold uppercase tracking-widest">{new Date(h.created_at).toLocaleDateString()}</span>
                                                         </div>
@@ -287,7 +288,7 @@ const DOHRules = () => {
                                 <Plus className="w-6 h-6 text-emerald-400" />
                                 <h3 className="text-xl font-black uppercase tracking-tight">Issue New Policy Version</h3>
                             </div>
-                            <button onClick={() => setShowNewVersionModal(false)} className="text-slate-400 hover:text-white transition-colors">✕</button>
+                            <button onClick={() => setShowNewVersionModal(false)} className="text-slate-400 hover:text-white transition-colors">âœ•</button>
                         </div>
 
                         <form onSubmit={submitNewVersion} className="p-8">

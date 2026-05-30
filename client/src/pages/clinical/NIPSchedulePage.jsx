@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
     Calendar, RefreshCw, TriangleAlert, Clock, CircleCheck,
@@ -45,12 +45,20 @@ const URGENCY = {
         kpiBorder: 'border-l-amber-400',
     },
     upcoming: {
-        label:     'Upcoming',
+        label:     'On track',
         pill:      'bg-blue-50 text-blue-700 border-blue-200',
         dot:       'bg-blue-400',
         row:       '',
         kpiText:   'text-blue-600',
         kpiBorder: 'border-l-blue-400',
+    },
+    on_track: {
+        label:     'On track',
+        pill:      'bg-teal-50 text-teal-700 border-teal-200',
+        dot:       'bg-teal-400',
+        row:       '',
+        kpiText:   'text-teal-600',
+        kpiBorder: 'border-l-teal-400',
     },
     completed: {
         label:     'Completed',
@@ -72,6 +80,147 @@ const URGENCY = {
 
 const getUrgencyConfig = (urgency) => URGENCY[urgency] || URGENCY.upcoming;
 
+const toDateOnlyString = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    const raw = value.toString().trim();
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().split('T')[0];
+};
+
+const dateStringToDayNumber = (value) => {
+    const dateString = toDateOnlyString(value);
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return Date.UTC(year, month - 1, day) / 86400000;
+};
+
+const getDaysLateFromDate = (value) => {
+    const targetDay = dateStringToDayNumber(value);
+    const todayDay = dateStringToDayNumber(new Date());
+    if (targetDay === null || todayDay === null) return 0;
+    return Math.max(todayDay - targetDay, 0);
+};
+
+const getActionableDate = (item) => (
+    item?.earliest_allowed_date ||
+    item?.earliestAllowedDate ||
+    item?.dueDate ||
+    item?.scheduled_date ||
+    item?.scheduledDate ||
+    item?.target_date ||
+    null
+);
+
+const getItemKey = (item, fallback = '') => (
+    item?.scheduleId ||
+    item?.id ||
+    `${item?.vaccineCode || item?.vaccine_code || item?.vaccine || 'dose'}-${item?.doseNumber || item?.dose_number || fallback}-${getActionableDate(item) || fallback}`
+);
+
+const getDoseNumber = (item) => {
+    const explicit = Number(item?.doseNumber || item?.dose_number);
+    if (Number.isInteger(explicit) && explicit > 0) return explicit;
+
+    const raw = `${item?.vaccineCode || item?.vaccine_code || item?.vaccine || ''} ${item?.vaccineName || item?.vaccine_name || ''}`;
+    const match = raw.toUpperCase().match(/(?:PENTA|OPV|PCV|IPV|MCV|MEASLES)[-\s_]*(\d)/);
+    return match ? Number(match[1]) : 1;
+};
+
+const getSeriesKey = (item) => {
+    const raw = `${item?.vaccineCode || item?.vaccine_code || item?.vaccine || ''} ${item?.vaccineName || item?.vaccine_name || ''}`
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+
+    if (raw.includes('PENTA') || raw.includes('PENTAVALENT')) return 'PENTA';
+    if (raw.includes('OPV') || raw.includes('ORALPOLIO')) return 'OPV';
+    if (raw.includes('PCV') || raw.includes('PNEUMOCOCCAL')) return 'PCV';
+    if (raw.includes('IPV') || raw.includes('INACTIVATEDPOLIO')) return 'IPV';
+    if (raw.includes('MCV') || raw.includes('MEASLES') || raw.includes('MMR')) return 'MCV';
+    if (raw.includes('HEPB') || raw.includes('HEPATITISB')) return 'HEPB';
+    if (raw.includes('BCG')) return 'BCG';
+    return raw || 'UNKNOWN';
+};
+
+const isRecordedDose = (item) => (
+    item?.status === 'COMPLETED' ||
+    item?.urgency === 'completed' ||
+    !!item?.administeredDate ||
+    !!item?.actual_date
+);
+
+const isPendingDose = (item) => (
+    item?.status === 'PENDING_VALIDATION' ||
+    item?.urgency === 'pending_validation'
+);
+
+const isHepatitisBBirthDose = (item) => {
+    const raw = `${item?.vaccineCode || item?.vaccine_code || item?.vaccine || ''} ${item?.vaccineName || item?.vaccine_name || ''}`
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+
+    return raw.includes('HEPB') || raw.includes('HEPATITISB');
+};
+
+const isHepatitisBBirthDoseExpired = (item, dob) => {
+    if (!isHepatitisBBirthDose(item) || isRecordedDose(item)) return false;
+
+    const birthDate = new Date(dob);
+    if (Number.isNaN(birthDate.getTime())) return false;
+
+    const hoursSinceBirth = (Date.now() - birthDate.getTime()) / (1000 * 60 * 60);
+    return hoursSinceBirth > 24;
+};
+
+const buildSequenceState = (items = []) => {
+    const firstOpenBySeries = new Map();
+    const sequenceState = new Map();
+
+    const ordered = items
+        .map((item, idx) => ({
+            item,
+            idx,
+            itemKey: getItemKey(item, idx),
+            seriesKey: getSeriesKey(item),
+            doseNumber: getDoseNumber(item),
+            blockedFromRecording: isRecordedDose(item) || isPendingDose(item) || item?.status === 'INELIGIBLE' || item?.urgency === 'ineligible'
+        }))
+        .sort((a, b) => (
+            a.seriesKey.localeCompare(b.seriesKey) ||
+            a.doseNumber - b.doseNumber ||
+            dateStringToDayNumber(getActionableDate(a.item)) - dateStringToDayNumber(getActionableDate(b.item)) ||
+            a.idx - b.idx
+        ));
+
+    for (const entry of ordered) {
+        if (!entry.blockedFromRecording && !firstOpenBySeries.has(entry.seriesKey)) {
+            firstOpenBySeries.set(entry.seriesKey, entry);
+        }
+    }
+
+    for (const entry of ordered) {
+        const firstOpen = firstOpenBySeries.get(entry.seriesKey);
+        const isFirstOpenDose = !firstOpen || firstOpen.itemKey === entry.itemKey;
+        sequenceState.set(entry.itemKey, {
+            isFirstOpenDose,
+            blockingDoseLabel: firstOpen && firstOpen.itemKey !== entry.itemKey
+                ? `Dose ${firstOpen.doseNumber}`
+                : null
+        });
+    }
+
+    return sequenceState;
+};
+
 /*
    NIP TIMELINE MODAL
    Rendered via ReactDOM.createPortal into document.body so the
@@ -82,6 +231,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [fetchError, setFetchError] = useState(null);
+    const sequenceState = useMemo(() => buildSequenceState(schedule), [schedule]);
 
     useEffect(() => {
         if (!infant?.id) return;
@@ -107,17 +257,20 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                 // Items are camelCase per NIPScheduleService._mapRowToFrontend
                 const src = data.schedule || data;  // graceful fallback if shape ever changes
                 const timeline = [
+                    ...(src.defaulter          || []).map(v => ({ ...v, urgency: 'defaulter',          status: 'DEFAULTER' })),
                     ...(src.overdue            || []).map(v => ({ ...v, urgency: 'overdue',            status: 'OVERDUE'   })),
-                    ...(src.defaulter          || []).map(v => ({ ...v, urgency: 'defaulted',          status: 'DEFAULTED' })),
                     ...(src.due_now            || []).map(v => ({ ...v, urgency: 'due_today',          status: 'DUE_TODAY' })),
                     ...(src.due_soon           || []).map(v => ({ ...v, urgency: 'due_soon',           status: 'DUE_SOON'  })),
                     ...(src.upcoming           || []).map(v => ({ ...v, urgency: 'upcoming',           status: 'UPCOMING'  })),
                     ...(src.completed          || []).map(v => ({ ...v, urgency: 'completed',          status: 'COMPLETED' })),
                     ...(src.pending_validation || []).map(v => ({ ...v, urgency: 'pending_validation', status: 'PENDING_VALIDATION' })),
+                    ...(src.ineligible         || []).map(v => ({ ...v, urgency: 'ineligible',         status: 'INELIGIBLE' })),
                 ].map(v => ({
                     ...v,
-                    // Normalize the date field - items use camelCase `dueDate` from _mapRowToFrontend
-                    scheduled_date: v.dueDate || v.administeredDate || v.scheduled_date,
+                    // Use the backend clinical floor as the actionable target date.
+                    earliest_allowed_date: v.earliestAllowedDate || v.earliest_allowed_date || v.dueDate || v.scheduled_date,
+                    scheduled_date: v.earliestAllowedDate || v.earliest_allowed_date || v.dueDate || v.administeredDate || v.scheduled_date,
+                    recommended_date: v.dueDate || v.recommendedDate || v.recommended_date || v.scheduled_date,
                 })).sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date));
 
                 console.log('[NIPTimelineModal] built timeline:', timeline.length, 'items');
@@ -183,19 +336,29 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                     ) : (
                         <div className="space-y-6">
                             {schedule.map((item, idx) => {
+                                const itemKey = getItemKey(item, idx);
+                                const sequenceInfo = sequenceState.get(itemKey) || { isFirstOpenDose: true, blockingDoseLabel: null };
                                 const isCompleted  = item?.status === 'COMPLETED';
                                 const isOverdue    = item?.urgency === 'overdue' || item?.status === 'OVERDUE';
-                                const isDefaulted  = item?.urgency === 'defaulted' || item?.status === 'DEFAULTED' || (item?.daysOverdue || item?.days_overdue) > 42;
-                                const needsCatchUp = isDefaulted || isOverdue;
+                                const actionableDate = getActionableDate(item);
+                                const daysLate = getDaysLateFromDate(actionableDate);
+                                const isDefaulter  = item?.urgency === 'defaulter' || item?.status === 'DEFAULTER' || item?.status === 'DEFAULTED' || daysLate > 42;
+                                const needsCatchUp = isDefaulter || isOverdue;
+                                const isIneligible = item?.urgency === 'ineligible' || item?.status === 'INELIGIBLE';
+                                const isPending = isPendingDose(item);
+                                const isExpiredHepB = isHepatitisBBirthDoseExpired(item, infant?.dob);
 
                                 let badgeClass = 'bg-slate-50 text-slate-600 border-slate-200';
                                 let badgeLabel = 'Upcoming';
                                 if (isCompleted) {
                                     badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                                     badgeLabel = 'Completed';
-                                } else if (isDefaulted) {
+                                } else if (isExpiredHepB) {
+                                    badgeClass = 'bg-slate-900 text-white border-slate-950';
+                                    badgeLabel = 'Expired';
+                                } else if (isDefaulter) {
                                     badgeClass = 'bg-red-600 text-white border-red-700';
-                                    badgeLabel = 'Defaulted';
+                                    badgeLabel = 'Defaulter';
                                 } else if (isOverdue) {
                                     badgeClass = 'bg-red-50 text-red-700 border-red-200';
                                     badgeLabel = 'Overdue';
@@ -205,10 +368,13 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                 } else if (item?.urgency === 'due_soon' || item?.status === 'DUE_SOON') {
                                     badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
                                     badgeLabel = 'Due soon';
+                                } else if (isIneligible) {
+                                    badgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                                    badgeLabel = 'Ineligible';
                                 }
 
                                 return (
-                                    <div key={idx} className="relative pl-8">
+                                    <div key={itemKey} className="relative pl-8">
                                         {/* Vertical connector line */}
                                         {idx !== schedule.length - 1 && (
                                             <div className="absolute left-[11px] top-7 bottom-[-24px] w-0.5 bg-slate-100" />
@@ -216,7 +382,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
 
                                         {/* Timeline node dot */}
                                         <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10 ${
-                                            isCompleted ? 'bg-emerald-500' : isDefaulted ? 'bg-red-600' : isOverdue ? 'bg-amber-500' : 'bg-slate-300'
+                                            isCompleted ? 'bg-emerald-500' : isExpiredHepB ? 'bg-slate-900' : isDefaulter ? 'bg-red-600' : isOverdue ? 'bg-amber-500' : isIneligible ? 'bg-slate-400' : 'bg-slate-300'
                                         }`}>
                                             {isCompleted
                                                 ? <CircleCheck className="w-3 h-3 text-white" />
@@ -235,15 +401,15 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                     </h4>
                                                     <p className="text-[10px] font-bold text-slate-500 uppercase mt-1 flex items-center gap-2">
                                                         <Calendar className="w-3 h-3" />
-                                                        Target: {formatDate(item?.scheduled_date || item?.dueDate || item?.scheduledDate)}
+                                                        Target: {formatDate(actionableDate)}
                                                         {isCompleted && (item?.administeredDate || item?.actual_date) &&
                                                             ` · Given: ${formatDate(item.administeredDate || item.actual_date)}`
                                                         }
-                                                        {needsCatchUp && (item?.daysOverdue || item?.days_overdue) > 0 && (
+                                                        {needsCatchUp && daysLate > 0 && (
                                                             <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-black ${
-                                                                isDefaulted ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
+                                                                isDefaulter ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
                                                             }`}>
-                                                                {item?.daysOverdue || item?.days_overdue}d late
+                                                                {daysLate}d late
                                                             </span>
                                                         )}
                                                     </p>
@@ -253,29 +419,42 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                 </span>
                                             </div>
 
-                                            {!isCompleted && (
+                                            {!isCompleted && (!isIneligible || isExpiredHepB) && !isPending && (
                                                 <div className="mt-3">
                                                     {(() => {
-                                                        const allowedDate = item?.earliest_allowed_date || item?.earliestAllowedDate || item?.target_date;
-                                                        // For defaulters: always allow - catch-up is the clinical directive.
-                                                        // For future doses: block if earliest_allowed_date is in the future.
-                                                        const isPremature = !needsCatchUp && allowedDate && new Date() < new Date(allowedDate);
+                                                        const allowedDate = getActionableDate(item);
+                                                        const isPremature = allowedDate && dateStringToDayNumber(new Date()) < dateStringToDayNumber(allowedDate);
+                                                        const isSequenceLocked = !sequenceInfo.isFirstOpenDose;
+                                                        const isDisabled = isExpiredHepB || isPremature || isSequenceLocked;
                                                         return (
                                                             <button
                                                                 onClick={() => onRecordDose(item)}
-                                                                disabled={isPremature}
+                                                                disabled={isDisabled}
                                                                 className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                                                                    isPremature
+                                                                    isDisabled
                                                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                                         : needsCatchUp
                                                                             ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
                                                                             : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                                                 }`}
                                                             >
-                                                                {needsCatchUp ? 'Record Catch-up Dose' : 'Record dose'}
+                                                                {isExpiredHepB
+                                                                    ? 'Expired / Ineligible'
+                                                                    : isSequenceLocked
+                                                                    ? `${sequenceInfo.blockingDoseLabel || 'Previous dose'} required first`
+                                                                    : isPremature
+                                                                        ? `Available ${formatDate(allowedDate)}`
+                                                                        : needsCatchUp
+                                                                            ? 'Record Catch-up Dose'
+                                                                            : 'Record dose'}
                                                             </button>
                                                         );
                                                     })()}
+                                                </div>
+                                            )}
+                                            {isPending && (
+                                                <div className="mt-3 text-[10px] font-black uppercase tracking-widest text-purple-700">
+                                                    Awaiting validation before the next dose opens
                                                 </div>
                                             )}
                                         </div>
@@ -302,6 +481,8 @@ const NIPSchedulePage = () => {
     const [allInfants, setAllInfants] = useState([]);
     const [stats, setStats]           = useState({ overdue: 0, due_today: 0, due_soon: 0, upcoming: 0, completed_today: 0 });
     const [loading, setLoading]       = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const hasLoadedRef = useRef(false);
 
     // Filters
     const [urgencyFilter, setUrgencyFilter] = useState('all');
@@ -320,9 +501,14 @@ const NIPSchedulePage = () => {
     ];
 
     /* Fetch queue */
-    const fetchQueue = useCallback(async () => {
+    const fetchQueue = useCallback(async ({ silent = false } = {}) => {
+        const showBlockingLoader = !silent && !hasLoadedRef.current;
         try {
-            setLoading(true);
+            if (showBlockingLoader) {
+                setLoading(true);
+            } else {
+                setRefreshing(true);
+            }
             const response = await apiClient.get('/schedule/queue');
             if (!response.ok) throw new Error('Failed to fetch queue');
             const data = await response.json();
@@ -338,7 +524,9 @@ const NIPSchedulePage = () => {
         } catch (err) {
             console.error('[NIPSchedule] fetch error:', err);
         } finally {
+            hasLoadedRef.current = true;
             setLoading(false);
+            setRefreshing(false);
         }
     }, []);
 
@@ -346,14 +534,17 @@ const NIPSchedulePage = () => {
 
     // 30-second polling
     useEffect(() => {
-        const interval = setInterval(fetchQueue, 30000);
+        const interval = setInterval(() => fetchQueue({ silent: true }), 30000);
         return () => clearInterval(interval);
     }, [fetchQueue]);
 
     /* Filtering */
     const filtered = useMemo(() => {
         let list = [...allInfants];
-        if (urgencyFilter !== 'all') list = list.filter(i => i.urgency === urgencyFilter);
+        if (urgencyFilter !== 'all') {
+            const normalizedFilter = urgencyFilter === 'upcoming' ? 'on_track' : urgencyFilter;
+            list = list.filter(i => i.urgency === normalizedFilter);
+        }
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             list = list.filter(i =>
@@ -382,7 +573,9 @@ const NIPSchedulePage = () => {
                 vaccineCode: item.vaccineCode  || item.vaccine_code || item.vaccine,
                 doseNumber:  item.doseNumber   || item.dose_number,
                 scheduleId:  item.scheduleId   || item.id,
-                dueDate:     item.dueDate      || item.scheduled_date,
+                dueDate:     item.earliestAllowedDate || item.earliest_allowed_date || item.dueDate || item.scheduled_date,
+                earliestAllowedDate: item.earliestAllowedDate || item.earliest_allowed_date || item.dueDate || item.scheduled_date,
+                recommendedDate: item.dueDate || item.recommended_date || item.recommendedDate,
             },
         });
     };
@@ -395,7 +588,7 @@ const NIPSchedulePage = () => {
     const afterAction = () => {
         setVacModal(null);
         setTimelineModal(null);
-        fetchQueue();
+        fetchQueue({ silent: true });
     };
 
     /* Render */
@@ -411,12 +604,12 @@ const NIPSchedulePage = () => {
                     </p>
                 </div>
                 <button
-                    onClick={fetchQueue}
-                    disabled={loading}
+                    onClick={() => fetchQueue({ silent: true })}
+                    disabled={loading || refreshing}
                     className="bg-white border border-slate-200 p-2 rounded-[4px] hover:bg-slate-50 transition-colors disabled:opacity-50"
                     title="Refresh"
                 >
-                    <RefreshCw className={`w-4 h-4 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-4 h-4 text-slate-500 ${loading || refreshing ? 'animate-spin' : ''}`} />
                 </button>
             </div>
 
@@ -440,7 +633,7 @@ const NIPSchedulePage = () => {
                                 <Icon className={`w-4 h-4 ${kpi.colorText} opacity-50`} />
                             </div>
                             <p className={`text-3xl font-extrabold ${kpi.colorText}`}>
-                                {loading ? '-' : (stats[kpi.key] ?? 0)}
+                                {loading && allInfants.length === 0 ? '-' : (stats[kpi.key] ?? 0)}
                             </p>
                             {isActive && (
                                 <p className="text-xs text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
@@ -468,14 +661,13 @@ const NIPSchedulePage = () => {
 
                 {/* Quick-filter pills */}
                 <div className="flex flex-wrap items-center gap-2">
-                    {['all', 'defaulter', 'overdue', 'due_today', 'due_soon', 'upcoming'].map(f => {
+                    {['all', 'defaulter', 'due_soon', 'upcoming', 'completed'].map(f => {
                         const labels = {
                             all: 'All',
                             defaulter: 'Defaulter',
-                            overdue: 'Overdue',
-                            due_today: 'Due today',
                             due_soon: 'Due soon',
-                            upcoming: 'Upcoming'
+                            upcoming: 'On track',
+                            completed: 'Completed'
                         };
                         return (
                             <button
@@ -511,9 +703,9 @@ const NIPSchedulePage = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {loading ? (
+                                {loading && allInfants.length === 0 ? (
                                     Array(6).fill(0).map((_, i) => (
-                                        <tr key={i} className="animate-pulse">
+                                        <tr key={`skeleton-${i}`} className="animate-pulse">
                                             <td colSpan={7} className="px-4 py-2 bg-slate-50/50 h-10" />
                                         </tr>
                                     ))
@@ -534,6 +726,7 @@ const NIPSchedulePage = () => {
                                 ) : (
                                     filtered.map(infant => {
                                         const cfg = getUrgencyConfig(infant.urgency);
+                                        const statusLabel = infant.computed_schedule_status || cfg.label;
                                         return (
                                             <tr
                                                 key={infant.id}
@@ -571,7 +764,7 @@ const NIPSchedulePage = () => {
                                                 {/* Status badge */}
                                                 <td className="clinical-table-td">
                                                     <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border shadow-sm ${cfg.pill}`}>
-                                                        {cfg.label}
+                                                        {statusLabel.replace(/_/g, ' ')}
                                                     </span>
                                                 </td>
 

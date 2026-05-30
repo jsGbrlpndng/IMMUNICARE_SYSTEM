@@ -80,7 +80,7 @@ class EnhancedNIPScheduleEngine {
                 // Map the status strings back to the format historically expected by this engine/service
                 const mapStatus = (vax) => {
                     const dueDate = new Date(vax.dueDate);
-                    const isDefaulter = vax.status === 'DEFAULTED';
+                    const isDefaulter = vax.status === 'DEFAULTER' || vax.status === 'DEFAULTED';
                     const isOverdue = vax.status === 'OVERDUE';
                     return {
                         ...vax,
@@ -516,8 +516,10 @@ class EnhancedNIPScheduleEngine {
     async getApprovedInfantsWithSchedule(filters = {}, limit = 50, offset = 0) {
         try {
             // Build WHERE clause based on filters
-            let whereConditions = ["i.status IN ('Active', 'Defaulter', 'FIC', 'CIC')"];
+            const lifecycleStatus = filters.lifecycle_status || filters.infant_status || 'Active';
+            let whereConditions = ["i.status = ?"];
             let queryParams = [];
+            queryParams.push(lifecycleStatus);
 
             // The master infants table contains only approved registrations.
 
@@ -529,7 +531,7 @@ class EnhancedNIPScheduleEngine {
 
             // Barangay filter
             if (filters.barangay) {
-                whereConditions.push("i.barangay = ?");
+                whereConditions.push("UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))");
                 queryParams.push(filters.barangay);
             }
 
@@ -584,6 +586,65 @@ class EnhancedNIPScheduleEngine {
             const infantIds = infants.map(i => i.id);
             const placeholders = infantIds.map(() => '?').join(',');
 
+            const [computedStatusRows] = await this.db.query(
+                `
+                SELECT
+                    i.id,
+                    COALESCE(
+                        MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date < CURRENT_DATE THEN 'DEFAULTER' END),
+                        MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date = CURRENT_DATE THEN 'DUE_TODAY' END),
+                        MAX(CASE
+                            WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date > CURRENT_DATE
+                             AND COALESCE(s.earliest_allowed_date, s.recommended_date)::date <= CURRENT_DATE + INTERVAL '7 days'
+                            THEN 'DUE_SOON'
+                        END),
+                        MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date > CURRENT_DATE + INTERVAL '7 days' THEN 'ON_TRACK' END),
+                        CASE
+                            WHEN i.immunization_status IN ('FIC', 'CIC') THEN i.immunization_status
+                            ELSE 'COMPLETED'
+                        END
+                    ) AS computed_schedule_status
+                FROM infants i
+                LEFT JOIN infant_schedules s ON s.infant_id = i.id
+                    AND s.status::text NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
+                WHERE i.id IN (${placeholders})
+                GROUP BY i.id
+                `,
+                infantIds
+            );
+            const computedStatusMap = new Map(computedStatusRows.map(row => [row.id, row.computed_schedule_status]));
+
+            const [nextScheduleRows] = await this.db.query(
+                `
+                SELECT DISTINCT ON (s.infant_id)
+                    s.infant_id,
+                    s.id AS schedule_id,
+                    s.vaccine_code,
+                    COALESCE(s.vaccine_name, r.vaccine_name, s.vaccine_code) AS vaccine_name,
+                    s.dose_number,
+                    s.recommended_date,
+                    s.earliest_allowed_date,
+                    s.status,
+                    GREATEST((CURRENT_DATE - COALESCE(s.earliest_allowed_date, s.recommended_date)::date), 0)::int AS days_overdue
+                FROM infant_schedules s
+                LEFT JOIN doh_compliance_rules r ON r.vaccine_code = s.vaccine_code
+                WHERE s.infant_id IN (${placeholders})
+                  AND s.status::text NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
+                ORDER BY
+                    s.infant_id,
+                    CASE
+                        WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date < CURRENT_DATE THEN 0
+                        WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date = CURRENT_DATE THEN 1
+                        WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date <= CURRENT_DATE + INTERVAL '7 days' THEN 2
+                        ELSE 3
+                    END,
+                    COALESCE(s.earliest_allowed_date, s.recommended_date) ASC,
+                    s.dose_number ASC
+                `,
+                infantIds
+            );
+            const nextScheduleMap = new Map(nextScheduleRows.map(row => [row.infant_id, row]));
+
             // 1. Fetch Vaccinations
             const [allVaccinations] = await this.db.query(
                 `SELECT infant_id, vaccine_name, administered_date FROM vaccinations WHERE infant_id IN (${placeholders})`,
@@ -633,6 +694,8 @@ class EnhancedNIPScheduleEngine {
                 let urgency = 'upcoming';
                 let daysOverdue = 0;
                 let vaccinationNeeds = [];
+                const computedScheduleStatus = computedStatusMap.get(infant.id) || 'COMPLETED';
+                const nextSchedule = nextScheduleMap.get(infant.id);
 
                 if (schedule.defaulter && schedule.defaulter.length > 0) {
                     vaccinationNeeds = schedule.defaulter;
@@ -699,8 +762,36 @@ class EnhancedNIPScheduleEngine {
                     urgency = 'completed';
                 }
 
+                if (nextSchedule) {
+                    nextDueVaccine = nextSchedule.vaccine_name;
+                    nextDueDate = nextSchedule.earliest_allowed_date || nextSchedule.recommended_date;
+                    nextDueVaccineCode = nextSchedule.vaccine_code;
+                    nextDoseNumber = nextSchedule.dose_number;
+                    nextScheduleId = nextSchedule.schedule_id;
+                    daysOverdue = nextSchedule.days_overdue || 0;
+                }
+
+                if (computedScheduleStatus === 'DEFAULTER') {
+                    urgency = 'defaulter';
+                } else if (computedScheduleStatus === 'DUE_TODAY') {
+                    urgency = 'due_today';
+                } else if (computedScheduleStatus === 'DUE_SOON') {
+                    urgency = 'due_soon';
+                } else if (computedScheduleStatus === 'ON_TRACK') {
+                    urgency = 'on_track';
+                } else if (['COMPLETED', 'FIC', 'CIC'].includes(computedScheduleStatus)) {
+                    urgency = 'completed';
+                    nextDueVaccine = null;
+                    nextDueDate = null;
+                    nextDueVaccineCode = null;
+                    nextDoseNumber = null;
+                    nextScheduleId = null;
+                    daysOverdue = 0;
+                }
+
                 // Apply urgency filter (post-calculation)
-                if (filters.urgency && filters.urgency !== 'all' && urgency !== filters.urgency) {
+                const normalizedFilterUrgency = filters.urgency === 'upcoming' ? 'on_track' : filters.urgency;
+                if (normalizedFilterUrgency && normalizedFilterUrgency !== 'all' && urgency !== normalizedFilterUrgency) {
                     continue;
                 }
 
@@ -732,6 +823,12 @@ class EnhancedNIPScheduleEngine {
                     next_schedule_id: nextScheduleId,
                     next_due_date: nextDueDate ? (typeof nextDueDate === 'string' ? nextDueDate : nextDueDate.toISOString().split('T')[0]) : null,
                     urgency: urgency,
+                    computed_schedule_status: computedScheduleStatus,
+                    risk_tier: computedScheduleStatus === 'DEFAULTER'
+                        ? 'HIGH'
+                        : (computedScheduleStatus === 'DUE_TODAY' || computedScheduleStatus === 'DUE_SOON')
+                            ? 'MEDIUM'
+                            : 'LOW',
                     days_overdue: daysOverdue,
                     vaccination_needs: vaccinationNeeds,
                     approved_by: infant.approved_by,

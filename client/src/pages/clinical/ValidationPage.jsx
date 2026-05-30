@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { 
     CheckCircle, 
     XCircle, 
@@ -17,8 +18,16 @@ import {
 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 
+const REJECTION_REASONS = [
+    'Confirmed Duplicate',
+    'Invalid Data',
+    'Out of Jurisdiction',
+    'Other'
+];
+
 const ValidationPage = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [pendingRegistrations, setPendingRegistrations] = useState([]);
     const [selectedId, setSelectedId] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -26,9 +35,12 @@ const ValidationPage = () => {
     const [feedback, setFeedback] = useState({ type: '', message: '' });
     const [stats, setStats] = useState({ processed_today: 0 });
     const [rejectionReason, setRejectionReason] = useState('');
+    const [rejectionNotes, setRejectionNotes] = useState('');
     const [showRejectionModal, setShowRejectionModal] = useState(false);
-    const [revisionNotes, setRevisionNotes] = useState('');
+    const [correctionNote, setCorrectionNote] = useState('');
     const [showRevisionModal, setShowRevisionModal] = useState(false);
+    const [showApprovalModal, setShowApprovalModal] = useState(false);
+    const [approvalSuccess, setApprovalSuccess] = useState(null);
 
     const fetchQueue = async () => {
         setLoading(true);
@@ -139,22 +151,20 @@ const ValidationPage = () => {
             const res = await apiClient.post(`/validation/${selectedId}/approve`, { notes: 'Approved by clinical reviewer' });
             const data = await res.json();
             if (res.ok && data.success) {
-                setFeedback({ type: 'success', message: 'Record approved and promoted to registry.' });
+                const approvedRecord = selectedRecord;
+                const targetId = data.infantId || data.referenceId || '';
+                setFeedback({ type: '', message: '' });
                 
                 // Immediately remove from local queue
                 setPendingRegistrations(prev => prev.filter(item => item.id !== selectedId));
                 setSelectedId(null);
-                
-                // Task 4: Redirect to the newly promoted infant record
-                // Task 1: Ensure referenceId is sanitized (hyphenated)
-                const targetId = (data.referenceId || data.infantId || '').toString().replace(/\s+/g, '-');
-                if (targetId) {
-                    setTimeout(() => {
-                        navigate(`/clinical/infants/${targetId}`);
-                    }, 1500);
-                } else {
-                    fetchQueue(); // Background refresh if no ID returned
-                }
+                setShowApprovalModal(false);
+                setApprovalSuccess({
+                    infantId: targetId,
+                    name: `${approvedRecord?.first_name || ''} ${approvedRecord?.last_name || ''}`.trim() || 'Infant record',
+                    referenceId: data.referenceId || approvedRecord?.reference_id || ''
+                });
+                fetchQueue();
             } else {
                 setFeedback({ type: 'error', message: data.error || 'Approval failed' });
             }
@@ -169,7 +179,9 @@ const ValidationPage = () => {
         if (!selectedId || !rejectionReason) return;
         setProcessing(true);
         try {
-            const res = await apiClient.post(`/validation/${selectedId}/reject`, { reason: rejectionReason });
+            const res = await apiClient.post(`/validation/${selectedId}/reject`, {
+                rejection_reason: [rejectionReason, rejectionNotes.trim()].filter(Boolean).join(' - ')
+            });
             const data = await res.json();
             if (res.ok && data.success) {
                 setFeedback({ type: 'success', message: 'Record permanently rejected.' });
@@ -178,6 +190,7 @@ const ValidationPage = () => {
                 setSelectedId(null);
                 setShowRejectionModal(false);
                 setRejectionReason('');
+                setRejectionNotes('');
                 fetchQueue(); // Background refresh
             } else {
                 setFeedback({ type: 'error', message: data.error || 'Rejection failed' });
@@ -190,10 +203,10 @@ const ValidationPage = () => {
     };
 
     const handleNeedsRevision = async () => {
-        if (!selectedId || !revisionNotes) return;
+        if (!selectedId || !correctionNote) return;
         setProcessing(true);
         try {
-            const res = await apiClient.post(`/validation/${selectedId}/needs-revision`, { notes: revisionNotes });
+            const res = await apiClient.post(`/validation/${selectedId}/return`, { correction_notes: correctionNote });
             const data = await res.json();
             if (res.ok && data.success) {
                 setFeedback({ type: 'success', message: 'Record returned for correction.' });
@@ -201,7 +214,7 @@ const ValidationPage = () => {
                 setPendingRegistrations(prev => prev.filter(item => item.id !== selectedId));
                 setSelectedId(null);
                 setShowRevisionModal(false);
-                setRevisionNotes('');
+                setCorrectionNote('');
                 fetchQueue(); // Background refresh
             } else {
                 setFeedback({ type: 'error', message: data.error || 'Action failed' });
@@ -212,6 +225,13 @@ const ValidationPage = () => {
             setProcessing(false);
         }
     };
+
+    const physicalAddressLabel = [
+        selectedRecord?.locality || selectedRecord?.barangay,
+        selectedRecord?.exact_address
+    ].filter(Boolean).join(' - ') || '--';
+
+    const fhsisAssignment = user?.assigned_barangay || '--';
 
     return (
         <div className="min-h-screen bg-[#F4F7F9] flex flex-col font-sans antialiased text-slate-900">
@@ -461,7 +481,7 @@ const ValidationPage = () => {
                                 </div>
 
                                 <button 
-                                    onClick={handleApprove}
+                                    onClick={() => setShowApprovalModal(true)}
                                     disabled={processing}
                                     className="px-10 py-2.5 bg-[#006B3F] text-white text-[9px] font-black uppercase tracking-[0.3em] hover:bg-[#005231] transition-all disabled:opacity-50"
                                 >
@@ -482,14 +502,34 @@ const ValidationPage = () => {
                             <XCircle className="text-white" size={16} />
                             <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">Reject File</h3>
                         </div>
-                        <div className="p-4">
-                            <textarea 
-                                value={rejectionReason}
-                                onChange={(e) => setRejectionReason(e.target.value)}
-                                className="w-full border border-slate-200 p-2 text-[10px] outline-none h-24"
-                                placeholder="State reason for rejection..."
-                            ></textarea>
-                            <div className="flex gap-2 mt-4">
+                        <div className="p-4 space-y-4">
+                            <div>
+                                <label className="mb-2 block text-[9px] font-black uppercase tracking-widest text-slate-700">
+                                    Rejection Reason
+                                </label>
+                                <select
+                                    value={rejectionReason}
+                                    onChange={(e) => setRejectionReason(e.target.value)}
+                                    className="w-full border border-slate-200 bg-white p-2 text-[10px] font-semibold outline-none"
+                                >
+                                    <option value="">Select rejection reason</option>
+                                    {REJECTION_REASONS.map((reason) => (
+                                        <option key={reason} value={reason}>{reason}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="mb-2 block text-[9px] font-black uppercase tracking-widest text-slate-700">
+                                    Rejection Notes
+                                </label>
+                                <textarea
+                                    value={rejectionNotes}
+                                    onChange={(e) => setRejectionNotes(e.target.value)}
+                                    className="w-full border border-slate-200 p-2 text-[10px] outline-none h-24"
+                                    placeholder="Optional context for the rejection decision..."
+                                ></textarea>
+                            </div>
+                            <div className="flex gap-2">
                                 <button onClick={() => setShowRejectionModal(false)} className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400">Cancel</button>
                                 <button onClick={handleReject} disabled={!rejectionReason || processing} className="flex-1 py-2 bg-rose-700 text-white text-[9px] font-bold uppercase">Confirm</button>
                             </div>
@@ -504,19 +544,84 @@ const ValidationPage = () => {
                     <div className="bg-white border border-amber-200 w-full max-w-sm relative z-10 shadow-2xl">
                         <div className="bg-amber-600 p-3 flex items-center gap-2">
                             <AlertCircle className="text-white" size={16} />
-                            <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">Correction Request</h3>
+                            <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">Return for Correction</h3>
                         </div>
                         <div className="p-4">
                             <textarea 
-                                value={revisionNotes}
-                                onChange={(e) => setRevisionNotes(e.target.value)}
+                                value={correctionNote}
+                                onChange={(e) => setCorrectionNote(e.target.value)}
                                 className="w-full border border-slate-200 p-2 text-[10px] outline-none h-24"
-                                placeholder="Specify required revisions..."
+                                placeholder="Specify the correction needed before resubmission..."
                             ></textarea>
                             <div className="flex gap-2 mt-4">
                                 <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400">Cancel</button>
-                                <button onClick={handleNeedsRevision} disabled={!revisionNotes || processing} className="flex-1 py-2 bg-amber-600 text-white text-[9px] font-bold uppercase">Return</button>
+                                <button onClick={handleNeedsRevision} disabled={!correctionNote || processing} className="flex-1 py-2 bg-amber-600 text-white text-[9px] font-bold uppercase">Return</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showApprovalModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                    <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowApprovalModal(false)}></div>
+                    <div className="bg-white border border-emerald-200 w-full max-w-lg relative z-10 shadow-2xl">
+                        <div className="bg-[#006B3F] p-3 flex items-center gap-2">
+                            <CheckCircle className="text-white" size={16} />
+                            <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">Approve and Promote</h3>
+                        </div>
+                        <div className="p-4 space-y-4">
+                            <div className="border border-slate-200 bg-slate-50 p-4 space-y-3">
+                                <div>
+                                    <div className="text-[8px] font-black uppercase tracking-widest text-slate-500">Physical Address</div>
+                                    <div className="mt-1 text-sm font-bold text-slate-900">{physicalAddressLabel}</div>
+                                </div>
+                                <div className="border-t border-slate-200 pt-3">
+                                    <div className="text-[8px] font-black uppercase tracking-widest text-slate-500">FHSIS Assignment</div>
+                                    <div className="mt-1 text-sm font-bold text-slate-900">{fhsisAssignment}</div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowApprovalModal(false)} className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400">Cancel</button>
+                                <button onClick={handleApprove} disabled={processing} className="flex-1 py-2 bg-[#006B3F] text-white text-[9px] font-bold uppercase">
+                                    {processing ? 'Processing...' : 'Confirm Approval'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {approvalSuccess && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
+                    <div className="absolute inset-0 bg-slate-900/60"></div>
+                    <div className="bg-white border border-slate-200 w-full max-w-md relative z-10 shadow-sm rounded-md">
+                        <div className="p-6 text-center border-b border-slate-200">
+                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-md border border-emerald-100 bg-emerald-50">
+                                <CheckCircle className="h-8 w-8 text-emerald-800" />
+                            </div>
+                            <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Record Validated</h3>
+                            <p className="mt-2 text-sm font-semibold text-slate-500">
+                                {approvalSuccess.name} has been approved and promoted to the clinical registry.
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-3 p-5 sm:flex-row">
+                            <button
+                                onClick={() => {
+                                    setApprovalSuccess(null);
+                                    fetchQueue();
+                                }}
+                                className="flex-1 rounded-md bg-emerald-800 px-4 py-3 text-xs font-black uppercase tracking-wider text-white hover:bg-emerald-900"
+                            >
+                                Continue Validating
+                            </button>
+                            <button
+                                onClick={() => navigate(`/clinical/infants/${approvalSuccess.infantId}`)}
+                                disabled={!approvalSuccess.infantId}
+                                className="flex-1 rounded-md border border-slate-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-700 hover:bg-slate-50"
+                            >
+                                View Infant Profile
+                            </button>
                         </div>
                     </div>
                 </div>

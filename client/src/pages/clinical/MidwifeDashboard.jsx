@@ -79,7 +79,7 @@ const AutoBounds = ({ points }) => {
 
 const createStatusIcon = (status) => {
     let color = '#10B981'; // Default green (Up-to-date)
-    if (status === 'overdue' || status === 'defaulter') color = '#EF4444'; // Red
+    if (status === 'overdue' || status === 'DEFAULTED') color = '#EF4444'; // Red
     else if (status === 'due_today' || status === 'due_soon') color = '#F59E0B'; // Yellow
 
     return L.divIcon({
@@ -103,6 +103,8 @@ export default function MidwifeDashboard() {
     const [todayList, setTodayList] = useState([]);
     const [systemImpactData, setSystemImpactData] = useState([]);
     const [fieldKitData, setFieldKitData] = useState([]);
+    const [deploymentSummary, setDeploymentSummary] = useState({ activeClusters: 0, deployedBhws: 0 });
+    const [activeDeployments, setActiveDeployments] = useState([]);
     const [timeframe, setTimeframe] = useState('today');
 
     const [loading, setLoading] = useState(true);
@@ -116,14 +118,16 @@ export default function MidwifeDashboard() {
         const fetchAll = async () => {
             setLoading(true);
             try {
-                const [statsRes, gapRes, spatialRes, alertRes, priorityRes, urgentRes, impactRes] = await Promise.all([
+                const [statsRes, gapRes, spatialRes, alertRes, priorityRes, urgentRes, impactRes, deploymentRes, myDeploymentRes] = await Promise.all([
                     apiClient.get('/analytics/dashboard-stats'),
                     apiClient.get('/analytics/locality-gap'),
                     apiClient.get('/analytics/map-data?eps=300&minPts=3'),
                     apiClient.get('/dashboard/dbscan-alerts'),
                     apiClient.get('/dashboard/priority-followups?limit=10'),
                     apiClient.get('/dashboard/urgent-actions?limit=100'),
-                    apiClient.get('/analytics/system-impact')
+                    apiClient.get('/analytics/system-impact'),
+                    apiClient.get('/follow-ups?limit=500'),
+                    apiClient.get('/clinical/deployments/active')
                 ]);
 
                 const statsData = statsRes.ok ? await statsRes.json() : {};
@@ -134,6 +138,22 @@ export default function MidwifeDashboard() {
                 if (alertRes.ok) setAlerts((await alertRes.json()).alerts || []);
                 if (priorityRes.ok) setPriorityFollowups((await priorityRes.json()).data || []);
                 if (impactRes.ok) setSystemImpactData(await impactRes.json());
+                if (deploymentRes.ok) {
+                    const deploymentData = await deploymentRes.json();
+                    const priorityRows = (deploymentData?.follow_ups || []).filter((item) => item?.cluster_priority);
+                    setDeploymentSummary({
+                        activeClusters: new Set(priorityRows.map((item) => item.cluster_assignment_id).filter(Boolean)).size,
+                        deployedBhws: new Set(priorityRows.map((item) => item.assigned_cluster_bhw_id).filter(Boolean)).size
+                    });
+                } else {
+                    setDeploymentSummary({ activeClusters: 0, deployedBhws: 0 });
+                }
+                if (myDeploymentRes.ok) {
+                    const myDeploymentData = await myDeploymentRes.json();
+                    setActiveDeployments(Array.isArray(myDeploymentData?.deployments) ? myDeploymentData.deployments : []);
+                } else {
+                    setActiveDeployments([]);
+                }
                 if (urgentRes.ok) {
                     const data = await urgentRes.json();
                     setTodayList((data.actions || []).filter(a => a.urgency === 'due_today'));
@@ -149,6 +169,7 @@ export default function MidwifeDashboard() {
                 });
             } catch (err) {
                 console.error('DSS Load Failure:', err);
+                setActiveDeployments([]);
             } finally {
                 setLoading(false);
             }
@@ -205,10 +226,10 @@ export default function MidwifeDashboard() {
     };
 
     const sortedWorklist = useMemo(() => {
-        const combined = [...todayList, ...priorityFollowups].filter(inf => inf.urgency !== 'dropout' && inf.rankingStatus !== 'DROPOUT');
+        const combined = [...todayList, ...priorityFollowups].filter(inf => inf.urgency !== 'DEFAULTED' && inf.rankingStatus !== 'DEFAULTED');
 
         const getWeight = (inf) => {
-            if (inf.rankingStatus === 'DEFAULTER') return 4;
+            if (inf.rankingStatus === 'DEFAULTED') return 4;
             if (inf.urgency === 'overdue') return 3;
             if (inf.urgency === 'due_today') return 2;
             if (inf.urgency === 'due_soon') return 1;
@@ -234,7 +255,7 @@ export default function MidwifeDashboard() {
             alert('Action recorded: Feature integration pending.');
         };
 
-        if (inf.rankingStatus === 'DEFAULTER' || (inf.days_overdue && inf.days_overdue >= 30)) {
+        if (inf.rankingStatus === 'DEFAULTED' || (inf.days_overdue && inf.days_overdue >= 30)) {
             return { text: 'Log Field Visit', style: 'bg-emerald-700 text-white hover:bg-emerald-800 border-transparent', action: handleAction };
         }
 
@@ -262,7 +283,7 @@ export default function MidwifeDashboard() {
         };
 
         combined.forEach(inf => {
-            if (inf.rankingStatus === 'DEFAULTER' || (inf.days_overdue && inf.days_overdue >= 30)) counts.homeVisit++;
+            if (inf.rankingStatus === 'DEFAULTED' || (inf.days_overdue && inf.days_overdue >= 30)) counts.homeVisit++;
             const contactVal = inf.contact_number ? String(inf.contact_number).trim() : '';
             if (!contactVal || contactVal === '' || contactVal.toLowerCase() === 'none') counts.unreachable++;
             const addressVal = inf.exact_address ? String(inf.exact_address) : '';
@@ -306,6 +327,13 @@ export default function MidwifeDashboard() {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                     <button
+                        onClick={() => navigate('/clinical/map')}
+                        className="bg-white hover:bg-slate-50 text-emerald-900 px-5 py-4 rounded-sm flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.12em] border border-emerald-800 transition-all active:scale-95 whitespace-nowrap"
+                    >
+                        <MapPin size={16} />
+                        Active Clusters: {deploymentSummary.activeClusters} | Deployed BHWs: {deploymentSummary.deployedBhws}
+                    </button>
+                    <button
                         onClick={() => navigate('/clinical/validation')}
                         className="bg-emerald-800 hover:bg-emerald-900 text-white px-8 py-4 rounded-sm flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.15em] shadow-lg shadow-emerald-900/15 transition-all active:scale-95 group whitespace-nowrap"
                     >
@@ -314,6 +342,37 @@ export default function MidwifeDashboard() {
                     </button>
                 </div>
             </div>
+
+            {activeDeployments.length > 0 && (
+                <section className="mb-6 rounded-sm border border-rose-300 bg-white shadow-sm">
+                    <div className="flex flex-col gap-4 border-l-4 border-rose-600 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-sm bg-rose-50 text-rose-700">
+                                <Stethoscope className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-700">
+                                    URGENT: Mobile Clinic Deployment
+                                </p>
+                                <h2 className="mt-1 text-lg font-black text-slate-900">
+                                    The Head Nurse has deployed you to conduct a mobile catch-up immunization drive at a defaulter cluster in {activeDeployments[0]?.cluster_label || activeDeployments[0]?.barangay || 'your assigned barangay'}.
+                                </h2>
+                                <p className="mt-1 text-sm font-medium text-slate-500">
+                                    {activeDeployments[0]?.infant_count || 0} infants are included in this deployment area. Review the spatial view before field coordination.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/clinical/map')}
+                            className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#084C39] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A]"
+                        >
+                            View Deployment Area
+                            <ChevronRight className="h-4 w-4" />
+                        </button>
+                    </div>
+                </section>
+            )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                 {[
@@ -392,7 +451,7 @@ export default function MidwifeDashboard() {
                                             const rec = getRecommendation(inf);
                                             const rawLabel = inf.rankingStatus || inf.urgency || 'Scheduled';
                                             const urgencyLabel = rawLabel.replace(/_/g, ' ');
-                                            const isDropout = inf.urgency === 'dropout' || inf.rankingStatus === 'DROPOUT';
+                                            const isDEFAULTED = inf.urgency === 'DEFAULTED' || inf.rankingStatus === 'DEFAULTED';
                                             return (
                                                 <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_1.5fr] hover:bg-slate-50/80 transition-colors group border-b border-slate-50">
                                                     <div className="py-4 px-5 flex items-center">
@@ -405,7 +464,7 @@ export default function MidwifeDashboard() {
                                                     </div>
                                                     <div className="py-4 px-5 flex items-center">
                                                         <div className="flex flex-col gap-1">
-                                                            <span className={`text-[9px] font-bold px-2 py-1 rounded-sm w-fit uppercase tracking-widest whitespace-nowrap bg-white ${inf.urgency === 'overdue' || inf.rankingStatus === 'DEFAULTER' || isDropout
+                                                            <span className={`text-[9px] font-bold px-2 py-1 rounded-sm w-fit uppercase tracking-widest whitespace-nowrap bg-white ${inf.urgency === 'overdue' || inf.rankingStatus === 'DEFAULTED' || isDEFAULTED
                                                                     ? 'text-rose-700 border border-rose-600'
                                                                     : (inf.urgency === 'due_today' || inf.urgency === 'due_soon')
                                                                         ? 'text-amber-600 border border-amber-500'
@@ -430,11 +489,11 @@ export default function MidwifeDashboard() {
                                                     </div>
                                                     <div className="py-4 px-4 flex justify-center items-center text-center">
                                                         <span className={`text-xs font-black ${inf.days_overdue > 30 ? 'text-rose-600' : 'text-slate-700'}`}>
-                                                            {isDropout || inf.days_overdue > 365 ? '> 1 Year (Audit Required)' : `${inf.days_overdue || 0}d`}
+                                                            {isDEFAULTED || inf.days_overdue > 365 ? '> 1 Year (Audit Required)' : `${inf.days_overdue || 0}d`}
                                                         </span>
                                                     </div>
                                                     <div className="py-4 px-5 flex justify-center items-center">
-                                                        {isDropout || inf.days_overdue > 365 ? (
+                                                        {isDEFAULTED || inf.days_overdue > 365 ? (
                                                             <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
                                                         ) : inf.days_overdue >= 30 ? (
                                                             <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
@@ -635,14 +694,14 @@ export default function MidwifeDashboard() {
                 <div className="bg-white border border-slate-200 rounded-sm p-8 shadow-sm flex flex-col h-[400px]">
                     <div className="flex items-start justify-between mb-8 gap-4">
                         <div className="flex flex-col gap-1">
-                            <h2 className="text-xs font-black text-emerald-800 uppercase tracking-[0.15em]">System Impact & Dropout Rate</h2>
+                            <h2 className="text-xs font-black text-emerald-800 uppercase tracking-[0.15em]">System Impact & Defaulter Rate</h2>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">6-Month Trajectory of Program Engagement</p>
                         </div>
                     </div>
 
-                    <div className="flex-1 w-full min-h-[300px] relative">
-                        {chartsReady && (
-                            <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                    <div className="h-[300px] w-full relative">
+                        {chartsReady && systemImpactData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
                                 <LineChart
                                     data={systemImpactData}
                                     margin={{ left: 0, right: 20, top: 20, bottom: 0 }}
@@ -666,9 +725,13 @@ export default function MidwifeDashboard() {
                                     <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#475569', marginTop: '10px' }} />
                                     <Line type="monotone" dataKey="active" name="Active Registrations" stroke="#94a3b8" strokeWidth={3} dot={{ r: 4, fill: '#94a3b8' }} activeDot={{ r: 6 }} />
                                     <Line type="monotone" dataKey="completed" name="Completed Series" stroke="#059669" strokeWidth={3} dot={{ r: 4, fill: '#059669' }} activeDot={{ r: 6 }} />
-                                    <Line type="monotone" dataKey="dropouts" name="Defaulter Dropouts" stroke="#e11d48" strokeWidth={3} dot={{ r: 4, fill: '#e11d48' }} activeDot={{ r: 6 }} />
+                                    <Line type="monotone" dataKey="dropouts" name="Defaulter Count" stroke="#e11d48" strokeWidth={3} dot={{ r: 4, fill: '#e11d48' }} activeDot={{ r: 6 }} />
                                 </LineChart>
                             </ResponsiveContainer>
+                        ) : (
+                            <div className="flex h-full items-center justify-center border border-slate-100 bg-slate-50 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                                No trend records available
+                            </div>
                         )}
                     </div>
                 </div>
@@ -681,7 +744,7 @@ export default function MidwifeDashboard() {
     );
 }
 
-// -- CDSS DRILL-DOWN MODAL COMPONENT --
+// -- Field kit drill-down modal component --
 const FieldKitModal = ({ vaccine, onClose }) => {
     if (!vaccine) return null;
     return (

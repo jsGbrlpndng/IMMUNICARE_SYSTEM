@@ -7,7 +7,8 @@ import {
     Users,
     Activity,
     ClipboardList,
-    Filter
+    Filter,
+    ShieldCheck
 } from 'lucide-react';
 
 const MappingBadge = ({ status }) => {
@@ -212,10 +213,33 @@ const HeatmapSidePanel = ({
     allMarkersForMode,
     handleFocusInfant,
     activeFilters,
-    setActiveFilters
+    setActiveFilters,
+    clusterDeploymentRows = []
 }) => {
     const clusters = mapState?.clusters || [];
-    const selectedCluster = clusters.find(c => c.clusterId === selectedClusterId);
+    const selectedCluster = clusters.find(c => (c.clusterId || c.id) === selectedClusterId);
+
+    const deploymentByLabel = React.useMemo(() => {
+        const lookup = new Map();
+        (clusterDeploymentRows || []).forEach((row) => {
+            const label = (row?.cluster_label || '').toLowerCase().trim();
+            if (!label) return;
+            if (!lookup.has(label)) lookup.set(label, row);
+        });
+        return lookup;
+    }, [clusterDeploymentRows]);
+
+    const getDeployment = (cluster) => {
+        const label = (cluster?.cluster_label || cluster?.locality || '').toLowerCase().trim();
+        return label ? deploymentByLabel.get(label) : null;
+    };
+
+    const getAssignedDisplay = (cluster) => {
+        const deployment = getDeployment(cluster);
+        const name = cluster?.assigned_user_name || deployment?.assigned_user_name || cluster?.assigned_bhw_name || deployment?.assigned_bhw_name || 'Pending assignment';
+        const role = cluster?.assigned_user_role || deployment?.assigned_user_role || '';
+        return role ? `${name} (${role})` : name;
+    };
 
     const handleClusterSelect = (clusterId, lat, lng, bounds) => {
         setSelectedClusterId(clusterId);
@@ -268,56 +292,66 @@ const HeatmapSidePanel = ({
     // mode === 'priority'
     return (
         <div className="flex flex-col h-full bg-slate-50 w-full border-l border-slate-300">
-            {/* Header */}
             <div className="px-6 py-5 border-b border-slate-300 bg-white flex-shrink-0">
-                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Spatial Decision Support</h2>
+                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Field Deployment & Triage</h2>
                 <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                    {selectedCluster ? 'Deployment Plan' : 'Priority Areas'}
+                    {selectedCluster ? 'Deployment Detail' : 'Priority Outreach Areas'}
                 </h3>
             </div>
-            
-            <FilterPillContainer 
-                activeFilters={activeFilters} 
-                setActiveFilters={setActiveFilters} 
-                derivedCounts={derivedCounts}
-            />
 
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="mb-4 flex items-start gap-3 border border-emerald-200 bg-emerald-50 p-4">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-800" />
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">
+                            Standardized Cluster Detection (Min. 3 Infants)
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold leading-5 text-emerald-700">
+                            Read-only supervisor view of assigned outreach areas.
+                        </p>
+                    </div>
+                </div>
+
                 {!selectedCluster ? (
-                    // --- PRIORITY AREA LIST VIEW ---
                     <>
-                        <PrioritySummaryCard mapState={mapState} onFocus={setMapTarget} />
-                        
-                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Ranked Areas</h4>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Active Deployment Areas</h4>
                         {clusters.length > 0 ? (
-                            clusters.map(cluster => (
-                                <AreaRankCard 
-                                    key={cluster.clusterId} 
-                                    cluster={cluster} 
-                                    onClick={handleClusterSelect} 
-                                />
-                            ))
+                            clusters.map((cluster, index) => {
+                                const deployment = getDeployment(cluster);
+                                const assignedName = getAssignedDisplay(cluster);
+                                const status = cluster?.cluster_status || deployment?.cluster_status || 'Pending';
+                                const infantCount = cluster?.total_infants || cluster?.assigned_count || deployment?.assigned_count || 0;
+
+                                return (
+                                    <button
+                                        key={cluster.clusterId || cluster.id || index}
+                                        type="button"
+                                        onClick={() => handleClusterSelect(cluster.clusterId || cluster.id, cluster.lat, cluster.lng, cluster.bounds)}
+                                        className="mb-3 w-full border border-slate-200 bg-white p-4 text-left transition-colors hover:border-emerald-800 hover:bg-slate-50"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-sm font-black text-slate-900">{cluster.locality || cluster.cluster_label || `Priority Area ${index + 1}`}</p>
+                                                <p className="mt-1 text-xs font-semibold text-slate-500">{infantCount} infants in this deployment area</p>
+                                            </div>
+                                            <span className="border border-rose-200 bg-rose-50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-rose-700">
+                                                Requires Intervention
+                                            </span>
+                                        </div>
+                                        <div className="mt-3 border-t border-slate-200 pt-3 text-[11px] font-bold leading-5 text-slate-600">
+                                            Assigned to: <span className="text-slate-900">{assignedName}</span> - Status: <span className="text-emerald-800">{status}</span>
+                                        </div>
+                                    </button>
+                                );
+                            })
                         ) : (
                             <div className="p-12 text-center">
                                 <Activity className="text-slate-200 mx-auto mb-4" size={48} />
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">No Priority Areas Found</span>
-                            </div>
-                        )}
-
-                        {/* Isolated Priorities Section */}
-                        {mapState?.noise?.length > 0 && (
-                            <div className="mt-8">
-                                <h4 className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-3 px-2 flex items-center gap-2">
-                                    <AlertTriangle size={12} /> High-Risk Isolated Cases
-                                </h4>
-                                {mapState.noise
-                                    .filter(pt => ['defaulter', 'overdue'].includes(pt.urgency))
-                                    .map(pt => <InfantRow key={`noise-${pt.id}`} pt={pt} onFocus={handleFocusInfant} />)}
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">No active clusters</span>
                             </div>
                         )}
                     </>
                 ) : (
-                    // --- SELECTED AREA DETAIL VIEW ---
                     <div className="flex flex-col gap-4">
                         <button 
                             onClick={() => setSelectedClusterId(null)}
@@ -340,6 +374,10 @@ const HeatmapSidePanel = ({
                                 </div>
                             </div>
 
+                            <div className="mb-4 border border-emerald-200 bg-emerald-50 p-3 text-[11px] font-bold leading-5 text-emerald-900">
+                                Assigned to: <span className="text-slate-950">{getAssignedDisplay(selectedCluster)}</span> - Status: <span>{selectedCluster?.cluster_status || getDeployment(selectedCluster)?.cluster_status || 'Pending'}</span>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Population</span>
@@ -354,7 +392,7 @@ const HeatmapSidePanel = ({
                             <div className="bg-slate-50 p-4 flex items-start gap-3 border border-slate-200">
                                 <Activity size={16} className="text-emerald-700 flex-shrink-0 mt-0.5" />
                                 <div>
-                                    <span className="block text-[10px] font-black text-slate-800 uppercase tracking-widest mb-1">CDSS Area Justification</span>
+                                    <span className="block text-[10px] font-black text-slate-800 uppercase tracking-widest mb-1">Operational Context</span>
                                     <span className="text-[11px] text-slate-500 font-medium leading-relaxed">{selectedCluster.area_justification || "Optimal deployment zone based on localized dose burden."}</span>
                                 </div>
                             </div>

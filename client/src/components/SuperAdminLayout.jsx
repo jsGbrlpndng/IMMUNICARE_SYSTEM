@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,8 +15,7 @@ import {
     Filter,
     Menu,
     X,
-    MapPin,
-    Activity
+    Target
 } from 'lucide-react';
 
 const BARANGAYS = [
@@ -36,9 +36,11 @@ const SuperAdminLayout = ({ children }) => {
     const menuItems = [
         { name: 'Global Dashboard', path: '/superadmin/dashboard', icon: LayoutDashboard },
         { name: 'User Management', path: '/superadmin/users', icon: Users },
+        { name: 'Target Configuration', path: '/superadmin/targets', icon: Target },
         { name: 'Municipal Reports', path: '/superadmin/reports', icon: BarChart3 },
         { name: 'Audit Trail', path: '/superadmin/audit', icon: FileText },
         { name: 'System Settings', path: '/superadmin/settings', icon: Settings },
+        { name: 'Account Settings', path: '/superadmin/account-settings', icon: Shield },
     ];
 
     const pageName = menuItems.find(item => location.pathname.startsWith(item.path))?.name || 'Super Admin';
@@ -127,6 +129,16 @@ const SuperAdminLayout = ({ children }) => {
                                         <div className="px-4 py-2 border-b border-slate-100 mb-1">
                                             <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Admin Actions</p>
                                         </div>
+                                        <button
+                                            onClick={() => {
+                                                setUserMenuOpen(false);
+                                                navigate('/superadmin/account-settings');
+                                            }}
+                                            className="flex items-center space-x-3 w-full px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                                        >
+                                            <Settings className="w-4 h-4" />
+                                            <span>Account Profile</span>
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 logout();

@@ -1,13 +1,14 @@
 const db = require('../db');
 const { differenceInDays } = require('date-fns');
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * DAILY DAEMON: Status Shifter Service
  * This service runs nightly (12:00 AM PST) to update infant statuses
  * based on their vaccination schedules. 
- * Criteria: 
- * - DEFAULTER: Any approved infant with an OVERDUE vaccine > 28 days past its due date.
- * - ACTIVE: Any infant who was a Defaulter but is now up-to-date or just overdue (< 28 days).
+ * Criteria:
+ * - DEFAULTED: Any approved infant with a DEFAULTED dose > 28 days past its due date.
+ * - INCOMPLETE: Any infant with no defaulted dose and an incomplete schedule.
  */
 class StatusShifterService {
     static async shift() {
@@ -16,9 +17,9 @@ class StatusShifterService {
         try {
             // 1. Get all approved infants
             const [infants] = await db.execute(`
-                SELECT id, status, reference_id 
+                SELECT id, immunization_status, reference_id
                 FROM infants 
-                WHERE registration_status = 'Approved'
+                WHERE registration_status = 'APPROVED'
             `);
 
             let updatedCount = 0;
@@ -28,7 +29,7 @@ class StatusShifterService {
                 const [schedules] = await db.execute(`
                     SELECT recommended_date, status 
                     FROM infant_schedules 
-                    WHERE infant_id = ? AND status = 'DEFAULTER'
+                    WHERE infant_id = ? AND status = 'DEFAULTED'
                     ORDER BY recommended_date ASC
                     LIMIT 1
                 `, [infant.id]);
@@ -36,34 +37,34 @@ class StatusShifterService {
                 const mostOverdue = schedules[0];
                 const now = new Date();
                 
-                let shouldBeDefaulter = false;
+                let shouldBeDefaulted = false;
                 if (mostOverdue) {
                     const daysPast = differenceInDays(now, new Date(mostOverdue.recommended_date));
                     if (daysPast > 28) {
-                        shouldBeDefaulter = true;
+                        shouldBeDefaulted = true;
                     }
                 }
 
                 // 3. Update status if it changed
-                if (shouldBeDefaulter && infant.status !== 'Defaulter') {
-                    await db.execute(`UPDATE infants SET status = 'Defaulter' WHERE id = ?`, [infant.id]);
-                    console.log(`[STATUS SHIFTER] Infant ${infant.reference_id} -> DEFAULTER`);
+                if (shouldBeDefaulted && infant.immunization_status !== 'DEFAULTED') {
+                    await db.execute(`UPDATE infants SET immunization_status = 'DEFAULTED' WHERE id = ?`, [infant.id]);
+                    console.log(`[STATUS SHIFTER] Infant ${infant.reference_id} -> DEFAULTED`);
                     
                     // Log to audit trail
                     await db.execute(`
                         INSERT INTO audit_trail (id, entity_type, entity_id, action_type, user_id, user_role, description)
-                        VALUES (UUID(), 'infant', ?, 'status_change', 'SYSTEM', 'CRON', ?)
-                    `, [infant.id, 'System shift: Active -> Defaulter (>28 days overdue)']);
+                        VALUES (?, 'infant', ?, 'status_change', 'SYSTEM', 'SYSTEM', ?)
+                    `, [uuidv4(), infant.id, 'System shift: immunization status -> DEFAULTED']);
                     
                     updatedCount++;
-                } else if (!shouldBeDefaulter && infant.status === 'Defaulter') {
-                    await db.execute(`UPDATE infants SET status = 'Active' WHERE id = ?`, [infant.id]);
-                    console.log(`[STATUS SHIFTER] Infant ${infant.reference_id} -> ACTIVE (Resolved)`);
+                } else if (!shouldBeDefaulted && infant.immunization_status === 'DEFAULTED') {
+                    await db.execute(`UPDATE infants SET immunization_status = 'INCOMPLETE' WHERE id = ?`, [infant.id]);
+                    console.log(`[STATUS SHIFTER] Infant ${infant.reference_id} -> INCOMPLETE (Resolved)`);
                     
                     await db.execute(`
                         INSERT INTO audit_trail (id, entity_type, entity_id, action_type, user_id, user_role, description)
-                        VALUES (UUID(), 'infant', ?, 'status_change', 'SYSTEM', 'CRON', ?)
-                    `, [infant.id, 'System shift: Defaulter -> Active (Vaccination record updated or within grace)']);
+                        VALUES (?, 'infant', ?, 'status_change', 'SYSTEM', 'SYSTEM', ?)
+                    `, [uuidv4(), infant.id, 'System shift: DEFAULTED -> INCOMPLETE']);
                     
                     updatedCount++;
                 }

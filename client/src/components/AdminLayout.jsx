@@ -1,175 +1,75 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import {
-    LayoutDashboard,
-    Users,
-    Shield,
-    FileText,
-    Settings,
-    LogOut,
-    User,
-    Menu,
-    X,
-    ChevronDown,
-    BarChart3
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { BarChart2, FileText, LayoutDashboard, Map as MapIcon, Menu, Users, Layers, Settings } from 'lucide-react';
+import SidebarNav from './SidebarNav';
+
+const adminNavigation = [
+    {
+        group: 'Administration',
+        items: [
+            { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
+            { name: 'Population Heatmap', path: '/admin/population-heatmap', icon: Layers },
+            { name: 'Spatial Analysis', path: '/admin/spatial-analysis', icon: MapIcon },
+            { name: 'M1 Reports', path: '/admin/reports/m1', icon: BarChart2 },
+            { name: 'User Management', path: '/admin/users', icon: Users },
+            { name: 'Audit Logs', path: '/admin/audit', icon: FileText },
+            { name: 'Account Settings', path: '/admin/account-settings', icon: Settings }
+        ]
+    }
+];
 
 const AdminLayout = ({ children }) => {
     const location = useLocation();
-    const navigate = useNavigate();
-    const { logout, user } = useAuth();
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(() => {
+        const saved = localStorage.getItem('admin-sidebar-collapsed');
+        return saved ? JSON.parse(saved) : false;
+    });
+    const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-    const menuItems = [
-        { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-        { name: 'User Management', path: '/admin/users', icon: Users },
-        { name: 'M1 Reports', path: '/admin/reports/m1', icon: BarChart3 },
-        { name: 'Audit Logs', path: '/admin/audit', icon: FileText },
-        { name: 'System Settings', path: '/admin/settings', icon: Settings },
-    ];
+    useEffect(() => {
+        localStorage.setItem('admin-sidebar-collapsed', JSON.stringify(isCollapsed));
+    }, [isCollapsed]);
 
-
-    const pageName = location.pathname
-        .split('/')
-        .pop()
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    const pageName = (pathParts.pop() || 'Dashboard')
         .replace(/-/g, ' ')
-        .replace(/\b\w/g, c => c.toUpperCase()) || 'Dashboard';
+        .replace(/\b\w/g, (character) => character.toUpperCase());
 
     useEffect(() => {
         document.title = `ImmuniCare - ${pageName}`;
     }, [pageName]);
 
     return (
-        <div className="min-h-screen bg-[#F1F5F9]">
-            {/* Top Navigation Bar - Clean Minimalism */}
-            <nav className="fixed top-0 w-full z-50 bg-white border-b border-slate-200 py-2">
-                <div className="max-w-7xl mx-auto px-6 lg:px-8">
-                    <div className="flex items-center justify-between h-14">
-                        {/* Logo */}
-                        <Link to="/admin/dashboard" className="flex items-center space-x-3 group">
-                            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
-                                <Shield className="text-white w-5 h-5" />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-lg font-bold tracking-tight text-slate-900">ImmuniCare</span>
-                                <span className="text-xs text-slate-500 font-medium tracking-wider uppercase">Admin</span>
-                            </div>
-                        </Link>
+        <div className="min-h-screen bg-[#F8FAFC] flex">
+            <SidebarNav
+                isCollapsed={isCollapsed}
+                setIsCollapsed={setIsCollapsed}
+                isMobileOpen={isMobileOpen}
+                setIsMobileOpen={setIsMobileOpen}
+                navigation={adminNavigation}
+                accountSettingsPath="/admin/account-settings"
+            />
 
-                        {/* Desktop Navigation */}
-                        <div className="hidden md:flex items-center space-x-1">
-                            {menuItems.map((item) => {
-                                const Icon = item.icon;
-                                const isActive = location.pathname === item.path;
-                                return (
-                                    <Link
-                                        key={item.name}
-                                        to={item.path}
-                                        className={`flex items-center space-x-2 px-4 py-1.5 rounded-lg transition-colors ${isActive
-                                            ? 'bg-slate-100 text-slate-900'
-                                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                                            }`}
-                                    >
-                                        <Icon className="w-4 h-4" />
-                                        <span className="font-semibold text-sm">{item.name}</span>
-                                    </Link>
-                                );
-                            })}
-                        </div>
+            <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
+                <nav className="sticky top-0 z-40 w-full h-14 bg-white/95 backdrop-blur-lg border-b border-slate-100 px-5 flex items-center gap-4 shadow-sm">
+                    <button
+                        onClick={() => setIsMobileOpen(true)}
+                        className="lg:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                    >
+                        <Menu size={22} />
+                    </button>
 
-                        {/* Right Side - User Menu */}
-                        <div className="flex items-center space-x-4">
-                            {/* User Menu */}
-                            <div className="relative">
-                                <button
-                                    onClick={() => setUserMenuOpen(!userMenuOpen)}
-                                    className="flex items-center space-x-3 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                                >
-                                    <div className="w-8 h-8 bg-slate-200 rounded-lg flex items-center justify-center text-slate-700 text-sm font-bold">
-                                        {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'AD'}
-                                    </div>
-                                    <div className="hidden sm:block text-left">
-                                        <p className="text-sm font-bold text-slate-900">{user?.name || 'Administrator'}</p>
-                                    </div>
-                                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                                </button>
-
-                                {/* User Dropdown */}
-                                {userMenuOpen && (
-                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50 text-slate-900">
-                                        <div className="px-4 py-2 border-b border-slate-100">
-                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Session</p>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                logout();
-                                                navigate('/');
-                                            }}
-                                            className="flex items-center space-x-2 w-full px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                                        >
-                                            <LogOut className="w-4 h-4" />
-                                            <span>Sign Out</span>
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Mobile Menu Button */}
-                            <button
-                                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                                className="md:hidden p-2 rounded-lg hover:bg-slate-50 transition-colors"
-                            >
-                                {mobileMenuOpen ? (
-                                    <X className="w-5 h-5 text-slate-400" />
-                                ) : (
-                                    <Menu className="w-5 h-5 text-slate-400" />
-                                )}
-                            </button>
-                        </div>
+                    <div className="hidden sm:block">
+                        <p className="text-sm text-slate-400 font-medium">
+                            Admin Portal <span className="text-slate-700 font-bold">/ {pageName}</span>
+                        </p>
                     </div>
+                </nav>
 
-                    {/* Mobile Menu */}
-                    {mobileMenuOpen && (
-                        <div className="md:hidden border-t border-slate-100 bg-white">
-                            <div className="px-4 py-4 space-y-2">
-                                {menuItems.map((item) => {
-                                    const Icon = item.icon;
-                                    const isActive = location.pathname === item.path;
-                                    return (
-                                        <Link
-                                            key={item.name}
-                                            to={item.path}
-                                            onClick={() => setMobileMenuOpen(false)}
-                                            className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                                                ? 'bg-slate-100 text-slate-900'
-                                                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                                                }`}
-                                        >
-                                            <Icon className="w-5 h-5" />
-                                            <span className="font-semibold">{item.name}</span>
-                                        </Link>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </nav>
-
-            {/* Main Content */}
-            <main className="pt-20 max-w-7xl mx-auto px-6 lg:px-8 py-8">
-                {children}
-            </main>
-
-            {/* Click outside to close user menu */}
-            {userMenuOpen && (
-                <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setUserMenuOpen(false)}
-                />
-            )}
+                <main className="flex-1">
+                    {children}
+                </main>
+            </div>
         </div>
     );
 };

@@ -1,5 +1,6 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
     Lock,
@@ -16,6 +17,7 @@ import {
 
 const AccessPortal = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { login, user } = useAuth();
     const [userId, setUserId] = useState('');
     const [password, setPassword] = useState('');
@@ -26,11 +28,15 @@ const AccessPortal = () => {
     useEffect(() => {
         if (user) {
             const { role: userRole } = user;
+            if (user.must_change_password || user.password_update_required) {
+                navigate('/force-password-change', { replace: true });
+                return;
+            }
             if (userRole === 'Super Admin') {
                 navigate('/superadmin/dashboard');
-            } else if (userRole === 'Barangay Admin') {
+            } else if (userRole === 'Admin') {
                 navigate('/admin/dashboard');
-            } else if (userRole === 'Midwife' || userRole === 'Nurse') {
+            } else if (userRole === 'Midwife') {
                 navigate('/clinical/dashboard');
             } else if (userRole === 'BHW') {
                 navigate('/bhw/dashboard');
@@ -86,12 +92,17 @@ const AccessPortal = () => {
                 // Save session with authToken
                 login(data.user, data.authToken);
 
+                if (data.status === 'REQUIRES_PASSWORD_UPDATE' || data.user?.must_change_password || data.user?.password_update_required) {
+                    navigate('/force-password-change', { replace: true });
+                    return;
+                }
+
                 // Redirect strictly based on the role returned from the database
                 if (userRole === 'Super Admin') {
                     navigate('/superadmin/dashboard');
-                } else if (userRole === 'Barangay Admin') {
+                } else if (userRole === 'Admin') {
                     navigate('/admin/dashboard');
-                } else if (userRole === 'Midwife' || userRole === 'Nurse') {
+                } else if (userRole === 'Midwife') {
                     navigate('/clinical/dashboard');
                 } else if (userRole === 'BHW') {
                     navigate('/bhw/dashboard');
@@ -186,6 +197,11 @@ const AccessPortal = () => {
                             </div>
 
                             <form onSubmit={handleStaffLogin} className="space-y-6">
+                                {location.state?.securityMessage && (
+                                    <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                                        {location.state.securityMessage}
+                                    </div>
+                                )}
 
                                 {/* User ID Input */}
                                 <div className="space-y-2">

@@ -19,7 +19,8 @@ const clinicalAuth = async (req, res, next) => {
     } catch (error) {
         res.status(error.status || 500).json({
             success: false,
-            error: error.message || 'Authorization failed'
+            error: error.message || 'Authorization failed',
+            code: error.code
         });
     }
 };

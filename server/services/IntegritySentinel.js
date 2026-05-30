@@ -17,22 +17,26 @@ class IntegritySentinel {
             const triggerCheckQuery = this.usePg
                 ? `SELECT count(*) as count FROM information_schema.triggers 
                    WHERE trigger_name IN (
-                       'trg_prevent_rule_update', 
-                       'trg_prevent_rule_delete',
-                       'trg_prevent_audit_update',
-                       'trg_prevent_audit_delete'
+                       'trg_prevent_audit_trail_update',
+                       'trg_prevent_audit_trail_delete',
+                       'trg_prevent_system_audit_update',
+                       'trg_prevent_system_audit_delete',
+                       'trg_prevent_authorization_audit_update',
+                       'trg_prevent_authorization_audit_delete'
                    )`
                 : `SELECT count(*) as count FROM information_schema.TRIGGERS 
                    WHERE TRIGGER_NAME IN (
-                       'trg_prevent_rule_update', 
-                       'trg_prevent_rule_delete',
-                       'trg_prevent_audit_update',
-                       'trg_prevent_audit_delete'
+                       'trg_prevent_audit_trail_update',
+                       'trg_prevent_audit_trail_delete',
+                       'trg_prevent_system_audit_update',
+                       'trg_prevent_system_audit_delete',
+                       'trg_prevent_authorization_audit_update',
+                       'trg_prevent_authorization_audit_delete'
                    )`;
 
             const [triggers] = await this.db.execute(triggerCheckQuery);
 
-            if (Number(triggers[0].count) < 4) {
+            if (Number(triggers[0].count) < 6) {
                 console.error(`[SENTINEL] CRITICAL FAILURE: Immutability triggers are missing or disabled! Found: ${triggers[0].count}`);
                 return false;
             }

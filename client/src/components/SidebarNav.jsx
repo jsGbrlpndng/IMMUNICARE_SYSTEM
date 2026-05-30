@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -17,12 +18,12 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-/* ─────────────────────────────────────────────────────────────────
-   Design Tokens — Light Clinical System
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Design Tokens â€” Light Clinical System
    Philosophy: White-field precision, Clinical Mint accent,
    Charcoal legibility. The sidebar reads like a printed form:
    clean, structured, no visual noise.
-─────────────────────────────────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const T = {
     // Backgrounds
     bg:          '#F9FBFC',              // Light clinical slate
@@ -34,11 +35,11 @@ const T = {
     border:      '#E5EAEF',              // Sharp, crisp borders
 
     // Text
-    textHeading: '#0F172A',             // Slate 900 — high contrast
-    textLabel:   '#475569',             // Slate 600 — section headers
-    textMeta:    '#94A3B8',             // Slate 400 — role badge
+    textHeading: '#0F172A',             // Slate 900 â€” high contrast
+    textLabel:   '#475569',             // Slate 600 â€” section headers
+    textMeta:    '#94A3B8',             // Slate 400 â€” role badge
 
-    // Accent — San Pedro Green (Official & Confident)
+    // Accent â€” San Pedro Green (Official & Confident)
     green:       '#059669',             // Emerald 600
     greenDeep:   '#064E3B',             // Emerald 900 (Authority)
     greenLight:  '#ECFDF5',             // Emerald 50 (Tints)
@@ -49,7 +50,7 @@ const T = {
     activeWeight: 600,
 };
 
-/* ─── Navigation ─────────────────────────────────────────────────── */
+/* â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const navigation = [
     {
         group: 'Clinical',
@@ -65,6 +66,7 @@ const navigation = [
         items: [
             { name: 'Reports', path: '/clinical/reports', icon: BarChart2 },
             { name: 'Heatmap', path: '/clinical/map',     icon: MapIcon   },
+            { name: 'Follow-Ups', path: '/clinical/follow-ups', icon: ClipboardList },
         ],
     },
     {
@@ -73,11 +75,17 @@ const navigation = [
             { name: 'SMS', path: '/clinical/sms', icon: MessageSquare },
         ],
     },
+    {
+        group: 'Security',
+        items: [
+            { name: 'Account Settings', path: '/clinical/profile', icon: Settings },
+        ],
+    },
 ];
 
 
 
-/* ─── Logo mark ──────────────────────────────────────────────────── */
+/* â”€â”€â”€ Logo mark â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const LogoMark = () => (
     <div style={{
         width: 32, height: 32,
@@ -92,7 +100,7 @@ const LogoMark = () => (
     </div>
 );
 
-/* ─── NavItem ────────────────────────────────────────────────────── */
+/* â”€â”€â”€ NavItem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NavItem = ({ item, active, isCollapsed, onClick }) => {
     const [hovered, setHovered] = useState(false);
     const Icon = item.icon;
@@ -139,7 +147,7 @@ const NavItem = ({ item, active, isCollapsed, onClick }) => {
     );
 };
 
-/* ─── Dropdown row ───────────────────────────────────────────────── */
+/* â”€â”€â”€ Dropdown row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const DropRow = ({ icon, label, onClick, danger }) => {
     const [h, setH] = useState(false);
     return (
@@ -167,8 +175,15 @@ const DropRow = ({ icon, label, onClick, danger }) => {
     );
 };
 
-/* ─── Main Sidebar ───────────────────────────────────────────────── */
-const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen }) => {
+/* â”€â”€â”€ Main Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const SidebarNav = ({
+    isCollapsed,
+    setIsCollapsed,
+    isMobileOpen,
+    setIsMobileOpen,
+    navigation: navigationConfig = navigation,
+    accountSettingsPath = '/clinical/profile'
+}) => {
     const location  = useLocation();
     const navigate  = useNavigate();
     const { user, logout } = useAuth();
@@ -205,7 +220,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                 />
             )}
 
-            {/* ── Sidebar shell ─────────────────────────────────────── */}
+            {/* â”€â”€ Sidebar shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <aside
                 style={{
                     background:  T.bg,
@@ -223,7 +238,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                 }}
                 className={!isMobileOpen ? '-translate-x-full lg:translate-x-0' : ''}
             >
-                {/* ── Logo header ─────────────────────────────────────── */}
+                {/* â”€â”€ Logo header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div style={{
                     display:        'flex',
                     alignItems:     'center',
@@ -248,9 +263,9 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                     )}
                 </div>
 
-                {/* ── Navigation body ──────────────────────────────────── */}
+                {/* â”€â”€ Navigation body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding:'14px 8px 8px', scrollbarWidth:'none' }}>
-                    {navigation.map((group, gi) => (
+                    {navigationConfig.map((group, gi) => (
                         <div key={group.group} style={{ marginBottom: gi < navigation.length - 1 ? 2 : 0 }}>
                             {/* Thin divider between groups */}
                             {gi > 0 && (
@@ -294,7 +309,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                     ))}
                 </div>
 
-                {/* ── User profile footer ──────────────────────────────── */}
+                {/* â”€â”€ User profile footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div
                     ref={accountRef}
                     style={{
@@ -369,7 +384,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                         )}
                     </button>
 
-                    {/* Dropdown — upward */}
+                    {/* Dropdown â€” upward */}
                     {accountOpen && (
                         <div style={{
                             position:     'absolute',
@@ -391,7 +406,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                                     <p style={{ margin:0, marginTop:2, fontSize:9.5, color:T.textMeta, textTransform:'uppercase', letterSpacing:'0.07em' }}>{roleLabel}</p>
                                 </div>
                             )}
-                            <DropRow icon={<Settings size={12} strokeWidth={1.7} />} label="Account Settings" onClick={() => { navigate('/clinical/profile'); setAccountOpen(false); }} />
+                            <DropRow icon={<Settings size={12} strokeWidth={1.7} />} label="Account Settings" onClick={() => { navigate(accountSettingsPath); setAccountOpen(false); }} />
                             <div style={{ height:1, background:T.border }} />
                             <DropRow
                                 icon={<LogOut size={12} strokeWidth={1.7} />}
@@ -403,7 +418,7 @@ const SidebarNav = ({ isCollapsed, setIsCollapsed, isMobileOpen, setIsMobileOpen
                     )}
                 </div>
 
-                {/* ── Collapse toggle ──────────────────────────────────── */}
+                {/* â”€â”€ Collapse toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div
                     style={{ borderTop:`1px solid ${T.border}`, padding:'7px 8px 8px', flexShrink:0 }}
                     className="hidden lg:block"

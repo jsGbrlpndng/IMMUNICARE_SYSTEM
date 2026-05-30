@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -123,7 +124,7 @@ export default function MainDashboard() {
 
     const fetchPendingLogs = async () => {
         try {
-            const response = await apiClient.get('/logs/pending', { headers: { 'x-user-id': user.id } });
+            const response = await apiClient.get('/logs/pending');
             if (response.ok) {
                 const data = await response.json();
                 setPendingLogs(data.logs || []);

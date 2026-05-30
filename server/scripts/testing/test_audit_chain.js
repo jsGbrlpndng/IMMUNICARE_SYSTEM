@@ -25,7 +25,7 @@ async function testAuditChain() {
         const columnNames = columns.map(c => c.Field);
         console.log('Columns:', columnNames.join(', '));
         
-        const requiredColumns = ['id', 'admin_id', 'action_type', 'target_entity', 'before_value', 'after_value', 'details', 'timestamp', 'ip_address'];
+        const requiredColumns = ['id', 'user_id', 'action_type', 'target_entity', 'before_value', 'after_value', 'details', 'timestamp', 'ip_address'];
         const missing = requiredColumns.filter(col => !columnNames.includes(col));
         if (missing.length > 0) {
             console.error('❌ FAIL: Missing columns:', missing.join(', '));
@@ -47,7 +47,7 @@ async function testAuditChain() {
         // Step 4: Verify log was written
         console.log('Step 4: Verifying log was written to database...');
         const [logs] = await db.execute(
-            'SELECT * FROM system_audit_logs WHERE admin_id = ? AND action_type = ? ORDER BY timestamp DESC LIMIT 1',
+            'SELECT * FROM system_audit_logs WHERE user_id = ? AND action_type = ? ORDER BY timestamp DESC LIMIT 1',
             [testAdminId, testAction]
         );
         
@@ -59,7 +59,7 @@ async function testAuditChain() {
         const log = logs[0];
         console.log('✓ Log found in database');
         console.log('  ID:', log.id);
-        console.log('  Admin ID:', log.admin_id);
+        console.log('  User ID:', log.user_id);
         console.log('  Action:', log.action_type);
         console.log('  Entity:', log.target_entity);
         console.log('  Details:', JSON.stringify(log.details));

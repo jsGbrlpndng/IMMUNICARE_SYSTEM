@@ -1,10 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const clinicalAuth = require('../middleware/clinicalAuth');
+const requireRole = require('../middleware/requireRole');
 const db = require('../db');
 
 // Protect schedule - block Admin
 router.use(clinicalAuth);
+router.use(requireRole(
+    requireRole.CLINICAL_PRIVILEGED,
+    'Only Midwives, Admins, and Super Admins can access schedule clinical endpoints.'
+));
 const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
 const AuthorizationController = require('../services/AuthorizationController');
 const NIPScheduleService = require('../services/NIPScheduleService');
@@ -21,8 +26,11 @@ const nipScheduleService = new NIPScheduleService(db);
 router.get('/field-kit', async (req, res) => {
     try {
         const { timeframe = 'today' } = req.query;
-        console.log(`[SCHEDULE ROUTE] Fetching field kit for ${timeframe}...`);
-        const data = await nipScheduleService.getFieldKitRequisition(timeframe);
+        const barangay = req.user.role === 'Super Admin'
+            ? (req.query.barangay || null)
+            : req.user.assigned_barangay;
+        console.log(`[SCHEDULE ROUTE] Fetching field kit for ${timeframe}${barangay ? ` in ${barangay}` : ''}...`);
+        const data = await nipScheduleService.getFieldKitRequisition(timeframe, barangay);
         res.status(200).json(data);
     } catch (error) {
         console.error('Error fetching field kit requisition:', error);
@@ -113,13 +121,13 @@ router.get('/urgent-actions', async (req, res) => {
         const { limit = 10, offset = 0 } = req.query;
         // Re-use enhancedEngine's getApprovedInfantsWithSchedule logic but filter for overdue and due_today
         const queueData = await enhancedEngine.getApprovedInfantsWithSchedule(
-            {}, // no strict single urgency filter, we'll filter below or we can modify the method.
+            { barangay: req.query.barangay || null }, // no strict single urgency filter, we'll filter below or we can modify the method.
             1000, // get a larger batch to filter
             0
         );
 
-        // Filter for both overdue and due_today
-        const urgentInfants = queueData.infants.filter(i => i.urgency === 'overdue' || i.urgency === 'due_today');
+        // Filter for urgent action states within the enforced barangay scope.
+        const urgentInfants = queueData.infants.filter(i => i.urgency === 'defaulter' || i.urgency === 'overdue' || i.urgency === 'due_today');
         
         // Paginate manually since the base method only takes 1 urgency flag currently.
         const paginated = urgentInfants.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
@@ -145,124 +153,26 @@ router.get('/urgent-actions', async (req, res) => {
     }
 });
 
-// GET /api/schedule/approved - Get all approved infant records with vaccination schedules
+// GET /api/schedule/approved - Legacy alias for the canonical NIP queue
 router.get('/approved', async (req, res) => {
     try {
-        const { limit = 50, offset = 0, urgency = 'all' } = req.query;
-
-        // Query approved infants with approval audit data
-        const [infants] = await db.execute(`
-            SELECT 
-                i.id, i.reference_id, i.first_name, i.last_name, i.dob, i.sex,
-                'VALIDATED' AS registration_status,
-                i.cpab_status, i.next_due_vaccine, i.barangay, i.caregiver_phone,
-                aa.timestamp as approved_at, aa.approver_id as approved_by, aa.approver_role,
-                COALESCE(i.bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
-                COALESCE(i.hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
-            FROM infants i
-            LEFT JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'Approved'
-            WHERE i.status = 'Active'
-            ORDER BY i.dob DESC
-        `);
-
-        // Enrich each infant with schedule data and urgency
-        const enrichedInfants = infants.map(infant => {
-            const schedule = calculateCompleteNIPSchedule(
-                infant.dob,
-                infant.bcg_given,
-                infant.hepatitis_b_given
-            );
-
-            // Determine urgency
-            let urgency = 'upcoming';
-            let days_overdue = null;
-
-            if (schedule.overdue.length > 0) {
-                urgency = 'overdue';
-                days_overdue = Math.max(...schedule.overdue.map(v => v.daysOverdue || 0));
-            } else if (schedule.due_now.length > 0) {
-                urgency = 'due';
-            }
-
-            // Determine next due vaccine and date
-            let next_due_vaccine = 'No vaccines due';
-            let next_due_date = null;
-
-            if (schedule.overdue.length > 0) {
-                next_due_vaccine = schedule.overdue.map(v => v.vaccine).join(', ');
-                next_due_date = schedule.overdue[0].dueDate;
-            } else if (schedule.due_now.length > 0) {
-                next_due_vaccine = schedule.due_now.map(v => v.vaccine).join(', ');
-                next_due_date = schedule.due_now[0].dueDate;
-            } else if (schedule.upcoming.length > 0) {
-                next_due_vaccine = schedule.upcoming[0].vaccine;
-                next_due_date = schedule.upcoming[0].dueDate;
-            }
-
-            return {
-                id: infant.id,
-                reference_id: infant.reference_id,
-                first_name: infant.first_name,
-                last_name: infant.last_name,
-                dob: infant.dob,
-                age_in_weeks: schedule.age_in_weeks,
-                age_in_months: schedule.age_in_months,
-                registration_status: infant.registration_status,
-                approved_at: infant.approved_at,
-                approved_by: infant.approved_by,
-                approver_role: infant.approver_role,
-                next_due_vaccine,
-                next_due_date: next_due_date ? next_due_date.toISOString() : null,
-                urgency,
-                days_overdue,
-                schedule_summary: {
-                    overdue_count: schedule.overdue.length,
-                    due_count: schedule.due_now.length,
-                    upcoming_count: schedule.upcoming.length,
-                    completed_count: schedule.completed.length
-                },
-                cpab_status: infant.cpab_status,
-                barangay: infant.barangay,
-                caregiver_phone: infant.caregiver_phone
-            };
+        const { limit = 50, offset = 0, urgency = 'all', search = '', barangay = '' } = req.query;
+        const filters = {
+            urgency: urgency !== 'all' ? urgency : null,
+            search: search || null,
+            barangay: barangay || null
+        };
+        Object.keys(filters).forEach(key => {
+            if (filters[key] === null) delete filters[key];
         });
 
-        // Filter by urgency if specified
-        let filteredInfants = enrichedInfants;
-        if (urgency !== 'all') {
-            filteredInfants = enrichedInfants.filter(infant => infant.urgency === urgency);
-        }
-
-        // Sort by urgency (overdue first, then due, then upcoming)
-        const urgencyOrder = { overdue: 0, due: 1, upcoming: 2 };
-        filteredInfants.sort((a, b) => {
-            const urgencyDiff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
-            if (urgencyDiff !== 0) return urgencyDiff;
-
-            // Within same urgency, sort by days overdue (descending) or age (ascending)
-            if (a.days_overdue && b.days_overdue) {
-                return b.days_overdue - a.days_overdue;
-            }
-            return a.age_in_weeks - b.age_in_weeks;
-        });
-
-        // Apply pagination
-        const total_count = filteredInfants.length;
-        const paginatedInfants = filteredInfants.slice(
-            parseInt(offset),
-            parseInt(offset) + parseInt(limit)
+        const queueData = await enhancedEngine.getApprovedInfantsWithSchedule(
+            filters,
+            parseInt(limit, 10),
+            parseInt(offset, 10)
         );
 
-        res.json({
-            success: true,
-            infants: paginatedInfants,
-            total_count,
-            pagination: {
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                has_more: (parseInt(offset) + parseInt(limit)) < total_count
-            }
-        });
+        res.json(queueData);
 
     } catch (error) {
         console.error('Error fetching approved infants:', error);
@@ -278,9 +188,10 @@ router.get('/approved', async (req, res) => {
 router.get('/:infantId', async (req, res) => {
     try {
         const { infantId } = req.params;
+        const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
 
         // Use enhanced engine to get schedule with authorization status
-        const enhancedSchedule = await enhancedEngine.getScheduleWithAuthorizationStatus(infantId);
+        const enhancedSchedule = await enhancedEngine.getScheduleWithAuthorizationStatus(infantId, barangay);
 
         res.json(enhancedSchedule);
 
@@ -300,9 +211,16 @@ router.get('/:infantId/history', async (req, res) => {
         const { infantId } = req.params;
 
         // Get infant details
+        const params = [infantId];
+        let barangayClause = '';
+        if (req.user.role !== 'Super Admin') {
+            barangayClause = ' AND barangay = ?';
+            params.push(req.user.assigned_barangay);
+        }
+
         const [infants] = await db.execute(
-            'SELECT id, first_name, last_name, reference_id, dob FROM infants WHERE id = ?',
-            [infantId]
+            `SELECT id, first_name, last_name, reference_id, dob FROM infants WHERE id = ?${barangayClause}`,
+            params
         );
 
         if (infants.length === 0) {
@@ -676,14 +594,21 @@ router.get('/authorization/history/:infantId', async (req, res) => {
 // GET /api/schedule/validation-alerts - Get schedule validation alerts for all infants
 router.get('/validation-alerts', async (req, res) => {
     try {
+        const params = [];
+        let barangayClause = '';
+        if (req.user.role !== 'Super Admin') {
+            barangayClause = ' AND barangay = ?';
+            params.push(req.user.assigned_barangay);
+        }
+
         const [infants] = await db.execute(`
             SELECT id, first_name, last_name, dob, reference_id,
                 COALESCE(bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                 COALESCE(hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
             FROM infants 
-            WHERE status = 'Active'
+            WHERE status = 'Active'${barangayClause}
             ORDER BY dob DESC
-        `);
+        `, params);
 
         const alerts = [];
 

@@ -185,20 +185,20 @@ class AnalyticsService {
 
             const [rows] = await this.db.execute(`
                 SELECT 
-                    il.scheduled_date,
-                    COUNT(il.id) as count,
-                    STRING_AGG(DISTINCT il.vaccine_code, ', ') as vaccines
-                FROM immunization_logs il
-                JOIN infants i ON il.infant_id = i.id
-                WHERE il.status = 'PENDING'
-                AND il.scheduled_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '5 days'
+                    s.recommended_date,
+                    COUNT(s.id) as count,
+                    STRING_AGG(DISTINCT s.vaccine_code, ', ') as vaccines
+                FROM infant_schedules s
+                JOIN infants i ON s.infant_id = i.id
+                WHERE s.status IN ('NOT_YET_DUE', 'DUE_SOON', 'DUE_TODAY')
+                AND s.recommended_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '5 days'
                 ${barangayClause}
-                GROUP BY il.scheduled_date
-                ORDER BY il.scheduled_date ASC
+                GROUP BY s.recommended_date
+                ORDER BY s.recommended_date ASC
             `, params);
 
             return rows.map(r => ({
-                date: r.scheduled_date,
+                date: r.recommended_date,
                 count: Number(r.count),
                 vaccines: r.vaccines
             }));

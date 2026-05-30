@@ -17,6 +17,7 @@ import HeatmapMap from './HeatmapMap';
 import ErrorBoundary from '../../components/common/ErrorBoundary';
 // Validation Logic
 import { getBarangayCenter } from '../../utils/barangayConfig';
+import { getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
 
 // --- Main Orchestrator ---
 export default function Heatmap() {
@@ -38,8 +39,14 @@ export default function Heatmap() {
     const [selectedInfantId, setSelectedInfantId] = useState(null);
     const [selectedClusterId, setSelectedClusterId] = useState(null);
     const [resetViewFlag, setResetViewFlag] = useState(0);
+    const [clusterDeploymentRows, setClusterDeploymentRows] = useState([]);
     const markerRefsRef = useRef({});  // holds per-infant Leaflet marker refs
     const markerRefsCallback = useCallback((refsObj) => { markerRefsRef.current = refsObj.current; }, []);
+    const assignedBarangay = user?.assigned_barangay || mapState?.barangay || null;
+    const barangayBoundaryData = useMemo(
+        () => getBarangayBoundaryGeoJson(assignedBarangay),
+        [assignedBarangay]
+    );
 
     // --- Spatial Context Locking: Initial Center ---
     useEffect(() => {
@@ -53,21 +60,88 @@ export default function Heatmap() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const apiScope = mode === 'all' ? 'census' : 'clusters';
-            const res = await apiClient.get(`/analytics/map-data?scope=${apiScope}`);
+            const [res, deploymentsRes] = await Promise.all([
+                apiClient.get('/analytics/map-data?scope=census&eps=300&minPts=3'),
+                apiClient.get('/clinical/deployments')
+            ]);
+
+            let deploymentRows = [];
+            if (deploymentsRes.ok) {
+                const deploymentsPayload = await deploymentsRes.json();
+                deploymentRows = Array.isArray(deploymentsPayload?.deployments)
+                    ? deploymentsPayload.deployments
+                    : (Array.isArray(deploymentsPayload?.clusters) ? deploymentsPayload.clusters : []);
+                setClusterDeploymentRows(deploymentRows);
+            } else {
+                setClusterDeploymentRows([]);
+            }
+
             if (res.ok) {
                 const data = await res.json();
-                setMapState(data);
+
+                const deploymentClusters = deploymentRows.map((cluster, index) => {
+                    const points = Array.isArray(cluster?.points) ? cluster.points : [];
+                    const validPoints = points
+                        .map((point) => ({
+                            ...point,
+                            lat: parseFloat(point?.lat),
+                            lng: parseFloat(point?.lng)
+                        }))
+                        .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+                    const average = validPoints.reduce(
+                        (acc, point) => ({ lat: acc.lat + point.lat, lng: acc.lng + point.lng }),
+                        { lat: 0, lng: 0 }
+                    );
+
+                    const lat = validPoints.length
+                        ? average.lat / validPoints.length
+                        : parseFloat(cluster?.lat ?? cluster?.centroid_latitude);
+                    const lng = validPoints.length
+                        ? average.lng / validPoints.length
+                        : parseFloat(cluster?.lng ?? cluster?.centroid_longitude);
+
+                    return {
+                        ...cluster,
+                        clusterId: cluster?.clusterId || cluster?.id || `deployment-${index + 1}`,
+                        cluster_assignment_id: cluster?.cluster_assignment_id || cluster?.id,
+                        cluster_label: cluster?.cluster_label || cluster?.locality || `Priority Area ${index + 1}`,
+                        locality: cluster?.locality || cluster?.cluster_label || `Priority Area ${index + 1}`,
+                        cluster_status: cluster?.cluster_status || cluster?.status || 'Pending',
+                        assigned_user_name: cluster?.assigned_user_name || cluster?.assigned_bhw_name || '',
+                        assigned_user_role: cluster?.assigned_user_role || '',
+                        assigned_count: Number(cluster?.infant_count || cluster?.total_infants || validPoints.length || 0),
+                        total_infants: Number(cluster?.infant_count || cluster?.total_infants || validPoints.length || 0),
+                        lat,
+                        lng,
+                        points: validPoints
+                    };
+                }).filter((cluster) => {
+                    return Number.isFinite(cluster.lat) && Number.isFinite(cluster.lng);
+                });
+
+                setMapState({
+                    ...data,
+                    clusters: deploymentClusters,
+                    dss_clusters: deploymentClusters
+                });
             }
         } catch (error) {
             console.error('[Heatmap] Critical Fetch Error:', error);
+            setClusterDeploymentRows([]);
         } finally {
             setLoading(false);
         }
-    }, [mode]);
+    }, []);
 
     useEffect(() => {
         fetchData();
+    }, [fetchData]);
+
+    useEffect(() => {
+        const handleFollowUpUpdate = () => fetchData();
+        window.addEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+        return () => window.removeEventListener('immunicare:followups-updated', handleFollowUpUpdate);
     }, [fetchData]);
 
     // Mode Switcher with Guard
@@ -85,12 +159,16 @@ export default function Heatmap() {
     }, [mode]);
 
     // Helpers
-    const hasValidLatLng = useCallback((pt) => pt && pt.lat && pt.lng && !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0, []);
+    const hasValidLatLng = useCallback((pt) => {
+        const lat = parseFloat(pt?.lat);
+        const lng = parseFloat(pt?.lng);
+        return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+    }, []);
     
     const normalizeCoords = useCallback((pt) => {
-        if (hasValidLatLng(pt)) return { lat: pt.lat, lng: pt.lng };
+        if (hasValidLatLng(pt)) return { lat: parseFloat(pt.lat), lng: parseFloat(pt.lng) };
         if (pt.geom && pt.geom.coordinates) {
-            return { lat: pt.geom.coordinates[1], lng: pt.geom.coordinates[0] };
+            return { lat: parseFloat(pt.geom.coordinates[1]), lng: parseFloat(pt.geom.coordinates[0]) };
         }
         return { lat: 0, lng: 0 };
     }, [hasValidLatLng]);
@@ -124,15 +202,10 @@ export default function Heatmap() {
         if (!mapState || isTransitioning) return [];
         let pool = mapState.all_infants || [];
 
-        // 1. Mode Filtering: Priority Areas only shows actionable infants
-        if (mode === 'priority') {
-            pool = pool.filter(p => ['defaulter', 'due_soon'].includes(p.urgency));
-        }
-
-        // 2. Status Filtering (Primary Triage)
+        // Status Filtering (Primary Triage)
         pool = pool.filter(p => activeFilters.statuses.includes(p.urgency) || p.id === selectedInfantId);
 
-        // 3. Shortcut / Quality Filtering
+        // Shortcut / Quality Filtering
         if (activeFilters.shortcuts.includes('unmapped_high_risk')) {
             pool = pool.filter(p => (!hasValidLatLng(p) && p.urgency === 'defaulter') || p.id === selectedInfantId);
         }
@@ -324,6 +397,7 @@ export default function Heatmap() {
                                 activeFilters={activeFilters}
                                 setActiveFilters={setActiveFilters}
                                 derivedCounts={derivedCounts}
+                                barangayBoundaryData={barangayBoundaryData}
                             />
                         </ErrorBoundary>
                     </div>
@@ -370,7 +444,7 @@ export default function Heatmap() {
                                 <div className="flex items-center gap-2">
                                     <span className={`w-1.5 h-1.5 rounded-full ${mode === 'all' ? 'bg-emerald-500' : 'bg-rose-500'} animate-pulse`}></span>
                                     <span className="text-[11px] font-black text-white tracking-widest uppercase">
-                                        {activeFilters.statuses.length < 5 || activeFilters.shortcuts.length > 0 ? 'Filtered' : 'Global'} View: {allMarkersForMode.length} Infants
+                                        {activeFilters.statuses.length < 4 || activeFilters.shortcuts.length > 0 ? 'Filtered' : 'Global'} View: {allMarkersForMode.length} Infants
                                     </span>
                                 </div>
                             )}
@@ -427,6 +501,7 @@ export default function Heatmap() {
                             formatClusterAreaLabel={formatClusterAreaLabel}
                             allMarkersForMode={allMarkersForMode}
                             handleFocusInfant={handleFocusInfant}
+                            clusterDeploymentRows={clusterDeploymentRows}
                         />
                     </ErrorBoundary>
                 </div>

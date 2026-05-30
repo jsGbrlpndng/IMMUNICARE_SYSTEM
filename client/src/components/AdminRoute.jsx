@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -20,9 +21,12 @@ const AdminRoute = ({ children }) => {
         return <Navigate to="/portal" state={{ from: location }} replace />;
     }
 
-    if (user.role !== 'Barangay Admin') {
-        // Redirect non-admins to their appropriate dashboard
-        const target = user.role === 'Super Admin' ? '/superadmin/dashboard' : '/clinical/dashboard';
+    if ((user.must_change_password || user.password_update_required) && location.pathname !== '/force-password-change') {
+        return <Navigate to="/force-password-change" replace />;
+    }
+
+    if (!['Super Admin', 'Admin'].includes(user.role)) {
+        const target = user.role === 'BHW' ? '/bhw/dashboard' : '/clinical/dashboard';
         return <Navigate to={target} replace />;
     }
 

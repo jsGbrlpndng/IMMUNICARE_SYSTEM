@@ -1,34 +1,46 @@
-﻿import React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard,
-    UserPlus,
     ClipboardList,
     LogOut,
     ChevronLeft,
     ChevronRight,
-    User,
     ChevronDown,
-    Settings,
     MapPin,
     X,
-    Menu
+    Menu,
+    FolderCheck,
+    Shield,
+    Settings
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-/* BHW Layout
-   Uses the same sidebar shell as the Midwife (StaffLayout/SidebarNav)
-   to give both roles a visually consistent experience.
-   The only difference is the nav items (BHW-specific).
-*/
+const BRAND = {
+    green: '#0B6E4F',
+    greenDark: '#084C39',
+    greenTint: '#E9F6F0',
+    greenLine: '#BFDFD1',
+    bg: '#F3F6F8',
+    panel: '#FFFFFF',
+    panelMuted: '#F8FAFB',
+    border: '#D9E2E7',
+    text: '#102A43',
+    textMuted: '#627D98',
+    textSoft: '#829AB1'
+};
+
+const navItems = [
+    { path: '/bhw/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/bhw/submissions', label: 'My Submissions', icon: FolderCheck },
+    { path: '/bhw/follow-ups', label: 'Follow-Ups', icon: ClipboardList },
+    { path: '/bhw/profile', label: 'Account Settings', icon: Settings }
+];
 
 const BHWLayout = () => {
     const { user, logout } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
-
-    // Collapse state - persisted across page loads
     const [isCollapsed, setIsCollapsed] = useState(() => {
         try {
             const saved = localStorage.getItem('bhw-sidebar-collapsed');
@@ -37,7 +49,6 @@ const BHWLayout = () => {
             return false;
         }
     });
-
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [accountOpen, setAccountOpen] = useState(false);
     const accountRef = useRef(null);
@@ -46,15 +57,15 @@ const BHWLayout = () => {
         localStorage.setItem('bhw-sidebar-collapsed', JSON.stringify(isCollapsed));
     }, [isCollapsed]);
 
-    // Close account menu on outside click
     useEffect(() => {
-        const handler = (e) => {
-            if (accountRef.current && !accountRef.current.contains(e.target)) {
+        const handleOutsideClick = (event) => {
+            if (accountRef.current && !accountRef.current.contains(event.target)) {
                 setAccountOpen(false);
             }
         };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
+
+        document.addEventListener('mousedown', handleOutsideClick);
+        return () => document.removeEventListener('mousedown', handleOutsideClick);
     }, []);
 
     const handleLogout = () => {
@@ -62,179 +73,208 @@ const BHWLayout = () => {
         navigate('/login');
     };
 
-    const navItems = [
-        {
-            group: 'BHW Portal',
-            items: [
-                { path: '/bhw/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                { path: '/bhw/register', label: 'Register Infant', icon: UserPlus },
-                { path: '/bhw/submissions', label: 'My Submissions', icon: ClipboardList },
-                { path: '/bhw/follow-ups', label: 'Follow-Ups', icon: ClipboardList },
-            ],
-        },
-    ];
-
     const initials = user?.full_name
-        ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+        ? user.full_name.split(' ').map((name) => name[0]).join('').toUpperCase().slice(0, 2)
         : 'BH';
+
+    const pageName = location.pathname
+        .split('/')
+        .filter(Boolean)
+        .pop()
+        ?.replace(/-/g, ' ')
+        .replace(/\b\w/g, (character) => character.toUpperCase()) || 'Dashboard';
 
     const isActive = (path) => location.pathname === path;
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] flex">
-
-            {/* Mobile overlay */}
+        <div className="min-h-screen flex" style={{ backgroundColor: BRAND.bg }}>
             {isMobileOpen && (
                 <div
-                    className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
+                    className="fixed inset-0 z-40 bg-slate-900/35 backdrop-blur-[1px] lg:hidden"
                     onClick={() => setIsMobileOpen(false)}
                 />
             )}
 
-            {/* Sidebar */}
             <aside
                 className={`
-                    fixed inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-200
-                    transition-all duration-300 ease-in-out
+                    fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300 ease-in-out
                     ${isCollapsed ? 'w-20' : 'w-64'}
                     ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
                 `}
+                style={{
+                    backgroundColor: BRAND.panel,
+                    borderColor: BRAND.border
+                }}
             >
-                {/* Logo / header */}
-                <div className="flex items-center justify-between h-16 px-5 border-b border-slate-100 flex-shrink-0">
+                <div
+                    className={`h-20 border-b flex items-center ${isCollapsed ? 'justify-center px-4' : 'justify-between px-6'}`}
+                    style={{ borderColor: BRAND.border }}
+                >
+                    {!isCollapsed ? (
+                        <div className="flex items-center gap-3">
+                            <div
+                                className="h-10 w-10 rounded-md flex items-center justify-center"
+                                style={{ backgroundColor: BRAND.green }}
+                            >
+                                <Shield className="h-5 w-5 text-white" strokeWidth={2.3} />
+                            </div>
+                            <div className="leading-tight">
+                                <p className="text-[1.05rem] font-extrabold tracking-tight" style={{ color: BRAND.text }}>
+                                    ImmuniCare
+                                </p>
+                                <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em]" style={{ color: BRAND.green }}>
+                                    San Pedro RHU
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div
+                            className="h-10 w-10 rounded-md flex items-center justify-center"
+                            style={{ backgroundColor: BRAND.green }}
+                        >
+                            <Shield className="h-5 w-5 text-white" strokeWidth={2.3} />
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 py-5">
                     {!isCollapsed && (
-                        <div className="flex items-center space-x-2">
-                            <div className="w-8 h-8 bg-[#059669] rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20 border border-white/10">
-                                <span className="text-white font-bold text-sm">I</span>
-                            </div>
-                            <div className="flex flex-col leading-tight">
-                                <span className="text-sm font-extrabold text-slate-900 tracking-tight">ImmuniCare</span>
-                                <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">San Pedro RHU</span>
-                            </div>
+                        <div className="mb-6">
+                            <p className="px-2 text-[0.7rem] font-bold uppercase tracking-[0.18em]" style={{ color: BRAND.textSoft }}>
+                                BHW Portal
+                            </p>
                         </div>
                     )}
-                    {isCollapsed && (
-                        <div className="mx-auto">
-                            <div className="w-8 h-8 bg-[#059669] rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20 border border-white/10">
-                                <span className="text-white font-bold text-sm">I</span>
-                            </div>
-                        </div>
-                    )}
-                </div>
 
-                {/* Navigation */}
-                <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-                    {navItems.map((group) => (
-                        <div key={group.group}>
-                            {!isCollapsed && (
-                                <h3 className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-                                    {group.group}
-                                </h3>
-                            )}
-                            <div className="space-y-1">
-                                {group.items.map((item) => {
-                                    const Icon = item.icon;
-                                    const active = isActive(item.path);
-                                    return (
-                                        <Link
-                                            key={item.path}
-                                            to={item.path}
-                                            onClick={() => setIsMobileOpen(false)}
-                                            title={isCollapsed ? item.label : ''}
-                                            className={`
-                                                group flex items-center px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-200
-                                                ${active
-                                                    ? 'bg-white border-slate-200 text-emerald-700 shadow-sm'
-                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-emerald-600'
-                                                }
-                                            `}
-                                        >
-                                            {active && (
-                                                <span className="absolute left-0 top-[15%] h-[70%] w-1 bg-emerald-600 rounded-r-full" />
-                                            )}
-                                            <Icon
-                                                className={`
-                                                    flex-shrink-0 w-5 h-5
-                                                    ${active ? 'text-emerald-600' : 'text-slate-400 group-hover:text-emerald-600'}
-                                                    ${isCollapsed ? 'mx-auto' : 'mr-3'}
-                                                `}
-                                                strokeWidth={active ? 2.5 : 2}
-                                            />
-                                            {!isCollapsed && <span>{item.label}</span>}
-                                        </Link>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
+                    <nav className="space-y-1.5">
+                        {navItems.map((item) => {
+                            const Icon = item.icon;
+                            const active = isActive(item.path);
 
-                    {/* Assigned barangay chip */}
-                    {!isCollapsed && user?.assigned_barangay && (
-                        <div className="px-3 py-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Assigned Barangay</p>
-                            <div className="flex items-center gap-1.5 text-slate-700">
-                                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                                <span className="text-sm font-semibold">{user.assigned_barangay}</span>
+                            return (
+                                <Link
+                                    key={item.path}
+                                    to={item.path}
+                                    title={isCollapsed ? item.label : ''}
+                                    onClick={() => setIsMobileOpen(false)}
+                                    className={`
+                                        relative flex items-center rounded-md border transition-all duration-150
+                                        ${isCollapsed ? 'justify-center px-3 py-3' : 'justify-start px-4 py-3'}
+                                    `}
+                                    style={{
+                                        backgroundColor: active ? BRAND.greenTint : 'transparent',
+                                        borderColor: active ? BRAND.greenLine : 'transparent',
+                                        color: active ? BRAND.greenDark : BRAND.textMuted
+                                    }}
+                                >
+                                    {!isCollapsed && active && (
+                                        <span
+                                            className="absolute left-0 top-2.5 bottom-2.5 w-1"
+                                            style={{ backgroundColor: BRAND.green }}
+                                        />
+                                    )}
+                                    <Icon
+                                        className={isCollapsed ? 'h-5 w-5' : 'mr-3 h-5 w-5'}
+                                        strokeWidth={active ? 2.4 : 2}
+                                        style={{ color: active ? BRAND.green : BRAND.textSoft }}
+                                    />
+                                    {!isCollapsed && (
+                                        <span className="text-[0.95rem] font-semibold">{item.label}</span>
+                                    )}
+                                </Link>
+                            );
+                        })}
+                    </nav>
+
+                    {!isCollapsed && (
+                        <div
+                            className="mt-8 rounded-md border px-4 py-3"
+                            style={{
+                                backgroundColor: BRAND.panelMuted,
+                                borderColor: BRAND.border
+                            }}
+                        >
+                            <p className="text-[0.68rem] font-bold uppercase tracking-[0.16em]" style={{ color: BRAND.textSoft }}>
+                                Assigned Barangay
+                            </p>
+                            <div className="mt-2 flex items-center gap-2" style={{ color: BRAND.text }}>
+                                <MapPin className="h-4 w-4" style={{ color: BRAND.green }} />
+                                <span className="text-base font-bold uppercase">
+                                    {user?.assigned_barangay || 'Unassigned'}
+                                </span>
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Account section */}
-                <div className="px-3 pb-2 border-t border-slate-100 pt-3 flex-shrink-0" ref={accountRef}>
+                <div
+                    ref={accountRef}
+                    className="border-t px-4 py-4"
+                    style={{ borderColor: BRAND.border, backgroundColor: BRAND.panel }}
+                >
                     <div className="relative">
                         <button
-                            onClick={() => setAccountOpen(!accountOpen)}
+                            onClick={() => setAccountOpen((open) => !open)}
                             className={`
-                                w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-emerald-900 transition-all duration-300 text-left
-                                border border-white/5 shadow-lg shadow-emerald-950/20
-                                ${isCollapsed ? 'justify-center' : ''}
-                                hover:translate-y-[-1px] hover:shadow-xl
+                                flex w-full items-center rounded-md border px-4 py-3 text-left transition-all duration-150
+                                ${isCollapsed ? 'justify-center' : 'justify-start'}
                             `}
+                            style={{
+                                backgroundColor: BRAND.greenDark,
+                                borderColor: BRAND.greenDark,
+                                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.08)'
+                            }}
                         >
-                            {/* Avatar */}
-                            <div className="w-8 h-8 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                            <div className="flex h-10 w-10 items-center justify-center rounded border border-white/20 bg-white/10 text-sm font-bold text-white">
                                 {initials}
                             </div>
                             {!isCollapsed && (
                                 <>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-white truncate">{user?.full_name || 'BHW User'}</p>
-                                        <p className="text-[10px] text-emerald-200 font-bold uppercase tracking-wider truncate opacity-80">BHW · {user?.id?.slice(0, 8) || 'STAFF'}</p>
+                                    <div className="ml-3 min-w-0 flex-1">
+                                        <p className="truncate text-sm font-bold text-white">
+                                            {user?.full_name || 'BHW User'}
+                                        </p>
+                                        <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.14em] text-emerald-100/90">
+                                            BHW · {user?.assigned_barangay || 'San Pedro'}
+                                        </p>
                                     </div>
                                     <ChevronDown
-                                        className={`w-4 h-4 text-white/70 flex-shrink-0 transition-transform duration-200 ${accountOpen ? 'rotate-180' : ''}`}
+                                        className={`h-4 w-4 text-white/80 transition-transform duration-150 ${accountOpen ? 'rotate-180' : ''}`}
                                     />
                                 </>
                             )}
                         </button>
 
-                        {/* Account dropdown */}
                         {accountOpen && (
                             <div
-                                className={`
-                                    absolute bottom-full mb-2 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-10 w-52
-                                    ${isCollapsed ? 'left-14' : 'left-0 right-0'}
-                                `}
+                                className={`absolute bottom-full mb-2 rounded-md border bg-white py-2 shadow-sm ${
+                                    isCollapsed ? 'left-14 w-56' : 'left-0 right-0'
+                                }`}
+                                style={{ borderColor: BRAND.border }}
                             >
-                                <div className="px-4 py-2.5 border-b border-slate-50 mb-1">
-                                    <p className="text-xs font-bold text-slate-900 truncate">{user?.full_name}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">BHW - {user?.assigned_barangay || 'No Barangay'}</p>
+                                <div className="border-b px-4 py-3" style={{ borderColor: BRAND.border }}>
+                                    <p className="truncate text-sm font-bold" style={{ color: BRAND.text }}>
+                                        {user?.full_name || 'BHW User'}
+                                    </p>
+                                    <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em]" style={{ color: BRAND.textSoft }}>
+                                        Barangay {user?.assigned_barangay || 'Unassigned'}
+                                    </p>
                                 </div>
                                 <button
                                     onClick={() => navigate('/bhw/profile')}
-                                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-emerald-600 transition-colors"
+                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-50"
+                                    style={{ color: BRAND.textMuted }}
                                 >
-                                    <Settings className="w-4 h-4" />
+                                    <Settings className="h-4 w-4" />
                                     Account Settings
                                 </button>
-                                <div className="px-3 mt-1">
+                                <div className="px-3 pt-2">
                                     <button
                                         onClick={handleLogout}
-                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                                        className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-sm font-bold text-red-700 transition-colors hover:bg-red-50"
                                     >
-                                        <LogOut className="w-4 h-4" />
-                                        <span className="font-bold">Sign Out</span>
+                                        <LogOut className="h-4 w-4" />
+                                        Sign Out
                                     </button>
                                 </div>
                             </div>
@@ -242,42 +282,52 @@ const BHWLayout = () => {
                     </div>
                 </div>
 
-                {/* Collapse toggle */}
-                <div className="p-3 border-t border-slate-100 hidden lg:block flex-shrink-0">
+                <div className="hidden border-t px-4 py-3 lg:block" style={{ borderColor: BRAND.border }}>
                     <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="flex items-center justify-center w-full py-2 rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                        onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+                        className="flex w-full items-center justify-center rounded-md border px-3 py-2.5 text-sm font-bold transition-colors"
+                        style={{
+                            backgroundColor: BRAND.panelMuted,
+                            borderColor: BRAND.border,
+                            color: BRAND.textMuted
+                        }}
                     >
                         {isCollapsed ? (
-                            <ChevronRight size={18} />
+                            <ChevronRight className="h-5 w-5" />
                         ) : (
-                            <div className="flex items-center space-x-2 text-sm font-bold">
-                                <ChevronLeft size={18} strokeWidth={2.5} />
+                            <>
+                                <ChevronLeft className="mr-2 h-5 w-5" />
                                 <span>Collapse Sidebar</span>
-                            </div>
+                            </>
                         )}
                     </button>
                 </div>
             </aside>
 
-            {/* Main content */}
-            <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
-
-                {/* Mobile top bar */}
-                <header className="lg:hidden h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4">
-                    <button
-                        onClick={() => setIsMobileOpen(!isMobileOpen)}
-                        className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                    >
-                        {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                    </button>
-                    <span className="font-bold text-slate-900 text-sm">BHW Portal</span>
-                    <div className="w-8" />
+            <div className={`flex min-w-0 flex-1 flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
+                <header
+                    className="sticky top-0 z-30 border-b bg-white/95 backdrop-blur-sm"
+                    style={{ borderColor: BRAND.border }}
+                >
+                    <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsMobileOpen((open) => !open)}
+                                className="rounded p-2 text-slate-600 transition-colors hover:bg-slate-100 lg:hidden"
+                            >
+                                {isMobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                            </button>
+                            <div>
+                                <p className="text-sm font-medium" style={{ color: BRAND.textSoft }}>
+                                    BHW Portal <span style={{ color: BRAND.text }} className="font-bold">/ {pageName}</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                 </header>
 
-                {/* Page content */}
-                <main className="flex-1 overflow-y-auto p-5 lg:p-8">
-                    <div className="max-w-6xl mx-auto">
+                <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+                    <div className="mx-auto max-w-7xl">
                         <Outlet />
                     </div>
                 </main>

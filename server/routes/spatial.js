@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const clinicalAuth = require('../middleware/clinicalAuth');
+const { ROLES, SCHEDULE_STATUS } = require('../constants/domain');
 
 /**
  * GET /api/spatial/markers
@@ -11,9 +12,18 @@ const clinicalAuth = require('../middleware/clinicalAuth');
  */
 router.get('/markers', clinicalAuth, async (req, res) => {
     try {
-        const barangay = req.user?.assigned_barangay || req.query.barangay;
+        const barangay = req.user?.role === ROLES.SUPER_ADMIN
+            ? req.query.barangay
+            : req.user?.assigned_barangay;
         console.log(`[SPATIAL MARKERS] Fetching map markers for barangay: "${barangay || 'All'}"`);
-        
+
+        const params = [];
+        let barangayClause = '';
+        if (barangay) {
+            barangayClause = 'AND i.barangay = ?';
+            params.push(barangay);
+        }
+
         const query = `
             SELECT 
                 i.id, 
@@ -25,19 +35,30 @@ router.get('/markers', clinicalAuth, async (req, res) => {
                 CAST(i.latitude AS FLOAT) as latitude, 
                 CAST(i.longitude AS FLOAT) as longitude,
                 COALESCE(
-                    MAX(CASE WHEN s.status = 'DEFAULTER' THEN 'DEFAULTER' END),
-                    MAX(CASE WHEN s.status = 'DUE_TODAY' THEN 'DUE_TODAY' END),
-                    MAX(CASE WHEN s.status = 'DUE_SOON' THEN 'DUE_SOON' END),
-                    'COMPLETED'
+                    MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date < CURRENT_DATE THEN 'DEFAULTER' END),
+                    MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date = CURRENT_DATE THEN 'DUE_TODAY' END),
+                    MAX(CASE
+                        WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date > CURRENT_DATE
+                         AND COALESCE(s.earliest_allowed_date, s.recommended_date)::date <= CURRENT_DATE + INTERVAL '7 days'
+                        THEN 'DUE_SOON'
+                    END),
+                    MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date > CURRENT_DATE + INTERVAL '7 days' THEN 'ON_TRACK' END),
+                    CASE
+                        WHEN i.immunization_status IN ('FIC', 'CIC') THEN i.immunization_status
+                        ELSE 'COMPLETED'
+                    END
                 ) AS computed_map_status
             FROM infants i
             LEFT JOIN infant_schedules s ON i.id = s.infant_id
-            WHERE i.barangay = $1 AND i.latitude IS NOT NULL AND i.longitude IS NOT NULL
+                AND s.status::text NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
+            WHERE i.latitude IS NOT NULL
+              AND i.longitude IS NOT NULL
+              AND COALESCE(i.status, '') != 'Archived'
+              ${barangayClause}
             GROUP BY i.id;
         `;
-        
-        const result = await db.query(query, [barangay]);
-        const rows = Array.isArray(result) ? result[0] : (result.rows || result);
+
+        const [rows] = await db.execute(query, params);
         
         res.json({
             success: true,

@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Popup, Marker, Rectangle, Circle, useMap } from 'react-leaflet';
@@ -16,6 +17,11 @@ import apiClient from '../../services/apiClient';
 // Can be changed to user location or midwife base.
 const ROUTE_ORIGIN = { lat: 14.3550, lng: 121.0500, label: "Langgam Health Center" };
 const DEFAULT_ZOOM = 15;
+
+const toMapFloat = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
 
 // ---------------------------------------------------------------------------
 // Auto-Focus & Bounds Component
@@ -55,7 +61,7 @@ function MapFlyController({ target }) {
 // ---------------------------------------------------------------------------
 export default function AnalyticsMap() {
     const navigate = useNavigate();
-    const [mapData, setMapData] = useState({ clusters: [], noise: [], all_infants: [], counts: { all: 0, overdue: 0, due_soon: 0 } });
+    const [mapData, setMapData] = useState({ clusters: [], noise: [], all_infants: [], counts: { all: 0, total_defaulters: 0, total_due_soon: 0 } });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('overdue'); // Default to triage
@@ -98,7 +104,7 @@ export default function AnalyticsMap() {
     const filteredInfants = useMemo(() => {
         let list = [];
         if (activeTab === 'all') list = mapData.all_infants;
-        else if (activeTab === 'overdue') list = mapData.all_infants.filter(p => p.computed_map_status === 'DEFAULTER' || p.status === 'defaulter' || p.status === 'overdue');
+        else if (activeTab === 'overdue') list = mapData.all_infants.filter(p => p.computed_map_status === 'DEFAULTER' || p.urgency === 'defaulter');
         else if (activeTab === 'due_soon') list = mapData.all_infants.filter(p => p.computed_map_status === 'DUE_SOON' || p.status === 'due_soon');
 
         if (searchQuery) {
@@ -115,8 +121,8 @@ export default function AnalyticsMap() {
     const getMarkerIcon = (pt) => {
         let color = 'bg-slate-400';
         const status = pt.computed_map_status || pt.status;
-        if (status === 'DEFAULTER' || status === 'defaulter') color = 'bg-rose-600';
-        else if (status === 'DUE_SOON' || status === 'overdue') color = 'bg-amber-500';
+        if (status === 'DEFAULTER' || pt.urgency === 'defaulter') color = 'bg-rose-600';
+        else if (status === 'DUE_SOON') color = 'bg-amber-500';
         else if (status === 'due_soon') color = 'bg-blue-500';
         else if (status === 'COMPLETED' || status === 'fic') color = 'bg-emerald-500';
 
@@ -136,8 +142,8 @@ export default function AnalyticsMap() {
                     <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200 w-fit">
                         {[
                             { id: 'all', label: 'All Infants', count: mapData.counts?.all },
-                            { id: 'overdue', label: 'Overdue', count: mapData.counts?.overdue },
-                            { id: 'due_soon', label: 'Due Soon', count: mapData.counts?.due_soon }
+                            { id: 'overdue', label: 'Defaulters', count: mapData.counts?.total_defaulters || 0 },
+                            { id: 'due_soon', label: 'Due Soon', count: mapData.counts?.total_due_soon || 0 }
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -209,10 +215,14 @@ export default function AnalyticsMap() {
                         )}
 
                         {/* Clusters (Risk Zones) */}
-                        {layers.clusters && activeTab === 'overdue' && mapData.clusters?.map((cluster, i) => (
+                        {layers.clusters && activeTab === 'overdue' && mapData.clusters?.map((cluster, i) => {
+                            const lat = toMapFloat(cluster.lat);
+                            const lng = toMapFloat(cluster.lng);
+                            if (lat === null || lng === null) return null;
+                            return (
                             <Circle
                                 key={`cluster-${i}`}
-                                center={[cluster.lat, cluster.lng]}
+                                center={[lat, lng]}
                                 radius={cluster.zero_dose > 0 ? 150 : 100}
                                 eventHandlers={{ click: () => setSelectedItem({ type: 'cluster', data: cluster }) }}
                                 pathOptions={{
@@ -223,13 +233,18 @@ export default function AnalyticsMap() {
                                     dashArray: '5, 10'
                                 }}
                             />
-                        ))}
+                        );
+                        })}
 
                         {/* Household Pins */}
-                        {layers.pins && filteredInfants.map((pt, i) => (
+                        {layers.pins && filteredInfants.map((pt, i) => {
+                            const lat = toMapFloat(pt.lat ?? pt.latitude);
+                            const lng = toMapFloat(pt.lng ?? pt.longitude);
+                            if (lat === null || lng === null) return null;
+                            return (
                             <Marker
                                 key={`pt-${pt.id}`}
-                                position={[pt.lat, pt.lng]}
+                                position={[lat, lng]}
                                 icon={getMarkerIcon(pt)}
                                 eventHandlers={{ click: () => setSelectedItem({ type: 'infant', data: pt }) }}
                             >
@@ -239,7 +254,7 @@ export default function AnalyticsMap() {
                                         <p className="text-sm font-black text-slate-800">{pt.patient_name}</p>
                                         <div className="mt-2 flex gap-2">
                                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                                                pt.status === 'defaulter' ? 'bg-rose-50 text-rose-600' :
+                                                pt.computed_map_status === 'DEFAULTER' || pt.urgency === 'defaulter' ? 'bg-rose-50 text-rose-600' :
                                                 pt.status === 'due_soon' ? 'bg-blue-50 text-blue-600' :
                                                 pt.status === 'fic' ? 'bg-emerald-50 text-emerald-600' :
                                                 'bg-amber-50 text-amber-600'
@@ -255,7 +270,8 @@ export default function AnalyticsMap() {
                                     </div>
                                 </Popup>
                             </Marker>
-                        ))}
+                        );
+                        })}
                     </MapContainer>
 
                     {/* Legend Overlay */}
@@ -308,7 +324,7 @@ export default function AnalyticsMap() {
                                             >
                                                 <div className="flex justify-between items-start mb-1">
                                                     <span className="text-[13px] font-black text-slate-900 group-hover:text-emerald-600 transition-colors">{pt.patient_name}</span>
-                                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${pt.status === 'defaulter' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${pt.computed_map_status === 'DEFAULTER' || pt.urgency === 'defaulter' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
                                                         {pt.status}
                                                     </span>
                                                 </div>
@@ -328,7 +344,7 @@ export default function AnalyticsMap() {
                                 <div className="p-6 space-y-6">
                                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm text-center">
                                         <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${
-                                            selectedItem.data.status === 'defaulter' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
+                                            selectedItem.data.computed_map_status === 'DEFAULTER' || selectedItem.data.urgency === 'defaulter' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
                                         }`}>
                                             <Users size={32} />
                                         </div>
@@ -339,8 +355,8 @@ export default function AnalyticsMap() {
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
                                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Risk Level</span>
-                                            <span className={`text-[10px] font-black uppercase ${selectedItem.data.status === 'defaulter' ? 'text-rose-600' : 'text-amber-600'}`}>
-                                                {selectedItem.data.status === 'defaulter' ? 'High Concern' : 'Moderate'}
+                                            <span className={`text-[10px] font-black uppercase ${selectedItem.data.computed_map_status === 'DEFAULTER' || selectedItem.data.urgency === 'defaulter' ? 'text-rose-600' : 'text-amber-600'}`}>
+                                                {selectedItem.data.computed_map_status === 'DEFAULTER' || selectedItem.data.urgency === 'defaulter' ? 'High Concern' : 'Moderate'}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100">

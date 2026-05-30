@@ -1,8 +1,10 @@
-import { Navigate } from 'react-router-dom';
+﻿import React from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const SuperAdminRoute = ({ children }) => {
     const { user, loading } = useAuth();
+    const location = useLocation();
 
     if (loading) {
         return (
@@ -18,6 +20,10 @@ const SuperAdminRoute = ({ children }) => {
     if (!user || user.role !== 'Super Admin') {
         console.warn('[SECURITY] Unauthorized access attempt to Super Admin workspace by:', user?.id || 'Anonymous');
         return <Navigate to="/portal" replace />;
+    }
+
+    if ((user.must_change_password || user.password_update_required) && location.pathname !== '/force-password-change') {
+        return <Navigate to="/force-password-change" replace />;
     }
 
     return children;

@@ -1,142 +1,127 @@
 const VaccinationService = require('../services/VaccinationService');
-const NIPScheduleService = require('../services/NIPScheduleService');
-const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
 
-jest.mock('../services/NIPScheduleService');
-jest.mock('../services/EnhancedNIPScheduleEngine');
-jest.mock('uuid', () => ({ v4: () => 'mock-vax-id' }));
+jest.mock('uuid', () => ({ v4: () => 'mock-vaccination-id' }));
 
-describe('Early-Dose Override Logic Verification', () => {
+describe('VaccinationService clinical interval enforcement', () => {
     let service;
     let mockDb;
     let mockConnection;
+    let mockScheduleService;
+
+    const baseVaccinationData = {
+        infant_id: 'infant-123',
+        vaccine_code: 'PENTA-2',
+        dose_number: 2,
+        vaccine_name: 'Pentavalent 2',
+        batch_number: 'BN123',
+        site_of_injection: 'Left Thigh',
+        vaccinator_id: 'user-456',
+        vaccinator_name: 'Midwife Joy',
+        administered_date: '2026-01-25',
+        recorded_by_role: 'Midwife'
+    };
 
     beforeEach(() => {
         jest.clearAllMocks();
 
         mockConnection = {
-            beginTransaction: jest.fn(),
-            commit: jest.fn(),
-            rollback: jest.fn(),
+            beginTransaction: jest.fn().mockResolvedValue(),
+            commit: jest.fn().mockResolvedValue(),
+            rollback: jest.fn().mockResolvedValue(),
             release: jest.fn(),
             execute: jest.fn(),
             query: jest.fn()
         };
 
         mockDb = {
-            getConnection: jest.fn().mockResolvedValue(mockConnection),
-            execute: jest.fn(),
-            query: jest.fn()
+            getConnection: jest.fn().mockResolvedValue(mockConnection)
         };
 
         service = new VaccinationService(mockDb);
-        // Inject mocked service
-        service.nipScheduleService = new NIPScheduleService();
+        service.computeNextDose = jest.fn().mockResolvedValue();
+        mockScheduleService = {
+            updateScheduleStatuses: jest.fn().mockResolvedValue(),
+            getActiveRules: jest.fn().mockResolvedValue([
+                {
+                    vaccine_code: 'PENTA-2',
+                    min_age_days: 70,
+                    min_interval_days: 28,
+                    max_age_days: null
+                }
+            ]),
+            recordVaccination: jest.fn().mockResolvedValue()
+        };
+        service.nipScheduleService = mockScheduleService;
     });
 
-    const standardVaccinationData = {
-        infant_id: 'infant-123',
-        vaccine_code: 'OPV1',
-        dose_number: 1,
-        vaccine_name: 'OPV 1',
-        batch_number: 'BN123',
-        site_of_injection: 'Left Thigh',
-        vaccinator_id: 'user-456',
-        vaccinator_name: 'Nurse Joy',
-        administered_date: '2026-03-03',
-        recorded_by_role: 'Midwife'
-    };
+    test('records PENTA-2 successfully at 24 days after PENTA-1 under the DOH 4-day grace period', async () => {
+        mockConnection.execute
+            .mockResolvedValueOnce([[{ id: 'infant-123', dob: '2025-11-20', registration_status: 'APPROVED' }]])
+            .mockResolvedValueOnce([[]])
+            .mockResolvedValueOnce([[{
+                id: 'schedule-penta-2',
+                status: 'DUE_SOON',
+                vaccine_code: 'PENTA-2',
+                dose_number: 2,
+                recommended_date: '2026-01-29',
+                earliest_allowed_date: '2026-01-29',
+                latest_allowed_date: null
+            }]])
+            .mockResolvedValueOnce([[{
+                vaccine_code: 'PENTA-1',
+                dose_number: 1,
+                actual_date: '2026-01-01',
+                recommended_date: '2026-01-01'
+            }]])
+            .mockResolvedValueOnce([{ affectedRows: 1 }]);
 
-    test('Scenario 1: Normal on-time dose should succeed', async () => {
-        const today = new Date('2026-03-03');
-        const earliestAllowed = new Date('2026-03-01');
-
-        // Mock infant check
-        mockConnection.execute.mockResolvedValueOnce([[{ id: 'infant-123', dob: '2026-01-01' }]]);
-        // Mock duplicate check
-        mockConnection.execute.mockResolvedValueOnce([[]]);
-        // Mock schedule entry fetch (findScheduleEntry internal call)
-        mockConnection.execute.mockResolvedValueOnce([[{
-            id: 'sched-123',
-            status: 'DUE',
-            earliest_allowed_date: '2026-03-01'
-        }]]);
-        // Mock vaccination insert
-        mockConnection.execute.mockResolvedValueOnce([{ affectedRows: 1 }]);
-
-        const result = await service.recordVaccination(standardVaccinationData);
+        const result = await service.recordVaccination(baseVaccinationData);
 
         expect(result.success).toBe(true);
         expect(mockConnection.commit).toHaveBeenCalled();
-        console.log('✅ Scenario 1 Passed: Normal on-time dose recorded.');
+        expect(mockScheduleService.recordVaccination).toHaveBeenCalledWith(
+            'infant-123',
+            'PENTA-2',
+            2,
+            '2026-01-25',
+            mockConnection,
+            'schedule-penta-2',
+            false
+        );
     });
 
-    test('Scenario 2: Early dose without override should fail', async () => {
-        const earliestAllowed = '2026-03-10'; // Future date relative to administered_date
+    test('rejects Hepatitis B Birth Dose administration after 24 hours of birth', async () => {
+        mockScheduleService.getActiveRules.mockResolvedValueOnce([
+            {
+                vaccine_code: 'HEPB',
+                min_age_days: 0,
+                min_interval_days: null,
+                max_age_days: 365
+            }
+        ]);
 
-        mockConnection.execute.mockResolvedValueOnce([[{ id: 'infant-123', dob: '2026-01-01' }]]);
-        mockConnection.execute.mockResolvedValueOnce([[]]);
-        mockConnection.execute.mockResolvedValueOnce([[{
-            id: 'sched-123',
-            status: 'UPCOMING',
-            earliest_allowed_date: earliestAllowed
-        }]]);
+        mockConnection.execute
+            .mockResolvedValueOnce([[{ id: 'infant-456', dob: '2026-01-01', registration_status: 'APPROVED' }]])
+            .mockResolvedValueOnce([[]])
+            .mockResolvedValueOnce([[{
+                id: 'schedule-hepb',
+                status: 'DUE_TODAY',
+                vaccine_code: 'HEPB',
+                dose_number: 1,
+                recommended_date: '2026-01-01',
+                earliest_allowed_date: '2026-01-01',
+                latest_allowed_date: '2026-12-31'
+            }]]);
 
         await expect(service.recordVaccination({
-            ...standardVaccinationData,
-            override_early_dose: false
-        })).rejects.toThrow(/CLINICAL VIOLATION: Too early/);
+            ...baseVaccinationData,
+            infant_id: 'infant-456',
+            vaccine_code: 'HEPB',
+            dose_number: 1,
+            vaccine_name: 'Hepatitis B Birth Dose',
+            administered_date: '2026-01-02'
+        })).rejects.toThrow('Hepatitis B Birth Dose must be administered within 24 hours of birth.');
 
         expect(mockConnection.rollback).toHaveBeenCalled();
-        console.log('✅ Scenario 2 Passed: Early dose without override blocked.');
-    });
-
-    test('Scenario 3: Early dose with override as Midwife should succeed', async () => {
-        const earliestAllowed = '2026-03-10';
-
-        mockConnection.execute.mockResolvedValueOnce([[{ id: 'infant-123', dob: '2026-01-01' }]]);
-        mockConnection.execute.mockResolvedValueOnce([[]]);
-        mockConnection.execute.mockResolvedValueOnce([[{
-            id: 'sched-123',
-            status: 'UPCOMING',
-            earliest_allowed_date: earliestAllowed
-        }]]);
-        mockConnection.execute.mockResolvedValueOnce([{ affectedRows: 1 }]);
-
-        const result = await service.recordVaccination({
-            ...standardVaccinationData,
-            override_early_dose: true,
-            recorded_by_role: 'Midwife'
-        });
-
-        expect(result.success).toBe(true);
-        expect(mockConnection.commit).toHaveBeenCalled();
-
-        // Verify is_early_override was passed to SQL
-        const insertCall = mockConnection.execute.mock.calls.find(c => c[0].includes('INSERT INTO vaccinations'));
-        expect(insertCall[1]).toContain(true); // is_early_override column value
-
-        console.log('✅ Scenario 3 Passed: Midwife authorized early override.');
-    });
-
-    test('Scenario 4: Early dose with override as BHW should fail (RBAC)', async () => {
-        const earliestAllowed = '2026-03-10';
-
-        mockConnection.execute.mockResolvedValueOnce([[{ id: 'infant-123', dob: '2026-01-01' }]]);
-        mockConnection.execute.mockResolvedValueOnce([[]]);
-        mockConnection.execute.mockResolvedValueOnce([[{
-            id: 'sched-123',
-            status: 'UPCOMING',
-            earliest_allowed_date: earliestAllowed
-        }]]);
-
-        await expect(service.recordVaccination({
-            ...standardVaccinationData,
-            override_early_dose: true,
-            recorded_by_role: 'BHW'
-        })).rejects.toThrow(/Only Midwife\/Nurse can authorize early-dose overrides/);
-
-        expect(mockConnection.rollback).toHaveBeenCalled();
-        console.log('✅ Scenario 4 Passed: BHW blocked from early override.');
     });
 });

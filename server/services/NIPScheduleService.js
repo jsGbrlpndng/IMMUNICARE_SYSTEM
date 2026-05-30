@@ -5,6 +5,7 @@ const STATUS = {
     NOT_YET_DUE:          'NOT_YET_DUE',
     DUE_SOON:              'DUE_SOON',
     DUE_TODAY:             'DUE_TODAY',
+    DEFAULTER:             SCHEDULE_STATUS.DEFAULTER || 'DEFAULTER',
     OVERDUE:               SCHEDULE_STATUS.OVERDUE,
     DEFAULTED:             SCHEDULE_STATUS.DEFAULTED,
     COMPLETED:             'COMPLETED',
@@ -73,6 +74,21 @@ const VACCINE_NAMES = {
  * Within the 0-42 day window: dose is still DUE (actionable but not yet a defaulter statistic).
  */
 const DEFAULTER_GRACE_DAYS = 42;
+const DOH_MIN_INTERVAL_GRACE_DAYS = 4;
+const ROTAVIRUS_RULE_PATTERN = /ROTA|ROTAVIRUS/i;
+
+const getGraceAdjustedIntervalDays = (minIntervalDays) => {
+    const strictDays = Number(minIntervalDays || 0);
+    if (!strictDays) return 0;
+    return Math.max(strictDays - DOH_MIN_INTERVAL_GRACE_DAYS, 0);
+};
+
+const getGraceAdjustedMinimumAgeDays = (rule) => {
+    const minAgeDays = Number(rule?.min_age_days || 0);
+    return rule?.min_interval_days
+        ? Math.max(minAgeDays - DOH_MIN_INTERVAL_GRACE_DAYS, 0)
+        : minAgeDays;
+};
 
 
 class NIPScheduleService {
@@ -109,9 +125,7 @@ class NIPScheduleService {
         // diffDays > 0 means the recommended date is in the past
         const diffDays = Math.floor((targetToday - targetRecommended) / (1000 * 60 * 60 * 24));
 
-        // DOH protocol: overdue remains actionable; defaulted is escalated after the grace period.
-        if (diffDays > DEFAULTER_GRACE_DAYS) return STATUS.DEFAULTED;
-        if (diffDays > 0)  return STATUS.OVERDUE;
+        if (diffDays > 0) return STATUS.DEFAULTER;
         if (diffDays === 0) return STATUS.DUE_TODAY;   // exactly today
         if (diffDays >= -7) return STATUS.DUE_SOON;    // within next 7 days
         return STATUS.NOT_YET_DUE;                     // more than 7 days away
@@ -123,7 +137,7 @@ class NIPScheduleService {
     static calculateEarliestAllowedDate(actualDate, minIntervalDays) {
         if (!actualDate || !minIntervalDays) return null;
         const earliestDate = new Date(actualDate);
-        earliestDate.setDate(earliestDate.getDate() + minIntervalDays);
+        earliestDate.setDate(earliestDate.getDate() + getGraceAdjustedIntervalDays(minIntervalDays));
         return earliestDate.toISOString().split('T')[0];
     }
 
@@ -285,11 +299,10 @@ class NIPScheduleService {
             SET status = ?
             WHERE infant_id = ? 
             AND status NOT IN (?, ?, ?)
-            AND recommended_date < ?::date - INTERVAL '${DEFAULTER_GRACE_DAYS} days'
-        `, [STATUS.DEFAULTED, infantId, STATUS.COMPLETED, STATUS.PENDING_VALIDATION, STATUS.INELIGIBLE, todayStr]);
+            AND recommended_date < ?::date
+        `, [STATUS.DEFAULTER, infantId, STATUS.COMPLETED, STATUS.PENDING_VALIDATION, STATUS.INELIGIBLE, todayStr]);
 
-        // Step 4b: Mark DUE_TODAY for overdue-but-within-grace doses
-        // (recommended_date < today BUT within DEFAULTER_GRACE_DAYS)
+        // Step 4b: Legacy safety pass for rows still marked NOT_YET_DUE after the past-date sweep.
         await db.execute(`
             UPDATE infant_schedules
             SET status = ?
@@ -297,7 +310,7 @@ class NIPScheduleService {
             AND status = ?
             AND recommended_date < ?::date
             AND recommended_date >= ?::date - INTERVAL '${DEFAULTER_GRACE_DAYS} days'
-        `, [STATUS.OVERDUE, infantId, STATUS.NOT_YET_DUE, todayStr, todayStr]);
+        `, [STATUS.DEFAULTER, infantId, STATUS.NOT_YET_DUE, todayStr, todayStr]);
 
         // Step 5: Keep long-overdue doses in the canonical DEFAULTED state.
         await db.execute(`
@@ -305,8 +318,7 @@ class NIPScheduleService {
             SET status = ?
             WHERE infant_id = ? 
             AND status = ?
-            AND recommended_date < ?::date - INTERVAL '365 days'
-        `, [STATUS.DEFAULTED, infantId, STATUS.DEFAULTED, todayStr]);
+        `, [STATUS.DEFAULTER, infantId, STATUS.DEFAULTED]);
     }
 
     /**
@@ -357,10 +369,10 @@ class NIPScheduleService {
             const dob = new Date(infant[0].dob);
             
             const floorDate = new Date(dob);
-            floorDate.setDate(floorDate.getDate() + nextRule.min_age_days);
+            floorDate.setDate(floorDate.getDate() + getGraceAdjustedMinimumAgeDays(nextRule));
 
             const intervalDate = new Date(actualDate);
-            intervalDate.setDate(intervalDate.getDate() + nextRule.min_interval_days);
+            intervalDate.setDate(intervalDate.getDate() + getGraceAdjustedIntervalDays(nextRule.min_interval_days));
 
             // Use the later of the two dates as the hard floor
             const earliestDate = floorDate > intervalDate ? floorDate : intervalDate;
@@ -419,10 +431,10 @@ class NIPScheduleService {
             const dob = new Date(infant[0].dob);
             
             const floorDate = new Date(dob);
-            floorDate.setDate(floorDate.getDate() + nextRule.min_age_days);
+            floorDate.setDate(floorDate.getDate() + getGraceAdjustedMinimumAgeDays(nextRule));
 
             const intervalDate = new Date(actualDate);
-            intervalDate.setDate(intervalDate.getDate() + nextRule.min_interval_days);
+            intervalDate.setDate(intervalDate.getDate() + getGraceAdjustedIntervalDays(nextRule.min_interval_days));
 
             const earliestDate = floorDate > intervalDate ? floorDate : intervalDate;
             const earliestDateStr = earliestDate.toISOString().split('T')[0];
@@ -487,21 +499,22 @@ class NIPScheduleService {
         };
 
         rows.forEach(row => {
+            const normalizedStatus = this._normalizeStoredStatus(row.status);
             const mappedRow = this._mapRowToFrontend(row);
 
-            if (row.status === STATUS.COMPLETED) {
+            if (normalizedStatus === STATUS.COMPLETED) {
                 categorization.completed.push(mappedRow);
-            } else if (row.status === STATUS.PENDING_VALIDATION) {
+            } else if (normalizedStatus === STATUS.PENDING_VALIDATION) {
                 categorization.pending_validation.push(mappedRow);
-            } else if (row.status === STATUS.DEFAULTED) {
+            } else if (normalizedStatus === 'DEFAULTER') {
                 categorization.defaulter.push(mappedRow);
-            } else if (row.status === STATUS.OVERDUE) {
+            } else if (normalizedStatus === STATUS.OVERDUE) {
                 categorization.overdue.push(mappedRow);
-            } else if (row.status === STATUS.DUE_TODAY) {
+            } else if (normalizedStatus === STATUS.DUE_TODAY) {
                 categorization.due_now.push(mappedRow);
-            } else if (row.status === STATUS.DUE_SOON) {
+            } else if (normalizedStatus === STATUS.DUE_SOON) {
                 categorization.due_soon.push(mappedRow);
-            } else if (row.status === STATUS.INELIGIBLE) {
+            } else if (normalizedStatus === STATUS.INELIGIBLE) {
                 categorization.ineligible.push(mappedRow);
             } else {
                 categorization.upcoming.push(mappedRow);
@@ -526,15 +539,17 @@ class NIPScheduleService {
     }
 
     _mapRowToFrontend(row) {
+        const normalizedStatus = this._normalizeStoredStatus(row.status);
+
         // Map internal STATUS constants to frontend-facing API strings
         let legacyStatus = 'UPCOMING';
-        if      (row.status === STATUS.COMPLETED)          legacyStatus = 'COMPLETED';
-        else if (row.status === STATUS.PENDING_VALIDATION) legacyStatus = 'PENDING_VALIDATION';
-        else if (row.status === STATUS.DEFAULTED)          legacyStatus = 'DEFAULTED';
-        else if (row.status === STATUS.OVERDUE)            legacyStatus = 'OVERDUE';
-        else if (row.status === STATUS.DUE_TODAY)          legacyStatus = 'DUE_TODAY';
-        else if (row.status === STATUS.DUE_SOON)           legacyStatus = 'DUE_SOON';
-        else if (row.status === STATUS.INELIGIBLE)         legacyStatus = 'INELIGIBLE';
+        if      (normalizedStatus === STATUS.COMPLETED)          legacyStatus = 'COMPLETED';
+        else if (normalizedStatus === STATUS.PENDING_VALIDATION) legacyStatus = 'PENDING_VALIDATION';
+        else if (normalizedStatus === 'DEFAULTER')               legacyStatus = 'DEFAULTER';
+        else if (normalizedStatus === STATUS.OVERDUE)            legacyStatus = 'OVERDUE';
+        else if (normalizedStatus === STATUS.DUE_TODAY)          legacyStatus = 'DUE_TODAY';
+        else if (normalizedStatus === STATUS.DUE_SOON)           legacyStatus = 'DUE_SOON';
+        else if (normalizedStatus === STATUS.INELIGIBLE)         legacyStatus = 'INELIGIBLE';
 
         return {
             scheduleId:          row.id,
@@ -550,14 +565,29 @@ class NIPScheduleService {
         };
     }
 
+    _normalizeStoredStatus(status) {
+        if (status === 'DEFAULTER' || status === STATUS.DEFAULTED) {
+            return 'DEFAULTER';
+        }
+
+        return status;
+    }
+
     /**
      * Aggregates vaccine demand based on date intervals (Today vs. Week)
      * captures all overdue and currently scheduled doses.
      *
      * @param {string} timeframe - 'today' or 'week'
+     * @param {string|null} barangay - optional barangay scope enforced by clinicalAuth
      */
-    async getFieldKitRequisition(timeframe = 'today') {
+    async getFieldKitRequisition(timeframe = 'today', barangay = null) {
         const interval = timeframe === 'week' ? "INTERVAL '7 days'" : "INTERVAL '0 days'";
+        const params = [];
+        let barangayClause = '';
+        if (barangay) {
+            barangayClause = 'AND i.barangay = ?';
+            params.push(barangay);
+        }
         
         const query = `
             SELECT 
@@ -572,13 +602,15 @@ class NIPScheduleService {
             JOIN infants i ON s.infant_id = i.id
             LEFT JOIN doh_compliance_rules r ON s.vaccine_code = r.vaccine_code 
             WHERE s.status NOT IN ('COMPLETED', 'PENDING_VALIDATION', 'INELIGIBLE')
+              AND i.status = 'Active'
+              ${barangayClause}
               AND s.recommended_date::DATE <= CURRENT_DATE + ${interval}
             GROUP BY COALESCE(r.vaccine_name, s.vaccine_code)
             ORDER BY "requiredDoses" DESC
         `;
 
-        const [rows] = await this.db.execute(query);
-        console.log(`[FIELD KIT ENGINE] ${timeframe.toUpperCase()}: Found ${rows.length} vaccines needed.`);
+        const [rows] = await this.db.execute(query, params);
+        console.log(`[FIELD KIT ENGINE] ${timeframe.toUpperCase()}${barangay ? ` ${barangay}` : ''}: Found ${rows.length} vaccines needed.`);
         return rows;
     }
 
@@ -605,7 +637,7 @@ class NIPScheduleService {
                     min_age_days: Number(row.min_age_days),
                     max_age_days: row.max_age_days === null || row.max_age_days === undefined ? null : Number(row.max_age_days),
                     min_interval_days: row.min_interval_days === null || row.min_interval_days === undefined ? null : Number(row.min_interval_days)
-                }));
+                })).filter(rule => !ROTAVIRUS_RULE_PATTERN.test(String(rule.vaccine_code || '')));
             }
         } catch (error) {
             console.warn('[SCHEDULE ENGINE] Active NIP rules unavailable, using built-in defaults:', error.message);
@@ -616,7 +648,7 @@ class NIPScheduleService {
             vaccine_name: VACCINE_NAMES[vaccineCode] || vaccineCode,
             dose_number: this._doseNumberFromCode(vaccineCode),
             ...rule
-        }));
+        })).filter(rule => !ROTAVIRUS_RULE_PATTERN.test(String(rule.vaccine_code || '')));
     }
 
     _doseNumberFromCode(vaccineCode) {

@@ -54,6 +54,8 @@ CREATE TABLE users (
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TIMESTAMPTZ,
     last_login_at TIMESTAMPTZ,
+    must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
+    last_password_reset_at TIMESTAMPTZ,
     created_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -64,6 +66,24 @@ CREATE TABLE users (
         role = 'Super Admin' OR assigned_barangay IS NOT NULL
     )
 );
+
+CREATE TABLE m1_immunization_targets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    barangay_id UUID NOT NULL REFERENCES barangays(id) ON DELETE CASCADE,
+    report_year INTEGER NOT NULL CHECK (report_year BETWEEN 2000 AND 2100),
+    antigen_code VARCHAR(20) NOT NULL CHECK (antigen_code IN ('PENTA', 'MCV')),
+    annual_target INTEGER NOT NULL CHECK (annual_target >= 0),
+    monthly_targets JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (barangay_id, report_year, antigen_code)
+);
+
+CREATE INDEX idx_m1_targets_year_antigen
+    ON m1_immunization_targets (report_year, antigen_code);
+
+CREATE INDEX idx_m1_targets_barangay_year
+    ON m1_immunization_targets (barangay_id, report_year);
 
 CREATE TABLE user_barangay_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -110,7 +130,6 @@ CREATE TABLE infants (
     birth_setting VARCHAR(50),
     birth_status VARCHAR(50),
     initiated_breastfeeding BOOLEAN NOT NULL DEFAULT FALSE,
-    mothers_tt_status VARCHAR(50),
     mother_tt_status VARCHAR(50) DEFAULT '0',
     last_tt_date DATE,
     pregnancy_order INTEGER,
@@ -136,7 +155,7 @@ CREATE TABLE infants (
     status VARCHAR(50) NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Inactive', 'Transferred', 'Archived')),
     registration_status VARCHAR(50) NOT NULL DEFAULT 'APPROVED' CHECK (registration_status = 'APPROVED'),
     immunization_status VARCHAR(50) NOT NULL DEFAULT 'INCOMPLETE' CHECK (
-        immunization_status IN ('FULLY_IMMUNIZED', 'UP_TO_DATE', 'DUE_SOON', 'OVERDUE', 'DEFAULTED', 'INCOMPLETE')
+        immunization_status IN ('FIC', 'CIC', 'FULLY_IMMUNIZED', 'UP_TO_DATE', 'DUE_SOON', 'OVERDUE', 'DEFAULTED', 'INCOMPLETE')
     ),
     next_due_vaccine VARCHAR(255),
     next_due_date DATE,
@@ -207,7 +226,7 @@ CREATE TABLE infant_schedules (
     latest_allowed_date DATE,
     actual_date DATE,
     status VARCHAR(50) NOT NULL DEFAULT 'NOT_YET_DUE' CHECK (
-        status IN ('NOT_YET_DUE', 'DUE_SOON', 'DUE_TODAY', 'OVERDUE', 'DEFAULTED', 'COMPLETED', 'PENDING_VALIDATION', 'INELIGIBLE')
+        status IN ('NOT_YET_DUE', 'DUE_SOON', 'DUE_TODAY', 'DEFAULTER', 'DEFAULTED', 'COMPLETED', 'PENDING_VALIDATION', 'INELIGIBLE')
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -260,6 +279,20 @@ CREATE TABLE follow_up_tasks (
     completed_at TIMESTAMPTZ,
     reviewed_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE follow_up_logs (
+    id UUID PRIMARY KEY,
+    infant_id VARCHAR(36) NOT NULL REFERENCES infants(id) ON DELETE CASCADE,
+    schedule_id VARCHAR(36) REFERENCES infant_schedules(id) ON DELETE SET NULL,
+    bhw_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    barangay VARCHAR(100) NOT NULL,
+    visit_date DATE NOT NULL,
+    parent_contact VARCHAR(50),
+    outcome VARCHAR(50) NOT NULL,
+    notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -362,7 +395,6 @@ CREATE TABLE audit_trail (
 CREATE TABLE system_audit_logs (
     id BIGSERIAL PRIMARY KEY,
     user_id VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
-    admin_id VARCHAR(50),
     action_type VARCHAR(50) NOT NULL,
     target_entity VARCHAR(100),
     target_id VARCHAR(100),

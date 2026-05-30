@@ -92,7 +92,7 @@ async function runEnforcementTests() {
         if (rows.length > 0) {
             console.log('✅ PASS: Export action recorded in system logs');
             console.log(`   Audit entry: ${rows[0].action_type}`);
-            console.log(`   Admin: ${rows[0].admin_id}`);
+            console.log(`   User: ${rows[0].user_id}`);
             console.log(`   Details: ${rows[0].details}\n`);
         } else {
             console.log('❌ FAIL: Export action NOT recorded!\n');

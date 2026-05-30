@@ -160,13 +160,52 @@ const SuccessModal = ({ data, onClose, onRegisterAnother }) => {
     );
 };
 
+const TemporaryPasswordModal = ({ data, onClose }) => {
+    if (!data) return null;
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md border border-slate-200 shadow-2xl overflow-hidden">
+                <div className="bg-emerald-50 border-b border-emerald-100 px-6 py-5">
+                    <h3 className="text-base font-bold text-emerald-900">Password Reset Successful</h3>
+                    <p className="mt-1 text-xs font-semibold text-emerald-700">
+                        This temporary credential is shown once. Provide it directly to the staff member in person.
+                    </p>
+                </div>
+                <div className="px-6 py-5">
+                    <p className="text-sm font-semibold text-slate-700">
+                        Provide this temporary credential directly to the staff member in person:
+                    </p>
+                    <div className="mt-4 border-2 border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="font-mono text-2xl font-black tracking-widest text-slate-950">
+                            {data.temporaryPassword}
+                        </p>
+                    </div>
+                    <p className="mt-3 text-xs font-semibold text-rose-700">
+                        Once this modal is closed, the temporary password cannot be viewed again.
+                    </p>
+                </div>
+                <div className="px-6 pb-6">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-black"
+                    >
+                        Close and Clear Credential
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 /* Main Component */
 
 const UserManagement = () => {
     const { user } = useAuth();
     const getInitialUserForm = useCallback(() => ({
         full_name: '',
-        role: 'Midwife',
+        role: user?.role === 'Super Admin' ? 'Admin' : 'Midwife',
         assigned_barangay: user?.role === 'Admin' ? (user.assigned_barangay || '') : '',
         password: ''
     }), [user]);
@@ -180,6 +219,7 @@ const UserManagement = () => {
 
     // Success modal
     const [successData, setSuccessData] = useState(null);
+    const [temporaryPasswordData, setTemporaryPasswordData] = useState(null);
 
     // Top-right toast
     const [toast, setToast] = useState('');
@@ -218,11 +258,19 @@ const UserManagement = () => {
     const handleResetPassword = async (userId) => {
         try {
             const response = await apiClient.post(`/admin/users/${userId}/reset-password`);
+            const data = await response.json();
             if (response.ok) {
-                setToast('Password reset successfully');
+                setTemporaryPasswordData({
+                    userId,
+                    temporaryPassword: data.temporary_password
+                });
+                fetchUsers();
+            } else {
+                setToast(data?.error || 'Password reset failed');
             }
         } catch (error) {
             console.error('Error resetting password:', error);
+            setToast('Password reset failed');
         }
     };
 
@@ -233,6 +281,27 @@ const UserManagement = () => {
 
         if (newUser.role !== 'Super Admin' && !newUser.assigned_barangay) {
             setFormError('Please select an assigned barangay');
+            return;
+        }
+
+        if (user?.role === 'Super Admin' && newUser.role !== 'Admin') {
+            setFormError('Super Admins can only create Barangay Admin accounts.');
+            return;
+        }
+
+        if (user?.role === 'Admin' && !['Midwife', 'BHW'].includes(newUser.role)) {
+            setFormError('Barangay Admins can only create Midwife and BHW accounts.');
+            return;
+        }
+
+        const passwordFailures = [];
+        if (newUser.password.length < 10) passwordFailures.push('at least 10 characters');
+        if (!/[A-Z]/.test(newUser.password)) passwordFailures.push('one uppercase letter');
+        if (!/[a-z]/.test(newUser.password)) passwordFailures.push('one lowercase letter');
+        if (!/[0-9]/.test(newUser.password)) passwordFailures.push('one number');
+        if (!/[^A-Za-z0-9]/.test(newUser.password)) passwordFailures.push('one special character');
+        if (passwordFailures.length > 0) {
+            setFormError(`Temporary password must include ${passwordFailures.join(', ')}.`);
             return;
         }
 
@@ -296,6 +365,13 @@ const UserManagement = () => {
                     data={successData}
                     onClose={handleSuccessClose}
                     onRegisterAnother={handleRegisterAnother}
+                />
+            )}
+
+            {temporaryPasswordData && (
+                <TemporaryPasswordModal
+                    data={temporaryPasswordData}
+                    onClose={() => setTemporaryPasswordData(null)}
                 />
             )}
 
@@ -502,10 +578,14 @@ const UserManagement = () => {
                                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm font-medium transition"
                                 >
                                     {/* Role Options filtered by Privilege Level */}
-                                    <option value="Midwife">Midwife</option>
-                                    <option value="BHW">BHW (Barangay Health Worker)</option>
                                     {user?.role === 'Super Admin' && (
                                         <option value="Admin">Admin / Head Nurse</option>
+                                    )}
+                                    {user?.role === 'Admin' && (
+                                        <>
+                                            <option value="Midwife">Midwife</option>
+                                            <option value="BHW">BHW (Barangay Health Worker)</option>
+                                        </>
                                     )}
                                 </select>
                             </div>
@@ -552,10 +632,10 @@ const UserManagement = () => {
                                 <input
                                     type="password"
                                     required
-                                    minLength={6}
+                                    minLength={10}
                                     value={newUser.password}
                                     onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                                    placeholder="Min. 6 characters"
+                                    placeholder="Temporary password, min. 10 characters"
                                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none text-sm transition"
                                 />
                             </div>

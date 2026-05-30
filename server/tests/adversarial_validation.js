@@ -98,7 +98,7 @@ async function runAdversarialTests() {
     // 5. Audit Forgery
     console.log('\nTest 5: Audit Log Tamper Attack...');
     try {
-        await connection.execute('UPDATE system_audit_logs SET admin_id = "HACKER" LIMIT 1');
+        await connection.execute('UPDATE system_audit_logs SET user_id = "HACKER" LIMIT 1');
         console.log('✘ FAIL: DB allowed audit update!');
     } catch (e) {
         console.log('✔ PASS: DB blocked audit tampering:', e.message);

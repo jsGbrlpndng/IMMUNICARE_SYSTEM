@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { Shield, AlertTriangle, XCircle, Info, Calendar } from 'lucide-react';
 
 /**
@@ -75,7 +76,7 @@ const ComplianceWarningDisplay = ({
                         <ul className="space-y-2">
                             {violatedRules.map((rule, index) => (
                                 <li key={index} className="flex items-start space-x-2 text-sm">
-                                    <span className="text-red-600 font-bold flex-shrink-0">•</span>
+                                    <span className="text-red-600 font-bold flex-shrink-0">â€¢</span>
                                     <span className="text-red-900">{rule}</span>
                                 </li>
                             ))}

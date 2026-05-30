@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const clinicalAuth = require('../middleware/clinicalAuth');
+const requireRole = require('../middleware/requireRole');
 const InfantService = require('../services/InfantService');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const VaccinationService = require('../services/VaccinationService');
@@ -11,12 +12,38 @@ const { ROLES } = require('../constants/domain');
 const infantService = new InfantService(db);
 const nipScheduleService = new NIPScheduleService(db);
 const vaccinationService = new VaccinationService(db);
+const requireClinicalPrivilege = requireRole(
+    requireRole.CLINICAL_PRIVILEGED,
+    'Only Midwives, Admins, and Super Admins can access infant clinical endpoints.'
+);
+
+const ensureArchiveColumns = async () => {
+    await db.execute(`ALTER TABLE infants ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(100)`);
+    await db.execute(`ALTER TABLE infants ADD COLUMN IF NOT EXISTS archive_notes TEXT`);
+    await db.execute(`ALTER TABLE infants ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL`);
+};
+
+const getScopedInfantStatus = async (id, barangay) => {
+    const barangayClause = barangay ? 'AND barangay = ?' : '';
+    const params = barangay ? [id, id, barangay] : [id, id];
+    const [rows] = await db.execute(
+        `
+        SELECT id, reference_id, status, barangay
+        FROM infants
+        WHERE (id = ? OR reference_id = ?)
+          ${barangayClause}
+        LIMIT 1
+        `,
+        params
+    );
+    return rows[0] || null;
+};
 
 // Protect all infant routes with canonical token auth and barangay scope.
 router.use(clinicalAuth);
 
 // POST /api/infants/check-duplicates
-router.post('/check-duplicates', async (req, res) => {
+router.post('/check-duplicates', requireClinicalPrivilege, async (req, res) => {
     try {
         if (req.user.role !== ROLES.SUPER_ADMIN) {
             req.body.barangay = req.user.assigned_barangay;
@@ -31,7 +58,7 @@ router.post('/check-duplicates', async (req, res) => {
 });
 
 // GET /api/infants/recently-approved
-router.get('/recently-approved', async (req, res) => {
+router.get('/recently-approved', requireClinicalPrivilege, async (req, res) => {
     try {
         const { days = 7, barangay } = req.query;
         const infants = await infantService.getRecentlyApproved(days, barangay);
@@ -43,10 +70,22 @@ router.get('/recently-approved', async (req, res) => {
 });
 
 // GET /api/infants - Master directory (Shared Barangay Pool)
-router.get('/', async (req, res) => {
+router.get('/', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
-        const result = await infantService.getInfantsRegistry({ ...req.query, barangay });
+        const lifecycleStatuses = ['Active', 'Inactive', 'Transferred', 'Archived', 'Defaulter', 'Draft'];
+        const requestedStatus = req.query.status || 'Active';
+        const status = lifecycleStatuses.includes(requestedStatus) ? requestedStatus : 'Active';
+        const registration_status = req.query.registration_status || (
+            requestedStatus && !lifecycleStatuses.includes(requestedStatus) ? requestedStatus : undefined
+        );
+
+        const result = await infantService.getInfantsRegistry({
+            ...req.query,
+            status,
+            registration_status,
+            barangay
+        });
         res.json({ success: true, ...result });
     } catch (error) {
         console.error('Error fetching registry:', error);
@@ -55,7 +94,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/infants/drafts (Shared Barangay Pool)
-router.get('/drafts', async (req, res) => {
+router.get('/drafts', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
         const drafts = await infantService.getDrafts(req.user.id, barangay);
@@ -67,7 +106,7 @@ router.get('/drafts', async (req, res) => {
 });
 
 // GET /api/infants/:id/schedule
-router.get('/:id/schedule', async (req, res) => {
+router.get('/:id/schedule', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
         const internalId = await infantService.resolveInternalId(req.params.id, barangay);
@@ -82,7 +121,7 @@ router.get('/:id/schedule', async (req, res) => {
 });
 
 // PUT /api/infants/:id/approve
-router.put('/:id/approve', async (req, res) => {
+router.put('/:id/approve', requireClinicalPrivilege, async (req, res) => {
     res.status(410).json({
         success: false,
         error: 'Legacy infant approval endpoint is disabled. Use /api/validation/:id/approve for the canonical registration workflow.'
@@ -90,15 +129,65 @@ router.put('/:id/approve', async (req, res) => {
 });
 
 // PUT /api/infants/:id/reject
-router.put('/:id/reject', async (req, res) => {
+router.put('/:id/reject', requireClinicalPrivilege, async (req, res) => {
     res.status(410).json({
         success: false,
         error: 'Legacy infant rejection endpoint is disabled. Use /api/validation/:id/reject for the canonical registration workflow.'
     });
 });
 
+// PUT /api/infants/:id/restore - Explicit archived-record restoration workflow
+router.put('/:id/restore', requireClinicalPrivilege, async (req, res) => {
+    try {
+        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Forbidden: only Midwives and Super Admins can restore archived infant records.'
+            });
+        }
+
+        await ensureArchiveColumns();
+        const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
+        const infant = await getScopedInfantStatus(req.params.id, barangay);
+        if (!infant) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
+        if (infant.status !== 'Archived') {
+            return res.status(400).json({ success: false, error: 'Only archived infant records can be restored.' });
+        }
+
+        const barangayClause = barangay ? 'AND barangay = ?' : '';
+        const params = barangay
+            ? ['Active', req.params.id, req.params.id, barangay]
+            : ['Active', req.params.id, req.params.id];
+
+        const [result] = await db.execute(
+            `
+            UPDATE infants
+            SET status = ?,
+                archive_reason = NULL,
+                archive_notes = NULL,
+                archived_at = NULL
+            WHERE (id = ? OR reference_id = ?)
+              AND status = 'Archived'
+              ${barangayClause}
+            `,
+            params
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
+        }
+
+        return res.json({ success: true, message: 'Infant record restored successfully' });
+    } catch (error) {
+        console.error('Error restoring infant:', error);
+        res.status(500).json({ success: false, error: 'Failed to restore infant record' });
+    }
+});
+
 // POST /api/infants - Unified registration
-router.post('/', async (req, res) => {
+router.post('/', requireClinicalPrivilege, async (req, res) => {
     res.status(410).json({
         success: false,
         error: 'Direct infant registration is disabled. Create a draft through /api/registrations and submit it for Midwife validation.'
@@ -106,7 +195,7 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/infants/:id (Smart Routing: supports internal UUID or Reference ID)
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
 
@@ -129,7 +218,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // GET /api/infants/:id/nip-schedule
-router.get('/:id/nip-schedule', async (req, res) => {
+router.get('/:id/nip-schedule', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
         
@@ -170,7 +259,7 @@ router.get('/:id/nip-schedule', async (req, res) => {
 });
 
 // GET /api/infants/:id/vaccination-record
-router.get('/:id/vaccination-record', async (req, res) => {
+router.get('/:id/vaccination-record', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
         
@@ -210,7 +299,7 @@ router.get('/:id/vaccination-record', async (req, res) => {
 });
 
 // POST /api/infants/:id/vaccinations
-router.post('/:id/vaccinations', async (req, res) => {
+router.post('/:id/vaccinations', requireClinicalPrivilege, async (req, res) => {
     try {
         const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
 
@@ -257,9 +346,72 @@ router.post('/:id/vaccinations', async (req, res) => {
 });
 
 // PUT /api/infants/:id - Update/Correction
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireClinicalPrivilege, async (req, res) => {
     try {
-        const success = await infantService.updateInfant(req.params.id, req.body, req.query.barangay);
+        const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
+        const updateData = { ...req.body };
+        const currentInfant = await getScopedInfantStatus(req.params.id, barangay);
+
+        if (!currentInfant) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
+
+        if (currentInfant.status === 'Archived') {
+            return res.status(423).json({
+                success: false,
+                error: 'Archived infant records are locked read-only. Use PUT /api/infants/:id/restore for the protected restoration workflow.'
+            });
+        }
+
+        if (updateData.status === 'Archived') {
+            const allowedArchiveReasons = ['Relocated / Moved Away', 'Deceased', 'Duplicate Record', 'Other'];
+            const archiveReason = String(updateData.archive_reason || '').trim();
+            const archiveNotes = updateData.archive_notes ? String(updateData.archive_notes).trim() : '';
+
+            if (!archiveReason) {
+                return res.status(400).json({ success: false, error: 'archive_reason is required when archiving an infant record.' });
+            }
+            if (!archiveNotes) {
+                return res.status(400).json({ success: false, error: 'archive_notes is required when archiving an infant record.' });
+            }
+            if (!allowedArchiveReasons.includes(archiveReason)) {
+                return res.status(400).json({ success: false, error: 'Invalid archive_reason.' });
+            }
+
+            await ensureArchiveColumns();
+            const barangayClause = barangay ? 'AND barangay = ?' : '';
+            const params = barangay
+                ? ['Archived', archiveReason, archiveNotes, req.params.id, req.params.id, barangay]
+                : ['Archived', archiveReason, archiveNotes, req.params.id, req.params.id];
+
+            const [result] = await db.execute(
+                `
+                UPDATE infants
+                SET status = ?,
+                    archive_reason = ?,
+                    archive_notes = ?,
+                    archived_at = CURRENT_TIMESTAMP
+                WHERE (id = ? OR reference_id = ?)
+                  ${barangayClause}
+                `,
+                params
+            );
+
+            if (result.affectedRows === 0) {
+                return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
+            }
+
+            return res.json({ success: true, message: 'Infant record archived successfully' });
+        }
+
+        if (updateData.status === 'Active') {
+            return res.status(400).json({
+                success: false,
+                error: 'Use PUT /api/infants/:id/restore to restore archived records.'
+            });
+        }
+
+        const success = await infantService.updateInfant(req.params.id, updateData, barangay);
         if (!success) {
             return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
         }

@@ -33,7 +33,7 @@ async function verifyState() {
         console.log(`Total settings updates logged: ${logs[0].count}`);
         
         const [recentLogs] = await db.execute(`
-            SELECT admin_id, timestamp, details
+            SELECT user_id, timestamp, details
             FROM system_audit_logs 
             WHERE action_type = 'SETTINGS_UPDATE'
             ORDER BY timestamp DESC
@@ -43,7 +43,7 @@ async function verifyState() {
         console.log('\nRecent updates:');
         recentLogs.forEach(log => {
             const details = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
-            console.log(`  ${log.timestamp.toISOString()} - ${log.admin_id} - ${details.count} change(s)`);
+            console.log(`  ${log.timestamp.toISOString()} - ${log.user_id} - ${details.count} change(s)`);
         });
         
         console.log('\n✅ Database state verified successfully');

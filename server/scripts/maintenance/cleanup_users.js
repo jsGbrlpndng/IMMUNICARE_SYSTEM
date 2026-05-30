@@ -25,7 +25,7 @@ async function cleanup() {
             { table: 'immunization_logs', column: 'administered_by' },
             { table: 'schedule_overrides', column: 'requested_by' },
             { table: 'schedule_overrides', column: 'authorized_by' },
-            { table: 'system_audit_logs', column: 'admin_id' }
+            { table: 'system_audit_logs', column: 'user_id' }
         ];
 
         for (const { table, column } of tablesToUpdate) {

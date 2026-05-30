@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { 
     FileText, 
@@ -321,7 +322,7 @@ const AuditTrailViewer = ({
                                                 </p>
                                                 <p className="text-slate-600 mt-1">
                                                     <span className="font-medium">By:</span> {record.midwifeName || 'Unknown'}
-                                                    <span className="mx-2">•</span>
+                                                    <span className="mx-2">â€¢</span>
                                                     <span className="font-medium">When:</span> {new Date(record.timestamp).toLocaleString()}
                                                 </p>
                                             </div>
@@ -365,7 +366,7 @@ const AuditTrailViewer = ({
                                                         : 'bg-red-50 border-red-200'
                                                 }`}>
                                                     <p className="text-sm font-semibold">
-                                                        {record.complianceStatus.compliant ? '✓ Compliant' : '✗ Non-Compliant'}
+                                                        {record.complianceStatus.compliant ? 'âœ“ Compliant' : 'âœ— Non-Compliant'}
                                                     </p>
                                                     {record.complianceStatus.violatedRules?.length > 0 && (
                                                         <ul className="list-disc list-inside text-xs mt-2 space-y-1">

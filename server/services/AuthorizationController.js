@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { ROLES } = require('../constants/domain');
 
 /**
  * AuthorizationController
@@ -32,7 +33,7 @@ class AuthorizationController {
             'SELECT full_name, role FROM users WHERE id = ?',
             [midwifeId]
         );
-        if (midwives.length === 0 || !['Midwife', 'Nurse', 'Admin'].includes(midwives[0].role)) {
+        if (midwives.length === 0 || midwives[0].role !== ROLES.MIDWIFE) {
             throw new Error('Midwife not found or invalid role');
         }
         const midwife = midwives[0];
@@ -161,8 +162,8 @@ class AuthorizationController {
             const auditId = uuidv4();
             const query = `
                 INSERT INTO authorization_audit 
-                (id, infant_id, vaccine_name, midwife_id, action_type, clinical_justification, override_type, compliance_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (audit_id, infant_id, vaccine_name, midwife_id, action_type, clinical_justification, override_type, compliance_status, session_metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
             `;
 
             const complianceStatus = JSON.stringify({
@@ -179,7 +180,11 @@ class AuthorizationController {
                 'APPROVED',
                 request.clinicalJustification,
                 request.overrideType || 'OVERDUE',
-                complianceStatus
+                complianceStatus,
+                JSON.stringify({
+                    request_id: request.requestId,
+                    processed_at: new Date().toISOString()
+                })
             ]);
 
             return {
@@ -208,7 +213,7 @@ class AuthorizationController {
         try {
             const query = `
                 SELECT 
-                    id as auditId, infant_id as infantId, vaccine_name as vaccineName,
+                    audit_id as auditId, infant_id as infantId, vaccine_name as vaccineName,
                     midwife_id as midwifeId, action_type as actionType,
                     clinical_justification as clinicalJustification,
                     override_type as overrideType, compliance_status as complianceStatus,

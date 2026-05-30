@@ -1,24 +1,26 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
     plugins: [react()],
-    optimizeDeps: {
-        force: true
-    },
     server: {
+        host: '127.0.0.1',
         port: 5173,
         proxy: {
             '/api': {
-                target: 'http://localhost:3000',
+                target: 'http://127.0.0.1:3000',
                 changeOrigin: true,
-                secure: false,
-                rewrite: (path) => path // Ensure path is not mangled
+                secure: false
             }
         }
     },
-    css: {
-        postcss: './postcss.config.cjs',
+    preview: {
+        host: '127.0.0.1',
+        port: 4173
+    },
+    build: {
+        outDir: 'dist',
+        emptyOutDir: true
     },
     test: {
         globals: true,
@@ -36,4 +38,4 @@ export default defineConfig({
             ]
         }
     }
-})
+});

@@ -32,6 +32,27 @@ const loadActiveAssignments = async (userId, assignedBarangay) => {
     return Array.from(assignments);
 };
 
+const isPasswordChangeAllowedPath = (req) => {
+    const path = req.originalUrl || req.url || '';
+    return (
+        path.startsWith('/api/auth/change-password') ||
+        path.startsWith('/api/auth/verify')
+    );
+};
+
+const isTokenIssuedBeforePasswordReset = (issuedAt, resetAt) => {
+    if (!issuedAt || !resetAt) return false;
+
+    const tokenIssuedSeconds = Number(issuedAt);
+    const resetSeconds = Math.floor(new Date(resetAt).getTime() / 1000);
+
+    if (!Number.isFinite(tokenIssuedSeconds) || !Number.isFinite(resetSeconds)) {
+        return false;
+    }
+
+    return tokenIssuedSeconds < resetSeconds;
+};
+
 const validateScopedAssignments = (role, assignedBarangays) => {
     if (role === ROLES.SUPER_ADMIN) {
         return;
@@ -65,8 +86,16 @@ const requireAuthenticatedUser = async (req, allowedRoles = STAFF_ROLES) => {
         throw err;
     }
 
+    if (verified.password_update_required && !isPasswordChangeAllowedPath(req)) {
+        const err = new Error('Password update required before accessing this resource');
+        err.status = 403;
+        err.code = 'PASSWORD_UPDATE_REQUIRED';
+        throw err;
+    }
+
     const [rows] = await db.execute(`
-        SELECT id, role, full_name, assigned_barangay, is_active, locked_until
+        SELECT id, role, full_name, assigned_barangay, is_active, locked_until,
+               must_change_password, last_password_reset_at
         FROM users
         WHERE id = ?
     `, [verified.id]);
@@ -90,9 +119,23 @@ const requireAuthenticatedUser = async (req, allowedRoles = STAFF_ROLES) => {
         throw err;
     }
 
+    if (isTokenIssuedBeforePasswordReset(verified.iat, user.last_password_reset_at)) {
+        const err = new Error('Unauthorized: Session expired after password reset');
+        err.status = 401;
+        err.code = 'SESSION_INVALIDATED';
+        throw err;
+    }
+
     if (!allowedRoles.includes(user.role)) {
         const err = new Error('Forbidden: Role is not allowed for this resource');
         err.status = 403;
+        throw err;
+    }
+
+    if (user.must_change_password && !isPasswordChangeAllowedPath(req)) {
+        const err = new Error('Password update required before accessing this resource');
+        err.status = 403;
+        err.code = 'PASSWORD_UPDATE_REQUIRED';
         throw err;
     }
 
@@ -107,7 +150,8 @@ const requireAuthenticatedUser = async (req, allowedRoles = STAFF_ROLES) => {
         role: user.role,
         name: user.full_name,
         assigned_barangay: assignedBarangays[0] || normalizeBarangay(user.assigned_barangay),
-        assigned_barangays: assignedBarangays
+        assigned_barangays: assignedBarangays,
+        must_change_password: Boolean(user.must_change_password)
     };
 };
 

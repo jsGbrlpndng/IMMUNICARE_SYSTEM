@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { AlertTriangle, CheckCircle, Clock, TrendingUp, Users } from 'lucide-react';
 
 /**

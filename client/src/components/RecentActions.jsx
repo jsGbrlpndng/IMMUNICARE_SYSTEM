@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { CheckCircle, Clock, AlertTriangle, Calendar, User } from 'lucide-react';
 
 /**

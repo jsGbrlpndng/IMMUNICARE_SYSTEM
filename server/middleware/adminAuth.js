@@ -13,7 +13,8 @@ const adminAuth = async (req, res, next) => {
     } catch (error) {
         res.status(error.status || 500).json({
             success: false,
-            error: error.message || 'Admin authorization failed'
+            error: error.message || 'Admin authorization failed',
+            code: error.code
         });
     }
 };

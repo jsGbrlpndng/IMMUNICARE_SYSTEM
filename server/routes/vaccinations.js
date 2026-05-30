@@ -12,6 +12,29 @@ router.use(clinicalAuth);
 // Initialize services
 const vaccinationService = new VaccinationService(db);
 const auditLogger = new NIPAuditLogger(db);
+const DOSE_MUTATION_ROLES = [ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+
+const requireDoseMutationRole = (req, res) => {
+    if (req.user?.role === ROLES.BHW) {
+        res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'BHW users are not authorized to record or edit vaccination doses.'
+        });
+        return false;
+    }
+
+    if (!DOSE_MUTATION_ROLES.includes(req.user?.role)) {
+        res.status(403).json({
+            success: false,
+            error: 'Forbidden',
+            message: 'Only Midwives, Admins, and Super Admins can record or edit vaccination doses.'
+        });
+        return false;
+    }
+
+    return true;
+};
 
 /**
  * POST /api/vaccinations - Record a new vaccination
@@ -30,13 +53,7 @@ const auditLogger = new NIPAuditLogger(db);
  */
 router.post('/', async (req, res) => {
     try {
-        if (![ROLES.BHW, ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
-            return res.status(403).json({
-                success: false,
-                error: 'Forbidden',
-                message: 'Only Super Admins, Admins, Midwives, and BHWs can record vaccinations.'
-            });
-        }
+        if (!requireDoseMutationRole(req, res)) return;
 
         // --- TYPE SANITIZATION: Enforce correct types before any DB operation ---
         // dose_number must be an integer — JSON body may deliver it as a string.
@@ -44,12 +61,19 @@ router.post('/', async (req, res) => {
             ...req.body,
             dose_number: req.body.dose_number !== undefined ? parseInt(req.body.dose_number, 10) : undefined
         };
+        if (!Number.isInteger(sanitizedBody.dose_number)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                details: 'dose_number must be an integer'
+            });
+        }
 
         const vaccinationData = {
             ...sanitizedBody,
             recorded_by: req.user?.id || sanitizedBody.vaccinator_id,
             recorded_by_role: req.user?.role || 'BHW',
-            validation_status: req.user?.role === ROLES.BHW ? 'PENDING_VALIDATION' : 'VALIDATED'
+            validation_status: 'VALIDATED'
         };
 
         const [infantScopeRows] = await db.execute(
@@ -96,7 +120,15 @@ router.post('/', async (req, res) => {
 
     } catch (error) {
         // Full error dictionary log for diagnosis
-        console.error('[CRITICAL VACCINATION FAILURE DICTIONARY]:', error.message, error.stack);
+        console.error('[CRITICAL VACCINATION FAILURE DICTIONARY]:', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            constraint: error.constraint,
+            table: error.table,
+            column: error.column,
+            stack: error.stack
+        });
 
         if (error.code === 'DUPLICATE_VACCINE_RECORD' || error.message.includes('already has')) {
             return res.status(409).json({
@@ -130,6 +162,16 @@ router.post('/', async (req, res) => {
             details: error.message
         });
     }
+});
+
+router.put('/:id', async (req, res) => {
+    if (!requireDoseMutationRole(req, res)) return;
+
+    res.status(501).json({
+        success: false,
+        error: 'Not Implemented',
+        message: 'Vaccination dose editing is not implemented in this phase.'
+    });
 });
 
 /**

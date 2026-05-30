@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { X, Download, MessageSquare } from 'lucide-react';
 import FilterToolbar from './FilterToolbar';
@@ -251,7 +252,7 @@ const KPIDetailModal = ({
                 </h2>
                 <p className="text-sm text-slate-500">
                   {filteredInfants.length} of {stats.total || infants.length} records
-                  {stats.percentage && ` • ${stats.percentage}% coverage`}
+                  {stats.percentage && ` â€¢ ${stats.percentage}% coverage`}
                 </p>
               </div>
             </div>

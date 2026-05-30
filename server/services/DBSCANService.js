@@ -12,9 +12,9 @@ class DBSCANService {
      * @param {number} minPts - Minimum number of points to form a dense region
      */
     constructor(epsilonMeters = 300, minPts = 3) {
-        this.epsilonMeters = epsilonMeters;
-        this.epsilonKm = epsilonMeters / 1000;
-        this.minPts = minPts;
+        this.epsilonMeters = parseInt(epsilonMeters, 10) || 300;
+        this.epsilonKm = this.epsilonMeters / 1000;
+        this.minPts = Math.max(parseInt(minPts, 10) || 3, 2);
     }
 
     /**

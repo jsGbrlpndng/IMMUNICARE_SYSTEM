@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import { Settings, ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
 import apiClient from '../../services/apiClient';

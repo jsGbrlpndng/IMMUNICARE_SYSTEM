@@ -54,7 +54,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
     afterAll(async () => {
         // Cleanup
         await db.execute(`DELETE FROM users WHERE id IN (?, ?, ?)`, [adminId, midwifeId, bhwId]);
-        await db.execute(`DELETE FROM system_audit_logs WHERE admin_id LIKE 'ADMIN-TEST%'`);
+        await db.execute(`DELETE FROM system_audit_logs WHERE user_id LIKE 'ADMIN-TEST%'`);
     });
 
     // ============================================
@@ -273,7 +273,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
         
         test('3.1 Successful change MUST create audit log', async () => {
             // Clear previous audit logs for this test
-            await db.execute(`DELETE FROM system_audit_logs WHERE admin_id = ?`, [adminId]);
+            await db.execute(`DELETE FROM system_audit_logs WHERE user_id = ?`, [adminId]);
 
             const response = await request(app)
                 .put('/api/admin/settings')
@@ -285,13 +285,13 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
             // Verify audit log created
             const [logs] = await db.execute(
                 `SELECT * FROM system_audit_logs 
-                 WHERE admin_id = ? AND action_type = 'SETTINGS_UPDATE'
+                 WHERE user_id = ? AND action_type = 'SETTINGS_UPDATE'
                  ORDER BY timestamp DESC LIMIT 1`,
                 [adminId]
             );
 
             expect(logs.length).toBe(1);
-            expect(logs[0].admin_id).toBe(adminId);
+            expect(logs[0].user_id).toBe(adminId);
             expect(logs[0].action_type).toBe('SETTINGS_UPDATE');
             expect(logs[0].target_entity).toBe('system_settings');
             
@@ -306,7 +306,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
 
         test('3.2 Failed change MUST NOT create audit log', async () => {
             const beforeCount = await db.execute(
-                `SELECT COUNT(*) as count FROM system_audit_logs WHERE admin_id = ?`,
+                `SELECT COUNT(*) as count FROM system_audit_logs WHERE user_id = ?`,
                 [adminId]
             );
 
@@ -318,7 +318,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
             expect(response.status).toBe(400);
 
             const afterCount = await db.execute(
-                `SELECT COUNT(*) as count FROM system_audit_logs WHERE admin_id = ?`,
+                `SELECT COUNT(*) as count FROM system_audit_logs WHERE user_id = ?`,
                 [adminId]
             );
 
@@ -326,7 +326,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
         });
 
         test('3.3 Multiple changes MUST create single audit log with all changes', async () => {
-            await db.execute(`DELETE FROM system_audit_logs WHERE admin_id = ?`, [adminId]);
+            await db.execute(`DELETE FROM system_audit_logs WHERE user_id = ?`, [adminId]);
 
             // Set distinct initial values first
             await db.execute(`UPDATE system_settings SET setting_value = 'Initial Name' WHERE setting_key = 'system_name'`);
@@ -348,7 +348,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
 
             const [logs] = await db.execute(
                 `SELECT * FROM system_audit_logs 
-                 WHERE admin_id = ? AND action_type = 'SETTINGS_UPDATE'
+                 WHERE user_id = ? AND action_type = 'SETTINGS_UPDATE'
                  ORDER BY timestamp DESC LIMIT 1`,
                 [adminId]
             );
@@ -367,7 +367,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
                 `UPDATE system_settings SET setting_value = '8' WHERE setting_key = 'password_min_length'`
             );
 
-            await db.execute(`DELETE FROM system_audit_logs WHERE admin_id = ?`, [adminId]);
+            await db.execute(`DELETE FROM system_audit_logs WHERE user_id = ?`, [adminId]);
 
             const response = await request(app)
                 .put('/api/admin/settings')
@@ -378,7 +378,7 @@ describe('ADVERSARIAL VALIDATION - System Settings', () => {
 
             const [logs] = await db.execute(
                 `SELECT * FROM system_audit_logs 
-                 WHERE admin_id = ? ORDER BY timestamp DESC LIMIT 1`,
+                 WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1`,
                 [adminId]
             );
 

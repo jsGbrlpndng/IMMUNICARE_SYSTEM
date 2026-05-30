@@ -4,13 +4,19 @@ const db = require('../db');
 const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
 const DBSCANService = require('../services/DBSCANService');
 const clinicalAuth = require('../middleware/clinicalAuth');
+const requireRole = require('../middleware/requireRole');
 const localityHelper = require('../utils/localityHelper');
 const InfantService = require('../services/InfantService');
 const infantService = new InfantService(db);
+const engine = new EnhancedNIPScheduleEngine(db);
 
 const getLocalityExpression = () => localityHelper.getLocalitySQL('exact_address', 'purok');
 
 router.use(clinicalAuth);
+router.use(requireRole(
+    requireRole.CLINICAL_PRIVILEGED,
+    'Only Midwives, Admins, and Super Admins can access analytics clinical endpoints.'
+));
 
 // GET /api/analytics/locality-status
 // Aggregates overdue doses by locality for geospatial mapping
@@ -24,7 +30,7 @@ router.get('/locality-status', async (req, res) => {
             FROM infants i
             JOIN infant_schedules il ON i.id = il.infant_id
             WHERE il.actual_date IS NULL 
-            AND il.status IN ('OVERDUE', 'DEFAULTER')
+            AND il.status IN ('OVERDUE', 'DEFAULTED')
             ${barangay ? 'AND i.barangay = ?' : ''}
             GROUP BY locality
         `;
@@ -81,10 +87,10 @@ router.get('/dashboard-stats', async (req, res) => {
         let clusterCount = 0;
         try {
             const scheduleData = await engine.getApprovedInfantsWithSchedule(
-                { urgency: 'all' }, 10000, 0
+                { urgency: 'all', barangay: barangay || null }, 10000, 0
             );
             const overdueWithGeo = (scheduleData.infants || []).filter(
-                i => i.urgency === 'overdue' && i.geom_present && i.lat && i.lng
+                i => (i.urgency === 'defaulter' || i.computed_map_status === 'DEFAULTER') && i.geom_present && i.lat && i.lng
             );
             if (overdueWithGeo.length > 1) {
                 const dbscan = new DBSCANService(300, 3);
@@ -227,7 +233,7 @@ router.get('/locality-gap', async (req, res) => {
                 COUNT(il.id) as missed_doses
             FROM infants i
             JOIN infant_schedules il ON i.id = il.infant_id
-            WHERE il.status IN ('OVERDUE', 'DEFAULTER')
+            WHERE il.status IN ('OVERDUE', 'DEFAULTED')
             AND il.actual_date IS NULL
             ${barangay ? 'AND i.barangay = ?' : ''}
             GROUP BY locality
@@ -269,17 +275,67 @@ router.get('/system-impact', async (req, res) => {
         }
 
         const barangay = req.query.barangay;
-        const barangayClause = barangay ? "AND i.barangay = '" + barangay + "'" : "";
+        const rows = [];
 
-        const queries = months.map(m => `
+        for (const m of months) {
+            const barangayClause = barangay
+                ? 'AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))'
+                : '';
+            const activeBarangayClause = barangay
+                ? 'AND UPPER(TRIM(active_i.barangay)) = UPPER(TRIM(?))'
+                : '';
+            const params = barangay
+                ? [
+                    m.label,
+                    m.startDate,
+                    m.endDate,
+                    barangay,
+                    m.startDate,
+                    m.endDate,
+                    barangay,
+                    m.endDate,
+                    barangay
+                ]
+                : [
+                    m.label,
+                    m.startDate,
+                    m.endDate,
+                    m.startDate,
+                    m.endDate,
+                    m.endDate
+                ];
+
+            const [monthRows] = await db.execute(`
             SELECT 
-                '${m.label}' as month,
-                (SELECT COUNT(DISTINCT infant_id) FROM infant_schedules s JOIN infants i ON s.infant_id = i.id WHERE actual_date >= '${m.startDate}' AND actual_date < '${m.endDate}' AND s.status = 'COMPLETED' ${barangayClause}) as completed,
-                (SELECT COUNT(DISTINCT infant_id) FROM infant_schedules s JOIN infants i ON s.infant_id = i.id WHERE s.status = 'DROPOUT' AND recommended_date + INTERVAL '365 days' >= '${m.startDate}' AND recommended_date + INTERVAL '365 days' < '${m.endDate}' ${barangayClause}) as dropouts,
-                (SELECT COUNT(id) FROM infants i WHERE created_at < '${m.endDate}' AND status = 'Active' ${barangayClause.replace('i.barangay', 'barangay')}) as active
-        `).join(' UNION ALL ');
-
-        const [rows] = await db.execute(queries);
+                ? AS month,
+                (
+                    SELECT COUNT(DISTINCT s.infant_id)::int
+                    FROM infant_schedules s
+                    JOIN infants i ON i.id = s.infant_id
+                    WHERE s.actual_date >= ?::date
+                      AND s.actual_date < ?::date
+                      AND s.status = 'COMPLETED'
+                      ${barangayClause}
+                ) AS completed,
+                (
+                    SELECT COUNT(DISTINCT s.infant_id)::int
+                    FROM infant_schedules s
+                    JOIN infants i ON i.id = s.infant_id
+                    WHERE s.status IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+                      AND s.recommended_date >= ?::date
+                      AND s.recommended_date < ?::date
+                      ${barangayClause}
+                ) AS dropouts,
+                (
+                    SELECT COUNT(active_i.id)::int
+                    FROM infants active_i
+                    WHERE active_i.created_at < ?::date
+                      AND active_i.status = 'Active'
+                      ${activeBarangayClause}
+                ) AS active
+            `, params);
+            rows.push(monthRows[0]);
+        }
         
         // Ensure chronological order matches our months array
         const sortedRows = months.map(m => {
@@ -294,8 +350,14 @@ router.get('/system-impact', async (req, res) => {
 
         res.status(200).json(sortedRows);
     } catch (error) {
-        console.error('Error in system-impact:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        console.error('[ANALYTICS_SYSTEM_IMPACT_ERROR]', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint,
+            stack: error.stack
+        });
+        res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
     }
 });
 
@@ -338,7 +400,7 @@ router.get('/surveillance-stats', async (req, res) => {
         const [overdueNow] = await db.execute(`
             SELECT COUNT(*) as count FROM infant_schedules s
             JOIN infants i ON s.infant_id = i.id
-            WHERE s.status = 'DEFAULTER' AND s.recommended_date < CURRENT_DATE
+            WHERE s.status IN ('OVERDUE', 'DEFAULTED') AND s.recommended_date < CURRENT_DATE
             ${barangayClause}
         `, params);
 
@@ -375,13 +437,23 @@ router.get('/map-data', async (req, res) => {
         const targetBarangay = req.query.barangay || null;
         const spatialData = await infantService.getSpatialTriage({ eps, minPts, barangay: targetBarangay, scope });
         
-        // Transform to match the dashboard's expected format (counts mapped to specific keys)
+        const counts = spatialData.counts || {};
+        const computedDefaulters = (spatialData.all_infants || [])
+            .filter(infant => infant.computed_map_status === 'DEFAULTER').length;
+        const computedMappedDefaulters = (spatialData.all_infants || [])
+            .filter(infant => infant.computed_map_status === 'DEFAULTER' && infant.lat != null && infant.lng != null).length;
+
         res.json({
             ...spatialData,
             counts: {
-                clinical_overdue_total: spatialData.counts.overdue,
-                clinical_due_soon_total: spatialData.counts.due_soon,
-                mappable_overdue_total: spatialData.counts.mappable_in_scope
+                ...counts,
+                total_defaulters: counts.total_defaulters ?? computedDefaulters,
+                mapped_defaulters: counts.mapped_defaulters ?? computedMappedDefaulters,
+                clinical_overdue_total: counts.total_defaulters ?? computedDefaulters,
+                clinical_defaulter_total: counts.total_defaulters ?? computedDefaulters,
+                clinical_due_soon_total: counts.total_due_soon || 0,
+                mappable_overdue_total: counts.mapped_defaulters ?? computedMappedDefaulters,
+                mappable_defaulter_total: counts.mapped_defaulters ?? computedMappedDefaulters
             }
         });
     } catch (error) {
@@ -408,14 +480,15 @@ router.get('/due-soon', async (req, res) => {
 router.get('/dbscan', async (req, res) => {
     try {
         const { eps = 300, minPts = 3 } = req.query;
-        const scheduleData = await engine.getApprovedInfantsWithSchedule({ urgency: 'all' }, 1000, 0);
+        const safeMinPts = Math.max(parseInt(minPts, 10) || 3, 2);
+        const scheduleData = await engine.getApprovedInfantsWithSchedule({ urgency: 'all', barangay: req.query.barangay || null }, 1000, 0);
         const overdueWithGeo = (scheduleData.infants || []).filter(i => (i.urgency === 'overdue' || i.urgency === 'defaulter') && i.lat && i.lng);
 
-        if (overdueWithGeo.length < parseInt(minPts)) {
+        if (overdueWithGeo.length < safeMinPts) {
             return res.json([]);
         }
 
-        const dbscan = new DBSCANService(parseInt(eps), parseInt(minPts));
+        const dbscan = new DBSCANService(parseInt(eps, 10), safeMinPts);
         const clusters = dbscan.cluster(overdueWithGeo);
 
         const summaries = clusters.map((clusterPoints, index) => {

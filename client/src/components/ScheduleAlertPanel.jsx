@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { AlertTriangle, Clock, Shield, AlertCircle, Lock } from 'lucide-react';
 
 /**

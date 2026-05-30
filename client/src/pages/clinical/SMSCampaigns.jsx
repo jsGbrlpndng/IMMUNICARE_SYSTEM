@@ -1,3 +1,4 @@
+﻿import React from 'react';
 import { useState, useEffect } from 'react';
 import {
     MessageSquare,
@@ -47,7 +48,7 @@ const SMSCampaigns = () => {
                     </div>
                     <div className="space-y-1">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Sent</p>
-                        <p className="text-3xl font-extrabold text-[#0061FF]">—</p>
+                        <p className="text-3xl font-extrabold text-[#0061FF]">â€”</p>
                     </div>
                 </div>
 
@@ -59,7 +60,7 @@ const SMSCampaigns = () => {
                     </div>
                     <div className="space-y-1">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending</p>
-                        <p className="text-3xl font-extrabold text-amber-500">—</p>
+                        <p className="text-3xl font-extrabold text-amber-500">â€”</p>
                     </div>
                 </div>
 
@@ -71,7 +72,7 @@ const SMSCampaigns = () => {
                     </div>
                     <div className="space-y-1">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Delivered</p>
-                        <p className="text-3xl font-extrabold text-emerald-600">—</p>
+                        <p className="text-3xl font-extrabold text-emerald-600">â€”</p>
                     </div>
                 </div>
 
@@ -83,7 +84,7 @@ const SMSCampaigns = () => {
                     </div>
                     <div className="space-y-1">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Failed</p>
-                        <p className="text-3xl font-extrabold text-red-500">—</p>
+                        <p className="text-3xl font-extrabold text-red-500">â€”</p>
                     </div>
                 </div>
             </div>

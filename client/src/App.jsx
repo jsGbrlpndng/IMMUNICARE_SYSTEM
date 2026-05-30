@@ -10,6 +10,8 @@ import CaregiverPortal from './pages/CaregiverPortal';
 import Reports from './pages/clinical/Reports';
 import LandingPage from './pages/LandingPage';
 import AccessPortal from './pages/AccessPortal';
+import ForcePasswordChange from './pages/ForcePasswordChange';
+import AccountSecurityPage from './pages/AccountSecurityPage';
 import StaffLayout from './components/StaffLayout';
 import InfantRegistrationForm from './pages/clinical/InfantRegistrationForm';
 import SMSCampaigns from './pages/clinical/SMSCampaigns';
@@ -24,7 +26,6 @@ import AuditLogs from './pages/admin/AuditLogs';
 import SystemSettings from './pages/admin/SystemSettings';
 import AdminM1Reports from './pages/admin/AdminM1Reports';
 import CICCatchUpAnalysis from './pages/admin/CICCatchUpAnalysis';
-import BHWRoute from './components/BHWRoute';
 import BHWLayout from './layouts/BHWLayout';
 import SuperAdminLayout from './components/SuperAdminLayout';
 import SuperAdminRoute from './components/SuperAdminRoute';
@@ -36,6 +37,9 @@ import InfantProfile from './pages/bhw/InfantProfile';
 import InfantRecord from './pages/clinical/InfantRecord';
 import InfantRegistry from './pages/clinical/InfantRegistry';
 import FollowUpTasks from './pages/clinical/FollowUpTasks';
+import AdminSpatialMap from './pages/admin/AdminSpatialMap';
+import AdminPopulationMap from './pages/admin/AdminPopulationMap';
+import TargetConfiguration from './pages/admin/TargetConfiguration';
 
 function App() {
     return (
@@ -48,6 +52,8 @@ function App() {
 
                     {/* Unified Access Portal */}
                     <Route path="/portal" element={<AccessPortal />} />
+                    <Route path="/login" element={<AccessPortal />} />
+                    <Route path="/force-password-change" element={<ForcePasswordChange />} />
 
                     {/* Secure Caregiver Records */}
                     <Route path="/caregiver" element={<CaregiverPortal />} />
@@ -56,7 +62,7 @@ function App() {
                     <Route
                         path="/clinical/dashboard"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><MidwifeDashboard /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -64,7 +70,7 @@ function App() {
                     <Route
                         path="/clinical/validation"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><ValidationPage /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -72,7 +78,7 @@ function App() {
                     <Route
                         path="/clinical/schedule"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><NIPSchedulePage /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -80,19 +86,23 @@ function App() {
                     <Route
                         path="/clinical/sms"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><SMSCampaigns /></StaffLayout>
                             </ProtectedRoute>
                         }
                     />
                     <Route
                         path="/clinical/registration"
-                        element={<Navigate to="/bhw/register" replace />}
+                        element={
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
+                                <Navigate to="/clinical/registry" replace />
+                            </ProtectedRoute>
+                        }
                     />
                     <Route
                         path="/clinical/registrations/:id"
                         element={
-                            <ProtectedRoute allowedRoles={['Super Admin', 'Admin', 'Midwife', 'BHW']}>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><InfantRegistrationForm /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -100,7 +110,7 @@ function App() {
                     <Route
                         path="/clinical/map"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><Heatmap /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -108,7 +118,7 @@ function App() {
                     <Route
                         path="/clinical/reports"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><Reports /></StaffLayout>
                             </ProtectedRoute>
                         }
@@ -116,15 +126,25 @@ function App() {
                     <Route
                         path="/clinical/follow-ups"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout><FollowUpTasks /></StaffLayout>
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/clinical/profile"
+                        element={
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
+                                <StaffLayout>
+                                    <AccountSecurityPage />
+                                </StaffLayout>
                             </ProtectedRoute>
                         }
                     />
                     <Route
                         path="/clinical/registry"
                         element={
-                            <ProtectedRoute>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout>
                                     <InfantRegistry />
                                 </StaffLayout>
@@ -132,9 +152,19 @@ function App() {
                         }
                     />
                     <Route
+                        path="/clinical/registry/:id"
+                        element={
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
+                                <StaffLayout>
+                                    <InfantRecord />
+                                </StaffLayout>
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
                         path="/clinical/infants/:id"
                         element={
-                            <ProtectedRoute allowedRoles={['Super Admin', 'Admin', 'Midwife', 'BHW']}>
+                            <ProtectedRoute allowedRoles={['Midwife', 'Admin', 'Super Admin']}>
                                 <StaffLayout>
                                     <InfantRecord />
                                 </StaffLayout>
@@ -147,9 +177,9 @@ function App() {
                     <Route
                         path="/bhw"
                         element={
-                            <BHWRoute>
+                            <ProtectedRoute allowedRoles={['BHW']}>
                                 <BHWLayout />
-                            </BHWRoute>
+                            </ProtectedRoute>
                         }
                     >
                         <Route path="dashboard" element={<BHWDashboard />} />
@@ -158,6 +188,7 @@ function App() {
                         <Route path="follow-ups" element={<FollowUpTasks />} />
                         <Route path="infants/:id" element={<InfantRecord />} />
                         <Route path="registrations/:id" element={<InfantRegistrationForm />} />
+                        <Route path="profile" element={<AccountSecurityPage />} />
                     </Route>
 
                     {/* Admin Routes */}
@@ -205,6 +236,16 @@ function App() {
                         }
                     />
                     <Route
+                        path="/admin/account-settings"
+                        element={
+                            <AdminRoute>
+                                <AdminLayout>
+                                    <AccountSecurityPage />
+                                </AdminLayout>
+                            </AdminRoute>
+                        }
+                    />
+                    <Route
                         path="/admin/reports/m1"
                         element={
                             <AdminRoute>
@@ -224,6 +265,26 @@ function App() {
                             </AdminRoute>
                         }
                     />
+                    <Route
+                        path="/admin/population-heatmap"
+                        element={
+                            <AdminRoute>
+                                <AdminLayout>
+                                    <AdminPopulationMap />
+                                </AdminLayout>
+                            </AdminRoute>
+                        }
+                    />
+                    <Route
+                        path="/admin/spatial-analysis"
+                        element={
+                            <AdminRoute>
+                                <AdminLayout>
+                                    <AdminSpatialMap />
+                                </AdminLayout>
+                            </AdminRoute>
+                        }
+/>
                     
                     {/* Super Admin Routes */}
                     <Route
@@ -243,6 +304,14 @@ function App() {
                         }
                     />
                     <Route
+                        path="/superadmin/targets"
+                        element={
+                            <SuperAdminRoute>
+                                <SuperAdminLayout><TargetConfiguration /></SuperAdminLayout>
+                            </SuperAdminRoute>
+                        }
+                    />
+                    <Route
                         path="/superadmin/audit"
                         element={
                             <SuperAdminRoute>
@@ -255,6 +324,14 @@ function App() {
                         element={
                             <SuperAdminRoute>
                                 <SuperAdminLayout><SystemSettings /></SuperAdminLayout>
+                            </SuperAdminRoute>
+                        }
+                    />
+                    <Route
+                        path="/superadmin/account-settings"
+                        element={
+                            <SuperAdminRoute>
+                                <SuperAdminLayout><AccountSecurityPage /></SuperAdminLayout>
                             </SuperAdminRoute>
                         }
                     />
