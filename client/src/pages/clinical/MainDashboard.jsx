@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 // Analytics Components
 import CoverageByDoseChart from '../../components/analytics/CoverageByDoseChart';
@@ -351,7 +352,7 @@ export default function MainDashboard() {
                                                 <td className="py-4 px-6 border-b border-slate-50 hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => navigate(`/clinical/infants/${infant.id}`)}>
                                                     <div className="flex flex-col">
                                                         <div className="font-bold text-slate-800 group-hover:text-[#2E7D32] transition-colors flex items-center gap-2">
-                                                            {infant.first_name} {infant.last_name}
+                                                            {formatFullNameFromObject(infant)}
                                                             <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
                                                         </div>
                                                         <div className="text-[10px] text-slate-400 font-medium tracking-widest">{infant.reference_id}</div>

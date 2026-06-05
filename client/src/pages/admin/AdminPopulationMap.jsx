@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
 import { getBarangayCenter } from '../../utils/barangayConfig';
 import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const STATUS_LAYERS = [
     { id: 'defaulter', label: 'Defaulter', color: '#e11d48' },
@@ -275,7 +276,7 @@ export default function AdminPopulationMap() {
                                         <Popup>
                                             <div className="text-sm">
                                                 <p className="font-black text-slate-950">
-                                                    {infant.first_name || 'Infant'} {infant.last_name || ''}
+                                                    {formatFullNameFromObject(infant) || 'Infant'}
                                                 </p>
                                                 <p className="font-semibold text-slate-600">{infant.reference_id || infant.id}</p>
                                                 <p className="mt-1 text-xs font-bold uppercase tracking-wider" style={{ color: meta.color }}>

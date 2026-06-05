@@ -26,9 +26,11 @@ import {
     reverseGeocodeLatLng
 } from '../../utils/addressGeocoding';
 import { hasValidCoordinate, toDecimalFloat } from './registration/LocationPicker';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const initialFormState = {
     first_name: '',
+    has_no_middle_name: false,
     middle_name: '',
     last_name: '',
     suffix: '',
@@ -58,6 +60,8 @@ const initialFormState = {
     hepatitis_b_date: '',
     birth_setting: 'FACILITY',
     registration_status: '',
+    rejection_reason: '',
+    rejection_notes: '',
     latitude: null,
     longitude: null,
     precision: '',
@@ -99,7 +103,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const [errors, setErrors] = useState({});
     const [duplicateMatches, setDuplicateMatches] = useState([]);
     const [overrideReason, setOverrideReason] = useState('');
+    const [duplicateWarning, setDuplicateWarning] = useState(null);
+    const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+    const [pendingDuplicateAction, setPendingDuplicateAction] = useState(null);
     const [registeredInfantInfo, setRegisteredInfantInfo] = useState(null);
+    const [activeRegistrationId, setActiveRegistrationId] = useState(null);
 
     const isMounted = useRef(true);
     useEffect(() => {
@@ -110,8 +118,32 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     }, []);
 
     const currentStatus = (formData.status || formData.registration_status || '').toUpperCase();
-    const isReadOnly = ['PENDING', 'PENDING_VALIDATION', 'REJECTED'].includes(currentStatus);
+    const isEditableStatus = ['DRAFT', 'NEEDS_CORRECTION', 'RETURNED_FOR_CORRECTION'].includes(currentStatus);
+    const registrationId = routeId || new URLSearchParams(location.search).get('id');
+    const isCreateMode = !registrationId && !activeRegistrationId && !formData.id;
+    const isReadOnly = isCreateMode ? false : !isEditableStatus;
     const correctionMessage = formData.correction_notes || '';
+    const rejectionReason = formData.rejection_reason || '';
+    const rejectionNotes = formData.rejection_notes || '';
+
+    const openDuplicateWarning = useCallback((actionType, matches = [], options = {}) => {
+        setDuplicateMatches(matches);
+        setDuplicateWarning({
+            actionType,
+            matches,
+            duplicateTier: options.duplicateTier || 'STRICT_DUPLICATE',
+            message: options.message || null
+        });
+        setDuplicateAcknowledged(false);
+        setPendingDuplicateAction(actionType);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, []);
+
+    const closeDuplicateWarning = useCallback(() => {
+        setDuplicateWarning(null);
+        setDuplicateAcknowledged(false);
+        setPendingDuplicateAction(null);
+    }, []);
 
     // Geocoding States
     const [searchResults, setSearchResults] = useState([]);
@@ -269,12 +301,15 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                             id: reg.id,
                             registration_status: reg.status || reg.registration_status,
                             status: reg.status || reg.registration_status,
-                            correction_notes: reg.correction_notes || ''
+                            correction_notes: reg.correction_notes || '',
+                            rejection_reason: reg.rejection_reason || '',
+                            rejection_notes: reg.rejection_notes || ''
                         };
                         setFormData(flatData);
+                        setActiveRegistrationId(reg.id);
                         
                         const statusVal = (reg.status || reg.registration_status || '').toUpperCase();
-                        if (['PENDING', 'PENDING_VALIDATION', 'REJECTED'].includes(statusVal)) {
+                        if (registrationId && statusVal && statusVal !== 'DRAFT') {
                             setCurrentStep(5);
                         }
                         
@@ -333,6 +368,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const buildRegistrationPayload = useCallback((data, overrides = {}) => ({
         data: {
             ...data,
+            has_no_middle_name: data.has_no_middle_name === true,
+            middle_name: data.has_no_middle_name ? '' : (data.middle_name || ''),
             sex: data.sex === 'M' || data.sex === 'F' ? data.sex : '',
             latitude: toDecimalFloat(data.latitude),
             longitude: toDecimalFloat(data.longitude),
@@ -342,6 +379,30 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             ...overrides
         }
     }), []);
+
+    const applyRegistrationResponseToState = useCallback((payload, fallbackData = formData) => {
+        const reg = payload?.data || payload || {};
+        const normalizedStatus = (reg.status || reg.registration_status || '').toString().toUpperCase();
+        const merged = {
+            ...fallbackData,
+            ...(reg.registration_data || {}),
+            id: reg.id || fallbackData.id || activeRegistrationId || null,
+            has_no_middle_name: reg.has_no_middle_name ?? reg.registration_data?.has_no_middle_name ?? fallbackData.has_no_middle_name ?? false,
+            status: reg.status || reg.registration_status || fallbackData.status || fallbackData.registration_status || '',
+            registration_status: reg.registration_status || reg.status || fallbackData.registration_status || fallbackData.status || '',
+            duplicate_alert: reg.duplicate_alert ?? reg.registration_data?.duplicate_alert ?? fallbackData.duplicate_alert ?? null,
+            correction_notes: reg.correction_notes ?? fallbackData.correction_notes ?? '',
+            rejection_reason: reg.rejection_reason ?? fallbackData.rejection_reason ?? '',
+            rejection_notes: reg.rejection_notes ?? fallbackData.rejection_notes ?? ''
+        };
+
+        setFormData(merged);
+        if (reg.id) setActiveRegistrationId(reg.id);
+        if (['PENDING_VALIDATION', 'REJECTED', 'VALIDATED', 'NEEDS_CORRECTION'].includes(normalizedStatus)) {
+            setCurrentStep(5);
+        }
+        return merged;
+    }, [activeRegistrationId, formData]);
 
     const handleSelectSuggestion = (res) => {
         const normalizedResult = normalizeAddressResult(res);
@@ -519,6 +580,14 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             [name]: type === 'checkbox' ? checked : value
         };
 
+        if (name === 'has_no_middle_name') {
+            newFormData = {
+                ...newFormData,
+                has_no_middle_name: checked,
+                middle_name: checked ? '' : newFormData.middle_name
+            };
+        }
+
         if (name === 'exact_address') {
             newFormData = {
                 ...newFormData,
@@ -567,8 +636,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         }
 
         setFormData(newFormData);
-        const errorMessage = validateField(name, type === 'checkbox' ? checked : value);
-        setErrors(prev => ({ ...prev, [name]: errorMessage }));
+        const errorMessage = validateField(name, type === 'checkbox' ? checked : value, newFormData);
+        setErrors(prev => ({
+            ...prev,
+            [name]: errorMessage,
+            ...(name === 'has_no_middle_name' && checked ? { middle_name: null } : {})
+        }));
     };
 
     const handleAddressInputChange = (event) => {
@@ -597,6 +670,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         const { name, value } = e.target;
         const nameFields = ['first_name', 'last_name', 'middle_name', 'suffix', 'mothers_maiden_name', 'father_name', 'exact_address'];
         if (nameFields.includes(name) && value) {
+            if (name === 'middle_name' && formData.has_no_middle_name) return;
             const titleCased = value.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
             setFormData(prev => ({ ...prev, [name]: titleCased }));
         }
@@ -606,7 +680,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         if (!isStepValid(currentStep, formData, errors)) {
             // Force error display on missing fields
             const stepFields = {
-                1: ['first_name', 'last_name', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
+                1: ['first_name', 'middle_name', 'last_name', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
                 2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone'],
                 3: ['birth_weight', 'length_at_birth_cm'],
                 4: ['bcg_status', 'hepatitis_b_status']
@@ -614,9 +688,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             
             const newErrors = { ...errors };
             stepFields.forEach(f => {
-                const fieldError = validateField(f, formData[f]);
+                const fieldError = validateField(f, formData[f], formData);
                 if (fieldError) newErrors[f] = fieldError;
-                else if (formData[f] === '' || formData[f] === null || formData[f] === undefined) {
+                else if ((formData[f] === '' || formData[f] === null || formData[f] === undefined) && !(f === 'middle_name' && formData.has_no_middle_name === true)) {
                     newErrors[f] = "Required";
                 }
             });
@@ -628,7 +702,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         if (currentStep === 4) {
             setIsCheckingDuplicates(true);
             try {
-                const res = await apiClient.post('/infants/check-duplicates', formData);
+                const res = await apiClient.post('/registrations/check-duplicates', { data: formData });
                 if (res.ok) {
                     const data = await res.json();
                     setDuplicateMatches(data.matches || []);
@@ -649,26 +723,69 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleSaveDraft = async () => {
+    const handleSaveDraft = async ({ overrideDuplicate = false } = {}) => {
+        if (isReadOnly) return;
+        const firstName = (formData.first_name || '').trim();
+        const middleName = (formData.middle_name || '').trim();
+        const lastName = (formData.last_name || '').trim();
+        const sex = String(formData.sex || '').trim();
+        const hasNoMiddleName = formData.has_no_middle_name === true;
+        if (!firstName || (!hasNoMiddleName && !middleName) || !lastName || !sex) {
+            setSubmissionError("Infant's first name, last name, and sex are required to save a draft. Provide a middle name or explicitly mark 'No Middle Name'.");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
         setIsSavingDraft(true);
         setSubmissionError(null);
         try {
-            const res = await apiClient.post('/registrations', buildRegistrationPayload(formData, { registration_status: 'DRAFT' }));
+            const res = await apiClient.post('/registrations', buildRegistrationPayload(formData, {
+                status: 'DRAFT',
+                registration_status: 'DRAFT',
+                ...(overrideDuplicate ? { override_duplicate: true } : {})
+            }));
             if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const normalizedResponse = {
+                    ...data,
+                    data: {
+                        ...(data?.data || data || {}),
+                        status: 'DRAFT',
+                        registration_status: 'DRAFT'
+                    }
+                };
+                applyRegistrationResponseToState(normalizedResponse, {
+                    ...formData,
+                    status: 'DRAFT',
+                    registration_status: 'DRAFT'
+                });
                 setToast('Draft Saved Successfully');
                 setTimeout(() => setToast(null), 3000);
+                navigate('/bhw/submissions', { replace: true, state: { toast: 'Draft Saved Successfully' } });
             } else {
+                if (res.status === 409) {
+                    const conflictData = await res.json().catch(() => ({}));
+                    if (String(conflictData?.error_code || '').includes('DUPLICATE')) {
+                        openDuplicateWarning('draft', conflictData.matches || [], {
+                            duplicateTier: conflictData?.duplicate_tier || conflictData?.duplicate_alert?.status,
+                            message: conflictData?.message || conflictData?.error
+                        });
+                        return;
+                    }
+                }
                 const errorMessage = await readApiError(res, 'Failed to save draft');
                 setSubmissionError(errorMessage);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         } catch (e) {
             setSubmissionError(e.message || 'Network error while saving draft');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         } finally {
             setIsSavingDraft(false);
         }
     };
 
-    const handleConfirmSubmit = async () => {
+    const handleConfirmSubmit = async ({ overrideDuplicate = false } = {}) => {
+        if (isReadOnly) return;
         setIsSubmitting(true);
         setSubmissionError(null);
         try {
@@ -684,11 +801,18 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             let res;
             if (userRole === 'BHW') {
                 // BHW Workflow: Submit for validation
-                res = await apiClient.post('/registrations', buildRegistrationPayload(normalizedFormData, { status: 'Pending', registration_status: 'PENDING_VALIDATION' }));
+                res = await apiClient.post('/registrations', buildRegistrationPayload(normalizedFormData, {
+                    status: 'Pending',
+                    registration_status: 'PENDING_VALIDATION',
+                    ...(overrideDuplicate ? { override_duplicate: true } : {})
+                }));
             } else if (formData.is_emergency) {
                 // Midwife Emergency Workflow: Direct promotion with justification
                 res = await apiClient.post('/registrations/emergency', {
-                    data: normalizedFormData,
+                    data: {
+                        ...normalizedFormData,
+                        ...(overrideDuplicate ? { override_duplicate: true } : {})
+                    },
                     justification: formData.emergency_justification
                 });
             } else {
@@ -699,27 +823,47 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             if (res.ok) {
                 const data = await res.json(); 
                 const returnedData = data.data || data;
+                const normalizedResponse = userRole === 'BHW'
+                    ? {
+                        ...returnedData,
+                        status: 'PENDING_VALIDATION',
+                        registration_status: 'PENDING_VALIDATION'
+                    }
+                    : returnedData;
+                const applied = applyRegistrationResponseToState(normalizedResponse, {
+                    ...normalizedFormData,
+                    status: userRole === 'BHW' ? 'PENDING_VALIDATION' : (returnedData.status || returnedData.registration_status || normalizedFormData.status),
+                    registration_status: userRole === 'BHW' ? 'PENDING_VALIDATION' : (returnedData.registration_status || returnedData.status || normalizedFormData.registration_status)
+                });
+
+                const infantInfo = {
+                    id: returnedData.id || returnedData.infantId || applied.id,
+                    name: formatFullNameFromObject(formData),
+                    referenceId: returnedData.reference_id || returnedData.referenceId
+                };
+
+                setRegisteredInfantInfo(infantInfo);
 
                 if (userRole === 'BHW') {
-                    setRegisteredInfantInfo({
-                        id: returnedData.id || returnedData.infantId,
-                        name: `${formData.first_name} ${formData.last_name}`,
-                        referenceId: returnedData.reference_id || returnedData.referenceId
-                    });
                     setIsSuccess(true);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                     return;
                 }
 
-                setRegisteredInfantInfo({
-                    id: returnedData.id || returnedData.infantId,
-                    name: `${formData.first_name} ${formData.last_name}`,
-                    referenceId: returnedData.reference_id || returnedData.referenceId
-                });
-                setIsSuccess(true); 
+                setIsSuccess(true);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 if (onComplete) onComplete();
             } else {
+                if (res.status === 409) {
+                    const conflictData = await res.json().catch(() => ({}));
+                    if (String(conflictData?.error_code || '').includes('DUPLICATE')) {
+                        openDuplicateWarning(userRole === 'BHW' ? 'submit' : 'submit', conflictData.matches || [], {
+                            duplicateTier: conflictData?.duplicate_tier || conflictData?.duplicate_alert?.status,
+                            message: conflictData?.message || conflictData?.error
+                        });
+                        return;
+                    }
+                }
                 const errorMessage = await readApiError(res, 'Registration failed.');
                 setSubmissionError(errorMessage);
             }
@@ -729,6 +873,45 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             if (isMounted.current) {
                 setIsSubmitting(false);
             }
+        }
+    };
+
+    const handleDiscardDraft = async () => {
+        if (!activeRegistrationId || isReadOnly || currentStatus !== 'DRAFT') return;
+        const confirmed = window.confirm('Are you sure you want to discard this draft? This cannot be undone.');
+        if (!confirmed) return;
+
+        setIsSavingDraft(true);
+        setSubmissionError(null);
+        try {
+            const res = await apiClient.delete(`/registrations/${activeRegistrationId}`);
+            if (res.ok) {
+                setToast('Draft Discarded Successfully');
+                setTimeout(() => setToast(null), 3000);
+                navigate('/bhw/submissions', { replace: true, state: { toast: 'Draft Discarded Successfully' } });
+                return;
+            }
+
+            const errorMessage = await readApiError(res, 'Failed to discard draft');
+            setSubmissionError(errorMessage);
+        } catch (e) {
+            setSubmissionError(e.message || 'Network error while discarding draft');
+        } finally {
+            if (isMounted.current) {
+                setIsSavingDraft(false);
+            }
+        }
+    };
+
+    const handleProceedDuplicateOverride = async () => {
+        if (!duplicateWarning || !duplicateAcknowledged || !pendingDuplicateAction) return;
+        const action = pendingDuplicateAction;
+        closeDuplicateWarning();
+
+        if (action === 'draft') {
+            await handleSaveDraft({ overrideDuplicate: true });
+        } else if (action === 'submit') {
+            await handleConfirmSubmit({ overrideDuplicate: true });
         }
     };
 
@@ -797,6 +980,86 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 </div>
             )}
 
+            {duplicateWarning && (
+                <div className="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center p-4">
+                    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-amber-200 overflow-hidden">
+                        <div className="flex items-start gap-4 px-6 py-5 bg-amber-50 border-b border-amber-200">
+                            <div className="w-12 h-12 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0">
+                                <AlertTriangle className="w-6 h-6 text-amber-800" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-amber-700 mb-1">
+                                    {duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE' ? 'Possible Duplicate Detected' : 'Duplicate Registration Detected'}
+                                </p>
+                                <h2 className="text-lg font-black text-slate-900 leading-tight">
+                                    {duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
+                                        ? 'Clinical review required before saving a similar patient identity.'
+                                        : 'Clinical review required before saving this record.'}
+                                </h2>
+                                <p className="mt-2 text-sm font-semibold text-slate-600 leading-relaxed">
+                                    {duplicateWarning.message || (duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
+                                        ? 'A similar infant record already exists in this barangay. Review the matching records before proceeding.'
+                                        : 'An existing record matches this Infant&apos;s Name, DOB, and Barangay.')}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-5 space-y-4">
+                            <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+                                <p className="text-xs font-black uppercase tracking-widest text-amber-800 mb-2">Matches Found</p>
+                                <div className="space-y-2">
+                                    {(duplicateWarning.matches || []).map((match, index) => (
+                                        <div key={`${match.id || index}`} className="flex items-center justify-between gap-4 rounded-lg border border-amber-200 bg-white px-4 py-3">
+                                            <div>
+                                                <p className="text-sm font-black text-slate-900">
+                                                    {formatFullNameFromObject(match)}
+                                                </p>
+                                                <p className="text-[11px] font-semibold text-slate-500">
+                                                    DOB: {match.dob ? new Date(match.dob).toLocaleDateString() : 'N/A'} • Barangay: {match.barangay || formData.barangay || 'N/A'}
+                                                </p>
+                                            </div>
+                                            <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-900">
+                                                {String(match.status || 'MATCH').replace(/_/g, ' ')}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                <input
+                                    type="checkbox"
+                                    checked={duplicateAcknowledged}
+                                    onChange={(e) => setDuplicateAcknowledged(e.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-[#064E3B] focus:ring-[#064E3B]"
+                                />
+                                <span className="text-sm font-semibold text-slate-700 leading-relaxed">
+                                    I acknowledge this is a potential duplicate and confirm this is a distinct patient.
+                                </span>
+                            </label>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+                            <button
+                                type="button"
+                                onClick={closeDuplicateWarning}
+                                className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-slate-600 hover:bg-slate-100"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleProceedDuplicateOverride}
+                                disabled={!duplicateAcknowledged}
+                                className="rounded-md bg-[#064E3B] px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-sm hover:bg-[#065f46] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Proceed Anyway
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-4xl mx-auto pt-10 px-4">
                 <button
                     onClick={() => navigate(userRole === 'BHW' ? '/bhw/dashboard' : '/clinical/dashboard')}
@@ -814,6 +1077,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         <p className="text-slate-500 font-bold text-sm mt-2">Clinical Intake & Spatial Validation System</p>
                     </div>
                 </div>
+
+                {submissionError && (
+                    <div className="mb-8 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800 shadow-sm">
+                        {submissionError}
+                    </div>
+                )}
 
                 {((formData.status === 'Needs Correction' || formData.status === 'NEEDS_CORRECTION' || formData.registration_status === 'NEEDS_CORRECTION' || formData.registration_status === 'Needs Correction') && correctionMessage) && (
                     <div className="mb-8 bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
@@ -836,17 +1105,31 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     </div>
                 )}
 
-                {/* Rejected Banner */}
+                {/* Clinical Rejection Summary */}
                 {currentStatus === 'REJECTED' && (
-                    <div className="mb-8 bg-red-50 border-2 border-red-200 rounded-2xl p-6 flex items-center gap-4 animate-in slide-in-from-top-5">
-                        <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">Record Rejected</span>
-                            <span className="text-sm font-bold text-red-950 mt-1">
-                                RECORD REJECTED: {correctionMessage || 'No reason specified.'}
-                            </span>
+                    <section className="clinical-rejection-summary mb-8 border border-[#064E3B] border-l-4 border-l-[#064E3B] bg-[#F6FFFB]">
+                        <div className="border-b border-[#064E3B] bg-[#ECFDF5] px-4 py-3">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">
+                                Clinical Rejection Summary
+                            </h3>
                         </div>
-                    </div>
+                        <div className="chart-grid chart-grid-single">
+                            <div className="min-h-[56px] bg-white px-4 py-3">
+                                <div className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-500">Rejection Reason</div>
+                                <div className="break-words text-[12px] font-black leading-snug text-emerald-800">
+                                    {rejectionReason || '--'}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="chart-grid chart-grid-single border-t border-[#064E3B]">
+                            <div className="min-h-[56px] bg-white px-4 py-3">
+                                <div className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-500">Clinical Notes</div>
+                                <div className="break-words text-[12px] font-black leading-snug text-slate-900">
+                                    {rejectionNotes || 'No reason specified.'}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 )}
 
                 <StepIndicator currentStep={currentStep} steps={STEPS} isReadOnly={isReadOnly} />
@@ -871,11 +1154,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                 showSuggestions={showSuggestions}
                                 handleMapClick={handleMapClick}
                                 handleDragEnd={handleDragEnd}
+                                isReadOnly={isReadOnly}
                             />
                         )}
-                        {currentStep === 2 && <GuardianSection formData={formData} errors={errors} handleChange={handleChange} handleBlur={handleBlur} />}
-                        {currentStep === 3 && <MaternalBirthSection formData={formData} errors={errors} handleChange={handleChange} handleBlur={handleBlur} />}
-                        {currentStep === 4 && <ImmunizationSection formData={formData} errors={errors} handleChange={handleChange} />}
+                        {currentStep === 2 && <GuardianSection formData={formData} errors={errors} handleChange={handleChange} handleBlur={handleBlur} isReadOnly={isReadOnly} />}
+                        {currentStep === 3 && <MaternalBirthSection formData={formData} errors={errors} handleChange={handleChange} handleBlur={handleBlur} isReadOnly={isReadOnly} />}
+                        {currentStep === 4 && <ImmunizationSection formData={formData} errors={errors} handleChange={handleChange} isReadOnly={isReadOnly} />}
                         {currentStep === 5 && (
                             <ReviewSection 
                                 formData={formData} 
@@ -890,85 +1174,102 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     </div>
 
                     <div className="bg-slate-50/50 border-t border-slate-200 p-8 flex items-center justify-between">
-                        {!isReadOnly ? (
-                            <>
-                                <button 
-                                    onClick={handleBack}
-                                    disabled={currentStep === 1 || isSubmitting}
-                                    className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all ${
-                                        currentStep === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-slate-800'
-                                    }`}>
-                                    <ChevronLeft className="w-4 h-4" />
-                                    Back
+                        <button 
+                            onClick={handleBack}
+                            disabled={currentStep === 1 || isSubmitting || isSavingDraft}
+                            className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all ${
+                                currentStep === 1 || isSubmitting || isSavingDraft ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-slate-800'
+                            }`}>
+                            <ChevronLeft className="w-4 h-4" />
+                            Back
+                        </button>
+
+                        <div className="flex items-center gap-6">
+                            {activeRegistrationId && currentStatus === 'DRAFT' && !isReadOnly && (
+                                <button
+                                    type="button"
+                                    onClick={handleDiscardDraft}
+                                    disabled={isSavingDraft || isSubmitting}
+                                    className="flex items-center gap-2 border border-rose-300 bg-white px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide text-rose-700 transition-all hover:bg-rose-50 disabled:opacity-50"
+                                >
+                                    <AlertTriangle className="w-4 h-4" />
+                                    Discard Draft
                                 </button>
-
-                                <div className="flex items-center gap-6">
-                                    {userRole === 'BHW' && currentStep === 5 && (
-                                        <button 
-                                            onClick={handleSaveDraft}
-                                            disabled={isSavingDraft || isSubmitting}
-                                            className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide transition-all active:scale-[0.98] disabled:opacity-50">
-                                            {isSavingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                            Save Draft
-                                        </button>
-                                    )}
-                                    {currentStep < 5 ? (
-                                        <button 
-                                            onClick={handleNext}
-                                            disabled={isCheckingDuplicates}
-                                            className="flex items-center gap-3 bg-[#065f46] hover:bg-[#064E3B] text-white px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide shadow-md transition-all active:scale-[0.98] disabled:opacity-50">
-                                            {isCheckingDuplicates ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                    Checking...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    Next Step
-                                                    <ChevronRight className="w-4 h-4" />
-                                                </>
-                                            )}
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            onClick={handleConfirmSubmit}
-                                            disabled={isSubmitting || (duplicateMatches.length > 0 && !overrideReason) || !formData.latitude || !formData.longitude || !formData.exact_address || (formData.is_emergency && !formData.emergency_justification)}
-                                            className="flex items-center gap-3 bg-[#065f46] hover:bg-[#064E3B] text-white px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide shadow-md transition-all active:scale-[0.98] disabled:opacity-50">
-                                            {isSubmitting ? (
-                                                <>
-                                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                                    Committing...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <SaveAll className="w-5 h-5" />
-                                                    {userRole === 'BHW' ? 'Submit for Validation' : 'Finish & Register'}
-                                                </>
-                                            )}
-                                        </button>
-                                    )}
+                            )}
+                            {userRole === 'BHW' && !isReadOnly && (
+                                <button 
+                                    type="button"
+                                    onClick={handleSaveDraft}
+                                    disabled={isSavingDraft || isSubmitting}
+                                    className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-700 px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide transition-all active:scale-[0.98] disabled:opacity-50">
+                                    {isSavingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    Save Draft
+                                </button>
+                            )}
+                            {!isReadOnly && (
+                                currentStep < 5 ? (
+                                    <button 
+                                        type="button"
+                                        onClick={handleNext}
+                                        disabled={isCheckingDuplicates}
+                                        className="flex items-center gap-3 bg-[#065f46] hover:bg-[#064E3B] text-white px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide shadow-md transition-all active:scale-[0.98] disabled:opacity-50">
+                                        {isCheckingDuplicates ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Checking...
+                                            </>
+                                        ) : (
+                                            <>
+                                                Next Step
+                                                <ChevronRight className="w-4 h-4" />
+                                            </>
+                                        )}
+                                    </button>
+                                ) : (
+                                    <button 
+                                        type="button"
+                                        onClick={handleConfirmSubmit}
+                                        disabled={isSubmitting || !formData.latitude || !formData.longitude || !formData.exact_address || (formData.is_emergency && !formData.emergency_justification)}
+                                        className="flex items-center gap-3 bg-[#065f46] hover:bg-[#064E3B] text-white px-8 py-3 rounded-md font-semibold text-sm uppercase tracking-wide shadow-md transition-all active:scale-[0.98] disabled:opacity-50">
+                                        {isSubmitting ? (
+                                            <>
+                                                <Loader2 className="w-5 h-5 animate-spin" />
+                                                Committing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <SaveAll className="w-5 h-5" />
+                                                {userRole === 'BHW' ? 'Submit for Validation' : 'Finish & Register'}
+                                            </>
+                                        )}
+                                    </button>
+                                )
+                            )}
+                            {isReadOnly && (
+                                <div className="w-full flex justify-center py-2">
+                                    <span className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
+                                        🔒 This record is in Read-Only Mode
+                                    </span>
                                 </div>
-                            </>
-                        ) : (
-                            <div className="w-full flex justify-center py-2">
-                                <span className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                                    ðŸ”’ This record is in Read-Only Mode
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {submissionError && (
-                    <div className="mt-8 bg-red-50 border-2 border-red-200 rounded-2xl p-6 flex items-center gap-4 animate-in shake duration-500">
-                        <AlertTriangle className="w-6 h-6 text-red-500" />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black text-red-800 uppercase tracking-[0.15em]">Submission Error</span>
-                            <span className="text-sm font-bold text-red-900">{submissionError}</span>
+                            )}
                         </div>
                     </div>
-                )}
+                </div>
             </div>
+            <style dangerouslySetInnerHTML={{ __html: `
+                .chart-grid {
+                    display: grid;
+                    gap: 1px;
+                    width: 100%;
+                    max-width: 100%;
+                    background: #cbd5e1;
+                    padding: 1px;
+                }
+                .chart-grid-single { grid-template-columns: minmax(0, 1fr); }
+                .clinical-rejection-summary {
+                    box-shadow: inset 0 0 0 1px #064E3B;
+                }
+            `}} />
         </div>
     );
 }

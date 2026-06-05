@@ -67,6 +67,24 @@ const VACCINE_NAMES = {
     'MCV-2': 'Measles-containing Vaccine 2'
 };
 
+const TARGET_AGE_LABELS = {
+    BCG: 'At Birth',
+    HEPB: 'At Birth',
+    'PENTA-1': '1 1/2 Months',
+    'OPV-1': '1 1/2 Months',
+    'PCV-1': '1 1/2 Months',
+    'PENTA-2': '2 1/2 Months',
+    'OPV-2': '2 1/2 Months',
+    'PCV-2': '2 1/2 Months',
+    'PENTA-3': '3 1/2 Months',
+    'OPV-3': '3 1/2 Months',
+    'PCV-3': '3 1/2 Months',
+    'IPV-1': '3 1/2 Months',
+    'IPV-2': '9 Months',
+    'MCV-1': '9 Months',
+    'MCV-2': '1 Year'
+};
+
 /**
  * DOH DEFAULTER THRESHOLD
  * A dose is classified as DEFAULTER only after this many days past its target date.
@@ -90,12 +108,50 @@ const getGraceAdjustedMinimumAgeDays = (rule) => {
         : minAgeDays;
 };
 
+const toDateOnlyString = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+        return [
+            value.getFullYear(),
+            String(value.getMonth() + 1).padStart(2, '0'),
+            String(value.getDate()).padStart(2, '0')
+        ].join('-');
+    }
+
+    const raw = String(value).trim();
+    const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) return isoMatch[1];
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return toDateOnlyString(parsed);
+};
+
+const getDoseSeriesKey = (vaccineCode) => {
+    const match = String(vaccineCode || '').toUpperCase().match(/^(.+?)-?(\d+)$/);
+    if (!match) return null;
+    return {
+        prefix: match[1].replace(/[-_\s]+$/g, ''),
+        dose: parseInt(match[2], 10)
+    };
+};
+
+const sameDoseSeries = (leftCode, rightCode) => {
+    const left = getDoseSeriesKey(leftCode);
+    const right = getDoseSeriesKey(rightCode);
+    return !!left && !!right && left.prefix === right.prefix;
+};
+
 
 class NIPScheduleService {
     static STATUS = STATUS;
 
     constructor(db) {
         this.db = db;
+    }
+
+    getTargetAgeLabel(vaccineCode) {
+        return TARGET_AGE_LABELS[vaccineCode] || null;
     }
 
     /**
@@ -174,10 +230,16 @@ class NIPScheduleService {
             const match = vaccineCode.match(/(\d+)/);
             if (!rule.dose_number && match) doseNumber = parseInt(match[0]);
 
-            // Pass vaccineCode to calculateStatus so BCG catch-up rule fires correctly
-            const status = NIPScheduleService.calculateStatus(
-                recommendedDate, null, today, vaccineCode
-            );
+            const isExpiredForCatchup = latestAllowedDate && today > latestAllowedDate;
+
+            // If the infant has already aged out of the allowed window at the moment
+            // of schedule generation, persist the row as INELIGIBLE so it never enters
+            // the active overdue/defaulter task list.
+            const status = isExpiredForCatchup
+                ? STATUS.INELIGIBLE
+                : NIPScheduleService.calculateStatus(
+                    recommendedDate, null, today, vaccineCode
+                );
 
 
             const formatDateLocal = (date) => {
@@ -321,6 +383,92 @@ class NIPScheduleService {
         `, [STATUS.DEFAULTER, infantId, STATUS.DEFAULTED]);
     }
 
+    async recalculateFutureSeriesSchedule(infantId, vaccineCode, doseNumber, actualDate, connection = null) {
+        const db = connection || this.db;
+        const series = getDoseSeriesKey(vaccineCode);
+        if (!series) return;
+
+        const [infantRows] = await db.execute(
+            'SELECT dob FROM infants WHERE id = ?',
+            [infantId]
+        );
+        if (!infantRows.length || !infantRows[0].dob) return;
+
+        const [scheduleRows] = await db.execute(
+            `SELECT id, vaccine_code, dose_number, latest_allowed_date, status
+             FROM infant_schedules
+             WHERE infant_id = ?
+               AND status NOT IN ('COMPLETED', 'PENDING_VALIDATION', 'INELIGIBLE')
+               AND dose_number > ?
+             ORDER BY dose_number ASC, recommended_date ASC`,
+            [infantId, doseNumber]
+        );
+
+        const futureSeriesRows = scheduleRows.filter((row) => sameDoseSeries(row.vaccine_code, vaccineCode));
+        if (!futureSeriesRows.length) return;
+
+        const activeRules = await this.getActiveRules(db);
+        const birthDate = new Date(infantRows[0].dob);
+        let rollingAnchorDate = new Date(actualDate);
+
+        for (const row of futureSeriesRows) {
+            const rule = activeRules.find((candidate) =>
+                String(candidate.vaccine_code).toUpperCase() === String(row.vaccine_code).toUpperCase()
+            );
+
+            if (!rule || !rule.min_interval_days) {
+                continue;
+            }
+
+            const floorRecommendedDate = new Date(birthDate);
+            floorRecommendedDate.setDate(floorRecommendedDate.getDate() + Number(rule.min_age_days || 0));
+
+            const intervalRecommendedDate = new Date(rollingAnchorDate);
+            intervalRecommendedDate.setDate(intervalRecommendedDate.getDate() + Number(rule.min_interval_days || 0));
+
+            const nextRecommendedDate = floorRecommendedDate > intervalRecommendedDate
+                ? floorRecommendedDate
+                : intervalRecommendedDate;
+
+            const floorEarliestDate = new Date(birthDate);
+            floorEarliestDate.setDate(
+                floorEarliestDate.getDate() + getGraceAdjustedMinimumAgeDays(rule)
+            );
+
+            const intervalEarliestDate = new Date(rollingAnchorDate);
+            intervalEarliestDate.setDate(
+                intervalEarliestDate.getDate() + getGraceAdjustedIntervalDays(rule.min_interval_days)
+            );
+
+            const nextEarliestDate = floorEarliestDate > intervalEarliestDate
+                ? floorEarliestDate
+                : intervalEarliestDate;
+
+            const recommendedDateString = toDateOnlyString(nextRecommendedDate);
+            const earliestDateString = toDateOnlyString(nextEarliestDate);
+            const latestAllowedDateString = toDateOnlyString(row.latest_allowed_date);
+
+            if (latestAllowedDateString && recommendedDateString > latestAllowedDateString) {
+                await db.execute(
+                    `UPDATE infant_schedules
+                     SET recommended_date = ?, earliest_allowed_date = ?, status = ?
+                     WHERE id = ?`,
+                    [recommendedDateString, earliestDateString, STATUS.INELIGIBLE, row.id]
+                );
+                continue;
+            }
+
+            await db.execute(
+                `UPDATE infant_schedules
+                 SET recommended_date = ?, earliest_allowed_date = ?
+                 WHERE id = ?`,
+                [recommendedDateString, earliestDateString, row.id]
+            );
+
+            rollingAnchorDate = nextRecommendedDate;
+        }
+    }
+
     /**
      * Records a vaccination. Sets status to PENDING_VALIDATION or COMPLETED based on isValidated flag.
      */
@@ -358,33 +506,15 @@ class NIPScheduleService {
             throw new Error(`GOVERNANCE ERROR: No matching schedule entry found for ${vaccineCode} Dose ${doseNumber} for this infant.`);
         }
 
-        // 2. Adjust downstream earliestAllowedDate if this was a multi-dose series
-        const nextDoseNum = doseNumber + 1;
-        const nextVaccineCode = vaccineCode.replace(/\d+$/, nextDoseNum);
-        const nextRule = NIP_RULES[nextVaccineCode];
-
-        if (nextRule && nextRule.min_interval_days) {
-            // DOH SAFETY FLOOR: MAX(dob + min_age_days, prev_dose_date + min_interval_days)
-            const [infant] = await db.execute('SELECT dob FROM infants WHERE id = ?', [infantId]);
-            const dob = new Date(infant[0].dob);
-            
-            const floorDate = new Date(dob);
-            floorDate.setDate(floorDate.getDate() + getGraceAdjustedMinimumAgeDays(nextRule));
-
-            const intervalDate = new Date(actualDate);
-            intervalDate.setDate(intervalDate.getDate() + getGraceAdjustedIntervalDays(nextRule.min_interval_days));
-
-            // Use the later of the two dates as the hard floor
-            const earliestDate = floorDate > intervalDate ? floorDate : intervalDate;
-            const earliestDateStr = earliestDate.toISOString().split('T')[0];
-
-            await db.execute(`
-                UPDATE infant_schedules 
-                SET earliest_allowed_date = ?
-                WHERE infant_id = ? AND vaccine_code = ? AND dose_number = ?
-            `, [earliestDateStr, infantId, nextVaccineCode, nextDoseNum]);
+        if (isValidated) {
+            await this.recalculateFutureSeriesSchedule(
+                infantId,
+                vaccineCode,
+                doseNumber,
+                actualDateStr,
+                db
+            );
         }
-
 
         // 3. Refresh statuses (only for non-completed/pending ones)
         await this.updateScheduleStatuses(infantId, db);
@@ -421,30 +551,13 @@ class NIPScheduleService {
             throw new Error(`VALIDATION ERROR: No pending schedule entry found for ${vaccineCode} Dose ${doseNumber}.`);
         }
 
-        // 2. Adjust downstream as well
-        const nextDoseNum = doseNumber + 1;
-        const nextVaccineCode = vaccineCode.replace(/\d+$/, nextDoseNum);
-        const nextRule = NIP_RULES[nextVaccineCode];
-
-        if (nextRule && nextRule.min_interval_days) {
-            const [infant] = await db.execute('SELECT dob FROM infants WHERE id = ?', [infantId]);
-            const dob = new Date(infant[0].dob);
-            
-            const floorDate = new Date(dob);
-            floorDate.setDate(floorDate.getDate() + getGraceAdjustedMinimumAgeDays(nextRule));
-
-            const intervalDate = new Date(actualDate);
-            intervalDate.setDate(intervalDate.getDate() + getGraceAdjustedIntervalDays(nextRule.min_interval_days));
-
-            const earliestDate = floorDate > intervalDate ? floorDate : intervalDate;
-            const earliestDateStr = earliestDate.toISOString().split('T')[0];
-
-            await db.execute(`
-                UPDATE infant_schedules 
-                SET earliest_allowed_date = ?
-                WHERE infant_id = ? AND vaccine_code = ? AND dose_number = ?
-            `, [earliestDateStr, infantId, nextVaccineCode, nextDoseNum]);
-        }
+        await this.recalculateFutureSeriesSchedule(
+            infantId,
+            vaccineCode,
+            doseNumber,
+            actualDateStr,
+            db
+        );
 
         await this.updateScheduleStatuses(infantId, db);
 
@@ -560,6 +673,8 @@ class NIPScheduleService {
             dueDate:             row.recommended_date,
             administeredDate:    row.actual_date,
             status:              legacyStatus,
+            target_age:          this.getTargetAgeLabel(row.vaccine_code),
+            targetAge:           this.getTargetAgeLabel(row.vaccine_code),
             earliestAllowedDate: row.earliest_allowed_date,
             maxAgeDays:          row.max_age_days
         };

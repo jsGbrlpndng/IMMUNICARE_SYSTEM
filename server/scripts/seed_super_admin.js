@@ -1,5 +1,8 @@
 const bcrypt = require('bcrypt');
 const db = require('../db');
+const UserIdentityService = require('../services/UserIdentityService');
+
+const userIdentityService = new UserIdentityService(db);
 
 async function seedSuperAdmin() {
     try {
@@ -18,9 +21,18 @@ async function seedSuperAdmin() {
         }
 
         await db.execute(`
-            INSERT INTO users (id, full_name, role, assigned_barangay, is_active, password)
-            VALUES (?, ?, ?, ?, true, ?)
-        `, [id, 'System Super Admin', 'Super Admin', null, hashedPassword]);
+            DELETE FROM users WHERE id = ?
+        `, [id]);
+
+        await userIdentityService.createUser({
+            id,
+            full_name: 'System Super Admin',
+            role: 'Super Admin',
+            assigned_barangay: null,
+            is_active: true,
+            password: hashedPassword,
+            must_change_password: true
+        });
 
         console.log('Successfully created Super Admin account!');
         console.log('ID: SADMIN-001');

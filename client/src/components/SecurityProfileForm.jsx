@@ -51,9 +51,10 @@ const SecurityProfileForm = ({
     forced = false,
     onSuccess,
     title = 'Security Profile',
-    subtitle = 'Update your account password.'
+    subtitle = 'Update your account password.',
+    compact = false
 }) => {
-    const { logout } = useAuth();
+    const { logout, auditLogout } = useAuth();
     const navigate = useNavigate();
     const [form, setForm] = useState({
         current_password: '',
@@ -120,6 +121,7 @@ const SecurityProfileForm = ({
             setSuccess(payload?.message || 'Password changed successfully. Please sign in again.');
 
             if (onSuccess) onSuccess(payload);
+            auditLogout?.();
             logout();
             navigate('/login', {
                 replace: true,
@@ -134,23 +136,25 @@ const SecurityProfileForm = ({
     };
 
     return (
-        <section className="mx-auto w-full max-w-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-6 py-5">
-                <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center bg-emerald-50 text-emerald-800">
-                        <ShieldCheck className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">
-                            {forced ? 'Required Security Update' : 'Account Security'}
-                        </p>
-                        <h1 className="mt-1 text-2xl font-black text-slate-950">{title}</h1>
-                        <p className="mt-1 text-sm font-medium text-slate-500">{subtitle}</p>
+        <section className={`${compact ? 'w-full border-0 bg-transparent shadow-none' : 'mx-auto w-full max-w-xl border border-slate-200 bg-white shadow-sm'}`}>
+            {!compact && (
+                <div className="border-b border-slate-200 px-6 py-5">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center bg-emerald-50 text-emerald-800">
+                            <ShieldCheck className="h-6 w-6" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">
+                                {forced ? 'Required Security Update' : 'Account Security'}
+                            </p>
+                            <h1 className="mt-1 text-2xl font-black text-slate-950">{title}</h1>
+                            <p className="mt-1 text-sm font-medium text-slate-500">{subtitle}</p>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
-            <form onSubmit={submit} className="space-y-5 px-6 py-6">
+            <form onSubmit={submit} className={`${compact ? 'space-y-5 px-4 py-4' : 'space-y-5 px-6 py-6'}`}>
                 {error && (
                     <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
                         {error}

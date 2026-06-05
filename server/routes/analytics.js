@@ -7,6 +7,7 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const requireRole = require('../middleware/requireRole');
 const localityHelper = require('../utils/localityHelper');
 const InfantService = require('../services/InfantService');
+const { ROLES } = require('../constants/domain');
 const infantService = new InfantService(db);
 const engine = new EnhancedNIPScheduleEngine(db);
 
@@ -71,7 +72,9 @@ router.get('/locality-status', async (req, res) => {
 router.get('/dashboard-stats', async (req, res) => {
     try {
         const engine = new EnhancedNIPScheduleEngine(db);
-        const barangay = req.query.barangay;
+        const barangay = req.user?.role === ROLES.SUPER_ADMIN
+            ? ((req.query.barangay || '').trim() || null)
+            : (req.user?.assigned_barangay || '').trim() || null;
 
         // 1. Core clinical counts from the shared schedule engine
         const stats = await engine.calculateStatistics(barangay);

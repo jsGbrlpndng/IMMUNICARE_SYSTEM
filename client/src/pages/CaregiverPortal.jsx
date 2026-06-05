@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { useState } from 'react';
 import { Baby, Calendar, CheckCircle2, Clock, LockKeyhole, Phone, ShieldCheck } from 'lucide-react';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 const CaregiverPortal = () => {
     const [mobileNumber, setMobileNumber] = useState('');
@@ -195,7 +196,7 @@ const CaregiverPortal = () => {
                             <div key={infant.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                                 <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-900 p-5 text-white md:flex-row md:items-center md:justify-between">
                                     <div>
-                                        <h2 className="text-xl font-black">{infant.first_name} {infant.last_name}</h2>
+                                        <h2 className="text-xl font-black">{formatFullNameFromObject(infant)}</h2>
                                         <p className="text-xs font-bold uppercase tracking-wide text-slate-300">{infant.reference_id} | {infant.barangay}</p>
                                     </div>
                                     <div className="rounded-md bg-white/10 px-3 py-2 text-xs font-black uppercase tracking-wide">

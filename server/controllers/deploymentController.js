@@ -25,7 +25,7 @@ const getAdminDeployments = async (req, res) => {
         const deployments = await deploymentService.syncDeploymentsForBarangay(barangay);
         const staffOptions = await deploymentService.listActiveStaffOptions(barangay);
         const bhwOptions = staffOptions.filter((person) => person.role === ROLES.BHW);
-        const midwifeOptions = staffOptions.filter((person) => person.role === ROLES.MIDWIFE);
+        const midwifeOptions = staffOptions.filter((person) => [ROLES.MIDWIFE, ROLES.NURSE].includes(person.role));
 
         res.json({
             success: true,
@@ -125,7 +125,7 @@ const getBhwActiveDeployments = async (req, res) => {
 
 const getClinicalDeployments = async (req, res) => {
     try {
-        if (![ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
             return res.status(403).json({ success: false, error: 'Only supervisory clinical users can view deployment overlays.' });
         }
 
@@ -146,7 +146,7 @@ const getClinicalDeployments = async (req, res) => {
 
 const getMyActiveDeployments = async (req, res) => {
     try {
-        if (![ROLES.BHW, ROLES.MIDWIFE].includes(req.user.role)) {
+        if (![ROLES.BHW, ROLES.MIDWIFE, ROLES.NURSE].includes(req.user.role)) {
             return res.status(403).json({ success: false, error: 'Only clinical field users can view active deployments.' });
         }
 

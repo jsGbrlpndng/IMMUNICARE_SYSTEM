@@ -5,6 +5,7 @@ const db = require('../db');
 const VaccinationService = require('../services/VaccinationService');
 const NIPAuditLogger = require('../services/NIPAuditLogger');
 const { ROLES } = require('../constants/domain');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 // Protect vaccinations routes - clinical staff only
 router.use(clinicalAuth);
@@ -12,7 +13,7 @@ router.use(clinicalAuth);
 // Initialize services
 const vaccinationService = new VaccinationService(db);
 const auditLogger = new NIPAuditLogger(db);
-const DOSE_MUTATION_ROLES = [ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+const DOSE_MUTATION_ROLES = [ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
 
 const requireDoseMutationRole = (req, res) => {
     if (req.user?.role === ROLES.BHW) {
@@ -28,13 +29,18 @@ const requireDoseMutationRole = (req, res) => {
         res.status(403).json({
             success: false,
             error: 'Forbidden',
-            message: 'Only Midwives, Admins, and Super Admins can record or edit vaccination doses.'
+            message: 'Only Midwives, Nurses, Admins, and Super Admins can record or edit vaccination doses.'
         });
         return false;
     }
 
     return true;
 };
+
+const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || null;
 
 /**
  * POST /api/vaccinations - Record a new vaccination
@@ -71,13 +77,15 @@ router.post('/', async (req, res) => {
 
         const vaccinationData = {
             ...sanitizedBody,
+            vaccinator_id: req.user?.id || sanitizedBody.vaccinator_id,
+            vaccinator_name: sanitizedBody.vaccinator_name,
             recorded_by: req.user?.id || sanitizedBody.vaccinator_id,
             recorded_by_role: req.user?.role || 'BHW',
             validation_status: 'VALIDATED'
         };
 
         const [infantScopeRows] = await db.execute(
-            'SELECT id, barangay FROM infants WHERE id = ?',
+            'SELECT id, first_name, middle_name, last_name, barangay FROM infants WHERE id = ?',
             [sanitizedBody.infant_id]
         );
         if (infantScopeRows.length === 0) {
@@ -110,6 +118,23 @@ router.post('/', async (req, res) => {
             vaccinationData.recorded_by_role,
             ipAddress
         );
+
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'VACCINATION_RECORD',
+            targetEntity: 'vaccinations',
+            targetRecordId: result.vaccination_id,
+            targetName: infantTargetName(infantScopeRows[0]),
+            barangay: infantScopeRows[0].barangay,
+            oldValues: {},
+            newValues: { ...vaccinationData, id: result.vaccination_id },
+            metadata: {
+                infant_id: vaccinationData.infant_id,
+                vaccine_code: vaccinationData.vaccine_code,
+                dose_number: vaccinationData.dose_number
+            },
+            req
+        });
 
         res.status(201).json({
             success: true,
@@ -148,6 +173,14 @@ router.post('/', async (req, res) => {
             });
         }
 
+        if (error.code === 'MISSING_REQUIRED_CLINICAL_FIELDS' || error.message.includes('Missing required clinical fields.')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                details: 'Missing required clinical fields.'
+            });
+        }
+
         if (error.message.includes('Missing required field') || error.message.includes('not found')) {
             return res.status(400).json({
                 success: false,
@@ -183,16 +216,16 @@ router.patch('/:id/validate', async (req, res) => {
         const { id } = req.params;
         const { role, id: userId, full_name, name } = req.user || {};
 
-        if (role !== ROLES.MIDWIFE) {
+        if (![ROLES.MIDWIFE, ROLES.NURSE].includes(role)) {
             return res.status(403).json({
                 success: false,
                 error: 'Forbidden',
-                message: 'Only Midwives can validate vaccination records.'
+                message: 'Only Midwives and Nurses can validate vaccination records.'
             });
         }
 
         const [scopeRows] = await db.execute(
-            `SELECT v.id, i.barangay
+            `SELECT v.id, i.first_name, i.middle_name, i.last_name, i.barangay
              FROM vaccinations v
              JOIN infants i ON i.id = v.infant_id
              WHERE v.id = ?`,
@@ -216,6 +249,7 @@ router.patch('/:id/validate', async (req, res) => {
         }
 
         const validatorName = full_name || name || 'Authorized Staff';
+        const [oldRows] = await db.execute('SELECT * FROM vaccinations WHERE id = ? LIMIT 1', [id]);
         const result = await vaccinationService.validateDose(id, userId, validatorName);
 
         if (result.alreadyValidated) {
@@ -229,6 +263,21 @@ router.patch('/:id/validate', async (req, res) => {
         // Log audit
         const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
         await auditLogger.logValidation(id, userId, role, ipAddress);
+        const [newRows] = await db.execute('SELECT * FROM vaccinations WHERE id = ? LIMIT 1', [id]);
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'VACCINATION_VALIDATE',
+            targetEntity: 'vaccinations',
+            targetRecordId: id,
+            targetName: infantTargetName(scopeRows[0]),
+            barangay: scopeRows[0].barangay,
+            oldValues: oldRows[0] || {},
+            newValues: newRows[0] || {},
+            metadata: {
+                infant_id: oldRows[0]?.infant_id || null
+            },
+            req
+        });
 
         res.json({
             success: true,

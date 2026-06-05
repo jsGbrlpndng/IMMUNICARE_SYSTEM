@@ -1,8 +1,40 @@
 import React from 'react';
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu } from 'lucide-react';
+import { BarChart2, CalendarDays, ClipboardList, Map as MapIcon, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
 import SidebarNav from './SidebarNav';
+
+const clinicalNavigation = [
+    {
+        group: 'Clinical',
+        items: [
+            { name: 'Dashboard', path: '/clinical/dashboard', icon: LayoutDashboard },
+            { name: 'Infant Registry', path: '/clinical/registry', icon: ClipboardList },
+            { name: 'Validation', path: '/clinical/validation', icon: ShieldCheck },
+            { name: 'NIP Schedule', path: '/clinical/schedule', icon: CalendarDays }
+        ]
+    },
+    {
+        group: 'Insights',
+        items: [
+            { name: 'Reports', path: '/clinical/reports', icon: BarChart2 },
+            { name: 'Heatmap', path: '/clinical/map', icon: MapIcon },
+            { name: 'Follow-Ups', path: '/clinical/follow-ups', icon: ClipboardList }
+        ]
+    },
+    {
+        group: 'Messaging',
+        items: [
+            { name: 'SMS', path: '/clinical/sms', icon: MessageSquare }
+        ]
+    },
+    {
+        group: 'Security',
+        items: [
+            { name: 'Account Settings', path: '/clinical/profile', icon: Settings }
+        ]
+    }
+];
 
 /**
  * StaffLayout - Midwife clinical portal shell.
@@ -44,6 +76,9 @@ const StaffLayout = ({ children }) => {
                 setIsCollapsed={setIsCollapsed}
                 isMobileOpen={isMobileOpen}
                 setIsMobileOpen={setIsMobileOpen}
+                navItems={clinicalNavigation}
+                accountSettingsPath="/clinical/profile"
+                logoutRedirectPath="/portal"
             />
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>

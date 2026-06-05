@@ -8,10 +8,10 @@ const { ROLES } = require('../constants/domain');
 router.use(clinicalAuth);
 
 const reportAuth = (req, res, next) => {
-    if (![ROLES.SUPER_ADMIN, ROLES.MIDWIFE].includes(req.user.role)) {
+    if (![ROLES.SUPER_ADMIN, ROLES.MIDWIFE, ROLES.NURSE].includes(req.user.role)) {
         return res.status(403).json({
             success: false,
-            error: 'Forbidden: report access is limited to Super Admin and Midwife roles.'
+            error: 'Forbidden: report access is limited to Super Admin, Midwife, and Nurse roles.'
         });
     }
     next();
@@ -27,8 +27,22 @@ const m1ReportAuth = (req, res, next) => {
     next();
 };
 
+const parseMonthYear = (req, res) => {
+    const month = req.query.month ? parseInt(req.query.month, 10) : undefined;
+    const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
+    if (month !== undefined && (Number.isNaN(month) || month < 1 || month > 12)) {
+        res.status(400).json({ error: 'Invalid month. Must be 1-12.' });
+        return null;
+    }
+    if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
+        res.status(400).json({ error: 'Invalid year.' });
+        return null;
+    }
+    return { month, year };
+};
+
 const exportReportAuth = (req, res, next) => {
-    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MIDWIFE].includes(req.user.role)) {
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MIDWIFE, ROLES.NURSE].includes(req.user.role)) {
         return res.status(403).json({
             success: false,
             error: 'Forbidden: report export access is limited to authorized reporting roles.'
@@ -268,7 +282,7 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
             generatedAt: new Date().toISOString(),
             generatedBy: {
                 id: req.user.id,
-                name: `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || req.user.username || req.user.email || 'Authenticated User',
+                name: `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || req.user.full_name || req.user.email || 'Authenticated User',
                 role: req.user.role
             },
             metrics: {
@@ -492,6 +506,31 @@ router.get('/nip-macro', m1ReportAuth, async (req, res) => {
     }
 });
 
+// GET /api/reports/nip-monthly-master
+// Super Admin master monthly accomplishment table for all barangays or a selected barangay.
+router.get('/nip-monthly-master', m1ReportAuth, async (req, res) => {
+    try {
+        if (req.user.role !== ROLES.SUPER_ADMIN) {
+            return res.status(403).json({ error: 'Forbidden: master monthly reports require Super Admin access.' });
+        }
+        const parsed = parseMonthYear(req, res);
+        if (!parsed) return;
+
+        const service = new M1ReportService(db);
+        const report = await service.getNipMacroReportForUser({
+            month: parsed.month,
+            year: parsed.year,
+            requestedBarangay: req.query.barangay || undefined,
+            user: req.user
+        });
+
+        res.status(200).json(report);
+    } catch (error) {
+        console.error('[GET /api/reports/nip-monthly-master]', error);
+        res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal Server Error generating master monthly report' });
+    }
+});
+
 // GET /api/reports/nip-micro
 // DOH detailed monthly barangay sheet. Barangay Admin scope is enforced by service.
 router.get('/nip-micro', m1ReportAuth, async (req, res) => {
@@ -520,6 +559,53 @@ router.get('/nip-micro', m1ReportAuth, async (req, res) => {
     }
 });
 
+// GET /api/reports/nip-monthly-barangay
+// Barangay Admin monthly report. The service ignores caller-supplied barangay and enforces assigned scope.
+router.get('/nip-monthly-barangay', m1ReportAuth, async (req, res) => {
+    try {
+        if (req.user.role !== ROLES.ADMIN) {
+            return res.status(403).json({ error: 'Forbidden: barangay monthly reports require Barangay Admin access.' });
+        }
+        const parsed = parseMonthYear(req, res);
+        if (!parsed) return;
+
+        const service = new M1ReportService(db);
+        const report = await service.getNipMicroReportForUser({
+            month: parsed.month,
+            year: parsed.year,
+            requestedBarangay: undefined,
+            user: req.user
+        });
+
+        res.status(200).json(report);
+    } catch (error) {
+        console.error('[GET /api/reports/nip-monthly-barangay]', error);
+        res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal Server Error generating barangay monthly report' });
+    }
+});
+
+// GET /api/reports/barangay-dss
+// Barangay decision-support metrics for defaulters, drop-out warning, and upcoming critical doses.
+router.get('/barangay-dss', m1ReportAuth, async (req, res) => {
+    try {
+        const parsed = parseMonthYear(req, res);
+        if (!parsed) return;
+
+        const service = new M1ReportService(db);
+        const report = await service.getBarangayDssMetricsForUser({
+            month: parsed.month,
+            year: parsed.year,
+            requestedBarangay: req.query.barangay || undefined,
+            user: req.user
+        });
+
+        res.status(200).json(report);
+    } catch (error) {
+        console.error('[GET /api/reports/barangay-dss]', error);
+        res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal Server Error generating barangay DSS metrics' });
+    }
+});
+
 // GET /api/reports/monitoring-chart
 // DOH monitoring chart with SQL window-function cumulative Penta tracking.
 router.get('/monitoring-chart', m1ReportAuth, async (req, res) => {
@@ -540,6 +626,29 @@ router.get('/monitoring-chart', m1ReportAuth, async (req, res) => {
     } catch (error) {
         console.error('[GET /api/reports/monitoring-chart]', error);
         res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal Server Error generating monitoring chart' });
+    }
+});
+
+// GET /api/reports/immunization-monitoring
+// Role-scoped alias for the PENTA, MCV, and PENTA-to-MCV monitoring datasets.
+router.get('/immunization-monitoring', m1ReportAuth, async (req, res) => {
+    try {
+        const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
+        if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
+            return res.status(400).json({ error: 'Invalid year.' });
+        }
+
+        const service = new M1ReportService(db);
+        const report = await service.getMonitoringChartForUser({
+            year,
+            requestedBarangay: req.query.barangay || undefined,
+            user: req.user
+        });
+
+        res.status(200).json(report);
+    } catch (error) {
+        console.error('[GET /api/reports/immunization-monitoring]', error);
+        res.status(error.status || 500).json({ error: error.status ? error.message : 'Internal Server Error generating immunization monitoring report' });
     }
 });
 

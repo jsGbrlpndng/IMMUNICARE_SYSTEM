@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Baby, AlertTriangle, Clock, Calendar, Search, Filter, ChevronRight, CheckCircle, ExternalLink } from 'lucide-react';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 const InfantQueueComponent = ({ infants, loading, onInfantSelect, onRefresh }) => {
     const navigate = useNavigate();
@@ -16,7 +17,7 @@ const InfantQueueComponent = ({ infants, loading, onInfantSelect, onRefresh }) =
     const filteredInfants = infants.filter(infant => {
         // Search filter
         const matchesSearch = !searchTerm ||
-            `${infant.first_name} ${infant.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            formatFullNameFromObject(infant).toLowerCase().includes(searchTerm.toLowerCase()) ||
             infant.reference_id.toLowerCase().includes(searchTerm.toLowerCase());
 
         // Urgency filter
@@ -162,7 +163,7 @@ const InfantQueueComponent = ({ infants, loading, onInfantSelect, onRefresh }) =
                                                 }}
                                                 className="font-semibold text-slate-900 text-lg hover:text-[#2E7D32] hover:underline cursor-pointer flex items-center gap-1.5 group/name"
                                             >
-                                                {infant.first_name} {infant.last_name}
+                                                {formatFullNameFromObject(infant)}
                                                 <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover/name:opacity-100 transition-opacity" />
                                             </h3>
                                             {getUrgencyBadge(infant.urgency, infant.days_overdue)}

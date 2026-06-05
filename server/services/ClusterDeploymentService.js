@@ -1,4 +1,5 @@
 const InfantService = require('./InfantService');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 const FIXED_RADIUS_METERS = 300;
 const FIXED_MIN_INFANTS = 3;
@@ -388,11 +389,11 @@ class ClusterDeploymentService {
             `
             SELECT id, full_name, role, assigned_barangay
             FROM users
-            WHERE role IN ('BHW', 'Midwife')
+            WHERE role IN ('BHW', 'Midwife', 'Nurse')
               AND is_active = TRUE
               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
             ORDER BY
-                CASE role WHEN 'BHW' THEN 0 WHEN 'Midwife' THEN 1 ELSE 2 END,
+                CASE role WHEN 'BHW' THEN 0 WHEN 'Midwife' THEN 1 WHEN 'Nurse' THEN 2 ELSE 3 END,
                 full_name ASC,
                 id ASC
             `,
@@ -437,7 +438,7 @@ class ClusterDeploymentService {
             SELECT id, full_name, role, assigned_barangay
             FROM users
             WHERE id = ?
-              AND role IN ('BHW', 'Midwife')
+              AND role IN ('BHW', 'Midwife', 'Nurse')
               AND is_active = TRUE
               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
             LIMIT 1
@@ -473,6 +474,21 @@ class ClusterDeploymentService {
             assigned_user_role: staffRows[0].role,
             assigned_bhw_name: staffRows[0].full_name
         };
+
+        await safeRecordAuditEvent({
+            actor: adminUser,
+            action: 'CLUSTER_ASSIGNMENT_ASSIGNED',
+            targetEntity: 'cluster_assignments',
+            targetRecordId: assignmentId,
+            targetName: assignment.cluster_label || assignmentRows[0].cluster_label || 'Cluster Deployment',
+            barangay: assignment.barangay || barangay,
+            oldValues: assignmentRows[0],
+            newValues: assignment,
+            metadata: {
+                assigned_staff_name: staffRows[0].full_name,
+                assigned_staff_role: staffRows[0].role
+            }
+        });
 
         return {
             assignment,

@@ -1,5 +1,8 @@
-const db = require('./db');
+const db = require('../../db');
 const bcrypt = require('bcrypt');
+const UserIdentityService = require('../../services/UserIdentityService');
+
+const userIdentityService = new UserIdentityService(db);
 
 async function resetSystem() {
     try {
@@ -40,10 +43,15 @@ async function resetSystem() {
         const rawPassword = 'admin123';
         const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-        await db.execute(`
-            INSERT INTO users (id, full_name, role, password, is_active, assigned_barangay)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [adminId, 'System Administrator', 'Admin', hashedPassword, 1, 'All']);
+        await userIdentityService.createUser({
+            id: adminId,
+            full_name: 'System Administrator',
+            role: 'Admin',
+            assigned_barangay: 'All',
+            password: hashedPassword,
+            is_active: true,
+            must_change_password: true
+        });
 
         console.log(`  ✓ Created ${adminId} with password '${rawPassword}'`);
 

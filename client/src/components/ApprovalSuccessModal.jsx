@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 /**
  * ApprovalSuccessModal - Success feedback modal after infant registration approval
@@ -37,7 +38,7 @@ function ApprovalSuccessModal({ infant, onClose }) {
         {/* Infant Details */}
         <p className="text-slate-600 text-center mb-6">
           <strong className="text-slate-900">
-            {infant.name || `${infant.first_name} ${infant.last_name}`}
+            {infant.name || formatFullNameFromObject(infant)}
           </strong>
           {infant.reference_id && (
             <span className="block text-sm text-slate-500 mt-1">

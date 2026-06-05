@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { ROLES } = require('../constants/domain');
 const { performAuditLog } = require('../utils/auditLogger');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 const OPEN_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'COMPLETED_PENDING_REVIEW'];
 const RESOLVED_STATUSES = ['CONFIRMED', 'CANCELLED'];
@@ -25,7 +26,7 @@ class FollowUpTaskService {
 
     async _assertInfantScope(infantId, barangay) {
         const [rows] = await this.db.execute(
-            'SELECT id, first_name, last_name, reference_id, barangay, caregiver_phone FROM infants WHERE id = ?',
+            'SELECT id, first_name, middle_name, last_name, reference_id, barangay, caregiver_phone FROM infants WHERE id = ?',
             [infantId]
         );
 
@@ -42,6 +43,22 @@ class FollowUpTaskService {
         }
 
         return rows[0];
+    }
+
+    _infantTargetName(infant = {}) {
+        return [infant.first_name, infant.middle_name, infant.last_name]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join(' ') || null;
+    }
+
+    async _getTaskTargetName(task) {
+        if (!task?.infant_id) return null;
+        const [rows] = await this.db.execute(
+            'SELECT first_name, middle_name, last_name FROM infants WHERE id = ? LIMIT 1',
+            [task.infant_id]
+        );
+        return this._infantTargetName(rows[0]);
     }
 
     async _getBhwAssignment(barangay) {
@@ -246,9 +263,25 @@ class FollowUpTaskService {
 
         await performAuditLog(user.id, 'FOLLOW_UP_CREATE', 'follow_up_tasks', taskId, {
             infant_id: infantId,
+            target_name: this._infantTargetName(infant),
             barangay: scopedBarangay,
             assigned_to_bhw_id: bhwId,
             target_completion_date: targetCompletionDate
+        });
+        const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
+        await safeRecordAuditEvent({
+            actor: user,
+            action: 'FOLLOW_UP_ASSIGN_TASK',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: taskId,
+            targetName: this._infantTargetName(infant),
+            barangay: scopedBarangay,
+            oldValues: {},
+            newValues: newRows[0] || {
+                infant_id: infantId,
+                assigned_to_bhw_id: bhwId,
+                target_completion_date: targetCompletionDate
+            }
         });
 
         return { id: taskId };
@@ -315,7 +348,21 @@ class FollowUpTaskService {
 
         await performAuditLog(user.id, 'FOLLOW_UP_AUTO_GENERATE', 'follow_up_tasks', null, {
             barangay: scopedBarangay,
+            target_name: `${created.length} Defaulter Follow-up Task${created.length === 1 ? '' : 's'}`,
             created: created.length
+        });
+        await safeRecordAuditEvent({
+            actor: user,
+            action: 'FOLLOW_UP_AUTO_ASSIGN_TASKS',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: null,
+            targetName: `${created.length} Defaulter Follow-up Task${created.length === 1 ? '' : 's'}`,
+            barangay: scopedBarangay,
+            oldValues: {},
+            newValues: {
+                created_count: created.length,
+                created
+            }
         });
 
         return { created, count: created.length };
@@ -333,6 +380,7 @@ class FollowUpTaskService {
         }
 
         const task = rows[0];
+        const targetName = await this._getTaskTargetName(task);
         if (user.role === ROLES.BHW && task.assigned_to_bhw_id !== user.id) {
             const err = new Error('Forbidden: task is outside your assignment');
             err.status = 403;
@@ -363,7 +411,20 @@ class FollowUpTaskService {
         );
 
         await performAuditLog(user.id, 'FOLLOW_UP_ACKNOWLEDGE', 'follow_up_tasks', taskId, {
+            target_name: targetName,
             barangay: task.barangay
+        });
+        const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
+        await safeRecordAuditEvent({
+            actor: user,
+            action: 'FOLLOW_UP_STATUS_UPDATE',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: taskId,
+            targetName,
+            barangay: task.barangay,
+            oldValues: task,
+            newValues: newRows[0] || { ...task, status: 'ACKNOWLEDGED' },
+            metadata: { transition: 'ACKNOWLEDGED' }
         });
 
         return { id: taskId, status: 'ACKNOWLEDGED' };
@@ -381,6 +442,7 @@ class FollowUpTaskService {
         }
 
         const task = rows[0];
+        const targetName = await this._getTaskTargetName(task);
         if (user.role === ROLES.BHW && task.assigned_to_bhw_id !== user.id) {
             const err = new Error('Forbidden: task is outside your assignment');
             err.status = 403;
@@ -418,15 +480,33 @@ class FollowUpTaskService {
 
         await performAuditLog(user.id, 'FOLLOW_UP_COMPLETE', 'follow_up_tasks', taskId, {
             outcome: payload.outcome || 'CONTACTED_RESCHEDULED',
+            target_name: targetName,
             barangay: task.barangay
+        });
+        const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
+        await safeRecordAuditEvent({
+            actor: user,
+            action: 'FOLLOW_UP_STATUS_UPDATE',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: taskId,
+            targetName,
+            barangay: task.barangay,
+            oldValues: task,
+            newValues: newRows[0] || {
+                ...task,
+                status: 'COMPLETED_PENDING_REVIEW',
+                outcome: payload.outcome || 'CONTACTED_RESCHEDULED',
+                outcome_notes: payload.outcome_notes || null
+            },
+            metadata: { transition: 'COMPLETED_PENDING_REVIEW' }
         });
 
         return { id: taskId, status: 'COMPLETED_PENDING_REVIEW' };
     }
 
     async confirmTask(taskId, user, payload = {}) {
-        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(user.role)) {
-            const err = new Error('Forbidden: only Midwife or Super Admin can confirm follow-ups');
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.SUPER_ADMIN].includes(user.role)) {
+            const err = new Error('Forbidden: only Midwife, Nurse, or Super Admin can confirm follow-ups');
             err.status = 403;
             throw err;
         }
@@ -442,6 +522,7 @@ class FollowUpTaskService {
         }
 
         const task = rows[0];
+        const targetName = await this._getTaskTargetName(task);
         if (user.role !== ROLES.SUPER_ADMIN && task.barangay !== user.assigned_barangay) {
             const err = new Error('Forbidden: task is outside your barangay scope');
             err.status = 403;
@@ -472,8 +553,26 @@ class FollowUpTaskService {
         );
 
         await performAuditLog(user.id, 'FOLLOW_UP_CONFIRM', 'follow_up_tasks', taskId, {
+            target_name: targetName,
             barangay: task.barangay,
             review_notes: payload.review_notes || null
+        });
+        const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
+        await safeRecordAuditEvent({
+            actor: user,
+            action: 'FOLLOW_UP_STATUS_UPDATE',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: taskId,
+            targetName,
+            barangay: task.barangay,
+            oldValues: task,
+            newValues: newRows[0] || {
+                ...task,
+                status: 'CONFIRMED',
+                reviewed_by: user.id,
+                outcome_notes: payload.review_notes || task.outcome_notes
+            },
+            metadata: { transition: 'CONFIRMED' }
         });
 
         return { id: taskId, status: 'CONFIRMED' };

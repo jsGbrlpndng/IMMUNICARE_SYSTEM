@@ -82,6 +82,7 @@ const BarangayViewportController = ({ assignedBarangay, hasPinnedLocation }) => 
 const LocationMapEvents = ({ latitude, longitude, onMapClick, onMarkerDragEnd }) => {
     useMapEvents({
         click(event) {
+            if (typeof onMapClick !== 'function') return;
             const lat = toDecimalFloat(event.latlng.lat);
             const lng = toDecimalFloat(event.latlng.lng);
             if (lat !== null && lng !== null) {
@@ -98,6 +99,7 @@ const LocationMapEvents = ({ latitude, longitude, onMapClick, onMarkerDragEnd })
             draggable
             eventHandlers={{
                 dragend: (event) => {
+                    if (typeof onMarkerDragEnd !== 'function') return;
                     const position = event.target.getLatLng();
                     const lat = toDecimalFloat(position.lat);
                     const lng = toDecimalFloat(position.lng);
@@ -127,7 +129,8 @@ const LocationPicker = ({
     onMarkerDragEnd,
     onAddressInputChange,
     showSuggestions = false,
-    assignedBarangay = ''
+    assignedBarangay = '',
+    isReadOnly = false
 }) => {
     const safeMapCenter = getSafeCenter(mapCenter);
     const hasPinnedLocation = hasValidCoordinate(formData.latitude, formData.longitude);
@@ -149,6 +152,8 @@ const LocationPicker = ({
                             value={formData.exact_address || ''}
                             onChange={onAddressInputChange || handleChange}
                             onBlur={handleBlur}
+                            disabled={isReadOnly}
+                            readOnly={isReadOnly}
                             required
                             autoComplete="off"
                             autoCorrect="off"
@@ -162,7 +167,7 @@ const LocationPicker = ({
                         {isSearching && <Loader2 className="w-4 h-4 absolute right-20 animate-spin text-[#065f46]" />}
                         <button
                             type="submit"
-                            disabled={isSearching || (formData.exact_address || '').trim().length < 3}
+                            disabled={isReadOnly || isSearching || (formData.exact_address || '').trim().length < 3}
                             className="absolute right-2 rounded-md bg-[#065f46] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                             Search
@@ -176,9 +181,12 @@ const LocationPicker = ({
                             <button
                                 key={`${res.place_id || res.display_name}-${res.lat}-${res.lon}`}
                                 type="button"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => handleSelectSuggestion(res)}
+                                onMouseDown={(event) => {
+                                    if (!isReadOnly) event.preventDefault();
+                                }}
+                                onClick={() => !isReadOnly && handleSelectSuggestion(res)}
                                 className="w-full text-left p-3 text-sm hover:bg-emerald-50 border-b last:border-0 transition-colors"
+                                disabled={isReadOnly}
                             >
                                 <span className="font-semibold block text-slate-800 leading-snug">{res.display_name}</span>
                                 {res.precision === 'barangay' && (
@@ -215,7 +223,7 @@ const LocationPicker = ({
                 )}
             </div>
 
-            <InputWrapper label="Assigned Barangay (Spatial Lock Active)">
+                <InputWrapper label="Assigned Barangay (Spatial Lock Active)">
                 <div className="relative flex items-center">
                     <MapPin className="w-4 h-4 absolute left-3 text-emerald-600" />
                     <input
@@ -227,7 +235,10 @@ const LocationPicker = ({
                 </div>
             </InputWrapper>
 
-            <div className="h-[320px] rounded-md border border-slate-300 overflow-hidden shadow-inner relative z-10 mt-2">
+            <div className="relative h-[320px] rounded-md border border-slate-300 overflow-hidden shadow-inner z-10 mt-2">
+                {isReadOnly && (
+                    <div className="absolute inset-0 z-[1100] bg-transparent cursor-not-allowed" aria-hidden="true" />
+                )}
                 <MapContainer
                     center={safeMapCenter}
                     zoom={hasPinnedLocation ? 17 : 14}
@@ -236,7 +247,7 @@ const LocationPicker = ({
                     maxZoom={19}
                     minZoom={13}
                     style={{ height: '100%', width: '100%' }}
-                    scrollWheelZoom={false}
+                    scrollWheelZoom={!isReadOnly}
                 >
                     <TileLayer
                         attribution="&copy; OpenStreetMap contributors"
@@ -245,8 +256,8 @@ const LocationPicker = ({
                     <LocationMapEvents
                         latitude={formData.latitude}
                         longitude={formData.longitude}
-                        onMapClick={onMapClick}
-                        onMarkerDragEnd={onMarkerDragEnd}
+                        onMapClick={isReadOnly ? undefined : onMapClick}
+                        onMarkerDragEnd={isReadOnly ? undefined : onMarkerDragEnd}
                     />
                     <MapController center={safeMapCenter} hasPinnedLocation={hasPinnedLocation} />
                     <BarangayViewportController assignedBarangay={assignedBarangay || formData.barangay} hasPinnedLocation={hasPinnedLocation} />

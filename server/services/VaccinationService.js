@@ -2,9 +2,15 @@ const { v4: uuidv4 } = require('uuid');
 const EnhancedNIPScheduleEngine = require('./EnhancedNIPScheduleEngine');
 const NIPScheduleService = require('./NIPScheduleService');
 const { ROLES, REGISTRATION_STATUS } = require('../constants/domain');
+const {
+    buildVaccinationReportFields,
+    isWithin24Hours,
+    normalizeReportClassification
+} = require('../utils/vaccinationReporting');
 
 const VACCINATION_ERRORS = {
     MISSING_FIELD: (field) => `Missing required field: ${field}`,
+    MISSING_REQUIRED_CLINICAL_FIELDS: 'Missing required clinical fields.',
     INFANT_NOT_FOUND: 'Infant not found',
     FUTURE_DATE: 'Cannot record future vaccination dates',
     BEFORE_DOB: 'Vaccination date cannot be before infant date of birth',
@@ -69,7 +75,6 @@ const getGraceAdjustedIntervalDays = (minIntervalDays) => {
 };
 
 const FIC_REQUIRED_CODES = ['BCG', 'HEPB', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'MCV-1'];
-const CIC_REQUIRED_NON_BIRTH_CODES = ['BCG', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'MCV-1'];
 const CATCH_UP_MAX_MONTHS = 60;
 
 const isRoutineCatchUpVaccine = (vaccineCode) => {
@@ -193,17 +198,30 @@ class VaccinationService {
             const vaccinationId = uuidv4();
             const now = new Date();
             const scheduleEntry = validation.scheduleEntry;
-            const administeredDate = vaccinationData.administered_date || now;
+            const infant = validation.infant || {};
+            const administeredDate = vaccinationData.administered_date;
             const scheduleId = vaccinationData.schedule_id || scheduleEntry?.id || null;
+            const reportFields = buildVaccinationReportFields({
+                vaccine_code: vaccinationData.vaccine_code,
+                vaccine_name: vaccinationData.vaccine_name,
+                dose_number: vaccinationData.dose_number,
+                administered_date: administeredDate,
+                dob: infant.dob,
+                barangay: infant.barangay,
+                report_classification: vaccinationData.report_classification
+            });
 
             const insertQuery = `
                 INSERT INTO vaccinations (
                     id, infant_id, schedule_id, vaccine_name, vaccine_code, 
                     dose_number, batch_number, brand, site_of_injection, 
                     vaccinator_id, vaccinator_name, administered_date, 
-                    notes, validation_status, is_early_override, recorded_by, recorded_by_role, 
-                    recorded_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notes, validation_status, is_early_override,
+                    report_antigen_code, report_dose_code, report_age_bucket,
+                    report_classification, report_period_month, report_period_year,
+                    barangay_at_administration,
+                    recorded_by, recorded_by_role, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             await connection.execute(insertQuery, [
@@ -222,6 +240,13 @@ class VaccinationService {
                 vaccinationData.notes || null,
                 vaccinationData.validation_status || 'PENDING_VALIDATION',
                 false,
+                reportFields.report_antigen_code,
+                reportFields.report_dose_code,
+                reportFields.report_age_bucket,
+                reportFields.report_classification,
+                reportFields.report_period_month,
+                reportFields.report_period_year,
+                reportFields.barangay_at_administration,
                 vaccinationData.recorded_by || vaccinationData.vaccinator_id,
                 vaccinationData.recorded_by_role || 'BHW',
                 now
@@ -313,6 +338,20 @@ class VaccinationService {
                 return { success: true, message: 'Dose already validated', alreadyValidated: true };
             }
 
+            const [infantRows] = await connection.execute(
+                'SELECT dob, barangay FROM infants WHERE id = ?',
+                [vaccination.infant_id]
+            );
+            const reportFields = buildVaccinationReportFields({
+                vaccine_code: vaccination.vaccine_code,
+                vaccine_name: vaccination.vaccine_name,
+                dose_number: vaccination.dose_number,
+                administered_date: vaccination.administered_date,
+                dob: infantRows[0]?.dob,
+                barangay: infantRows[0]?.barangay,
+                report_classification: vaccination.report_classification
+            });
+
             // 2. Update vaccination record
             const now = new Date();
             await connection.execute(`
@@ -320,9 +359,26 @@ class VaccinationService {
                 SET validation_status = 'VALIDATED',
                     validated_by_id = ?,
                     validated_by_name = ?,
-                    validated_at = ?
+                    validated_at = ?,
+                    report_antigen_code = COALESCE(report_antigen_code, ?),
+                    report_dose_code = COALESCE(report_dose_code, ?),
+                    report_age_bucket = COALESCE(report_age_bucket, ?),
+                    report_period_month = COALESCE(report_period_month, ?),
+                    report_period_year = COALESCE(report_period_year, ?),
+                    barangay_at_administration = COALESCE(barangay_at_administration, ?)
                 WHERE id = ?
-            `, [validatorId, validatorName, now, vaccinationId]);
+            `, [
+                validatorId,
+                validatorName,
+                now,
+                reportFields.report_antigen_code,
+                reportFields.report_dose_code,
+                reportFields.report_age_bucket,
+                reportFields.report_period_month,
+                reportFields.report_period_year,
+                reportFields.barangay_at_administration,
+                vaccinationId
+            ]);
 
             // 3. Update infant schedule
             await this.nipScheduleService.validateDose(
@@ -354,27 +410,41 @@ class VaccinationService {
         const db = connection || this.db;
 
         // Check required fields
-        const requiredFields = ['infant_id', 'vaccine_code', 'dose_number', 'batch_number', 'site_of_injection', 'vaccinator_id'];
-        for (const field of requiredFields) {
-            if (!vaccinationData[field]) {
-                console.error(`[VALIDATION ERROR] Missing field: ${field}`, {
-                    field,
-                    value: vaccinationData[field],
-                    allData: vaccinationData
-                });
-                return {
-                    valid: false,
-                    error: VACCINATION_ERRORS.MISSING_FIELD(field),
-                    field: field
-                };
-            }
+        const requiredFields = [
+            'infant_id',
+            'vaccine_code',
+            'dose_number',
+            'batch_number',
+            'site_of_injection',
+            'vaccinator_id',
+            'vaccinator_name',
+            'administered_date'
+        ];
+        const missingClinicalFields = requiredFields.filter((field) => {
+            const value = vaccinationData[field];
+            if (value === undefined || value === null) return true;
+            if (typeof value === 'string' && value.trim() === '') return true;
+            return false;
+        });
+
+        if (missingClinicalFields.length > 0) {
+            console.error('[VALIDATION ERROR] Missing required clinical fields', {
+                missingClinicalFields,
+                allData: vaccinationData
+            });
+            return {
+                valid: false,
+                error: VACCINATION_ERRORS.MISSING_REQUIRED_CLINICAL_FIELDS,
+                field: missingClinicalFields[0],
+                code: 'MISSING_REQUIRED_CLINICAL_FIELDS'
+            };
         }
 
         await this.nipScheduleService.updateScheduleStatuses(vaccinationData.infant_id, db);
 
         // Check if infant exists and has been approved
         const [infants] = await db.execute(
-            'SELECT id, dob, registration_status FROM infants WHERE id = ?',
+            'SELECT id, dob, registration_status, barangay FROM infants WHERE id = ?',
             [vaccinationData.infant_id]
         );
 
@@ -387,6 +457,15 @@ class VaccinationService {
         }
 
         const infant = infants[0];
+        const normalizedClassification = normalizeReportClassification(vaccinationData.report_classification);
+        if (vaccinationData.report_classification && !normalizedClassification) {
+            return {
+                valid: false,
+                error: 'Invalid report_classification. Expected ROUTINE, ORI, or CATCH_UP.',
+                field: 'report_classification',
+                code: 'INVALID_REPORT_CLASSIFICATION'
+            };
+        }
 
         // Ensure infant has been promoted from an approved registration.
         console.log('Attempting Dose - Infant ID:', vaccinationData.infant_id, '| DB Status:', infant.registration_status);
@@ -562,7 +641,7 @@ class VaccinationService {
             return clinicalViolation(`${vaccinationData.vaccine_code} Dose ${vaccinationData.dose_number} cannot be administered before its recommended date ${dueDateString}.`, 'RECOMMENDED_DATE_NOT_MET');
         }
 
-        return { valid: true, scheduleEntry };
+        return { valid: true, scheduleEntry, infant };
     }
 
     /**
@@ -642,6 +721,7 @@ class VaccinationService {
         );
 
         const completed = new Map();
+        let hepbBirthDoseValid = false;
         for (const row of rows) {
             const canonical = canonicalPrimaryCode(row.vaccine_code, row.vaccine_name, row.dose_number);
             if (!canonical || !FIC_REQUIRED_CODES.includes(canonical)) continue;
@@ -649,20 +729,25 @@ class VaccinationService {
             const administeredDate = toDateOnlyString(row.administered_date);
             const existing = completed.get(canonical);
             if (!existing || administeredDate < existing) completed.set(canonical, administeredDate);
+            if (canonical === 'HEPB' && isWithin24Hours(dobString, row.administered_date)) {
+                hepbBirthDoseValid = true;
+            }
         }
 
         let immunizationStatus = 'INCOMPLETE';
         const hasFullFicSeries = FIC_REQUIRED_CODES.every(code => completed.has(code));
-        const hasCompleteNonExpiredRoutineSeries = CIC_REQUIRED_NON_BIRTH_CODES.every(code => completed.has(code));
-
-        if (hasFullFicSeries) {
-            const completionDate = FIC_REQUIRED_CODES
+        const hasCompletedPrimarySeriesWithoutHepB = FIC_REQUIRED_CODES
+            .filter(code => code !== 'HEPB')
+            .every(code => completed.has(code));
+        if (hasFullFicSeries || hasCompletedPrimarySeriesWithoutHepB) {
+            const completionCodes = hasFullFicSeries
+                ? FIC_REQUIRED_CODES
+                : FIC_REQUIRED_CODES.filter(code => code !== 'HEPB');
+            const completionDate = completionCodes
                 .map(code => completed.get(code))
                 .sort()
                 .at(-1);
-            immunizationStatus = completionDate < firstBirthday ? 'FIC' : 'CIC';
-        } else if (hasCompleteNonExpiredRoutineSeries && !completed.has('HEPB')) {
-            immunizationStatus = 'CIC';
+            immunizationStatus = hasFullFicSeries && completionDate < firstBirthday && hepbBirthDoseValid ? 'FIC' : 'CIC';
         }
 
         await db.execute(

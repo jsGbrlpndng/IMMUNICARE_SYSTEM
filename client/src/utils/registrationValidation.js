@@ -2,7 +2,7 @@
  * Validation rules for Infant Registration Form
  */
 
-export const validateField = (name, value) => {
+export const validateField = (name, value, formData = {}) => {
     const nameRegex = /[^a-zA-Z\s\-ñÑ.']/;
     const phoneRegex = /^(09|\+639)\d{9}$/;
     const today = new Date();
@@ -13,6 +13,11 @@ export const validateField = (name, value) => {
 
     switch (name) {
         case 'first_name':
+        case 'middle_name':
+            if (formData?.has_no_middle_name === true) return null;
+            if (!value) return "Required";
+            if (nameRegex.test(value)) return "Invalid characters";
+            return null;
         case 'last_name':
             if (!value) return "Required";
             if (nameRegex.test(value)) return "Invalid characters";
@@ -76,7 +81,7 @@ export const validateField = (name, value) => {
 
 export const isStepValid = (step, formData, errors) => {
     const fieldsByStep = {
-        1: ['first_name', 'last_name', 'dob', 'sex', 'barangay', 'locality', 'exact_address', 'landmark'],
+        1: ['first_name', 'middle_name', 'last_name', 'dob', 'sex', 'barangay', 'locality', 'exact_address', 'landmark'],
         2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone'],
         3: ['birth_weight', 'length_at_birth_cm', 'birth_status', 'birth_setting', 'initiated_breastfeeding'],
         4: ['bcg_status', 'hepatitis_b_status'] 
@@ -102,6 +107,7 @@ export const isStepValid = (step, formData, errors) => {
         const basicFields = ['first_name', 'last_name', 'dob', 'sex'];
         const hasMissingBasic = basicFields.some(field => !formData[field] || errors[field]);
         if (hasMissingBasic) return false;
+        if (formData.has_no_middle_name !== true && (!formData.middle_name || errors.middle_name)) return false;
         
         return true;
     }

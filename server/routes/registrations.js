@@ -27,7 +27,13 @@ router.post('/', async (req, res) => {
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('[REGISTRATION API] Error:', err);
-        res.status(err.status || 500).json({ success: false, error: err.message });
+        res.status(err.status || 500).json({
+            success: false,
+            error_code: err.error_code || null,
+            error: err.message,
+            message: err.message,
+            matches: err.matches || []
+        });
     }
 });
 
@@ -52,12 +58,12 @@ router.get('/my', async (req, res) => {
  */
 router.get('/stats', async (req, res) => {
     try {
-        if (req.user.role !== ROLES.BHW) {
-            return res.status(403).json({ success: false, error: 'Only BHWs can view registration stats.' });
+        if (![ROLES.BHW, ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only clinical staff can view registration stats.' });
         }
 
-        const stats = await registrationService.getBhwStats(req.user.id);
-        res.json({ success: true, stats });
+        const result = await registrationService.getRegistrationStateStats(req.user);
+        res.json({ success: true, ...result });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -68,8 +74,8 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/queue', async (req, res) => {
     try {
-        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
-            return res.status(403).json({ success: false, error: 'Only Midwives and Super Admins can view the validation queue.' });
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only Midwives, Nurses, and Super Admins can view the validation queue.' });
         }
 
         const queue = await registrationService.getValidationQueue(req.query.barangay || req.user.assigned_barangay, req.user);
@@ -110,6 +116,29 @@ router.put('/:id', async (req, res) => {
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('[REGISTRATION UPDATE API] Error:', err);
+        res.status(err.status || 500).json({
+            success: false,
+            error_code: err.error_code || null,
+            error: err.message,
+            message: err.message,
+            matches: err.matches || []
+        });
+    }
+});
+
+/**
+ * BHW: Discard Draft
+ */
+router.delete('/:id', async (req, res) => {
+    try {
+        if (req.user.role !== ROLES.BHW) {
+            return res.status(403).json({ success: false, error: 'Only BHWs can delete draft registrations.' });
+        }
+
+        const { id } = req.params;
+        const result = await registrationService.deleteDraftRegistration(id, req.user);
+        res.json({ success: true, ...result });
+    } catch (err) {
         res.status(err.status || 500).json({ success: false, error: err.message });
     }
 });

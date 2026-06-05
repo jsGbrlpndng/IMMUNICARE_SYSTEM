@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 /**
  * InfantRegistry - Master clinical directory with server-side pagination and search.
@@ -390,7 +391,7 @@ export default function InfantRegistry() {
                                         <td className="clinical-table-td py-5">
                                             <div className="flex flex-col gap-0.5">
                                                 <div className="text-slate-900 text-sm font-black group-hover:text-emerald-800 transition-colors leading-none uppercase">
-                                                    {infant.first_name} {infant.last_name}
+                                                    {formatFullNameFromObject(infant)}
                                                 </div>
                                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                                     REF: {infant.reference_id} &bull; DOB: {new Date(infant.dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -539,7 +540,7 @@ export default function InfantRegistry() {
                                 <div>
                                     <h3 className="text-lg font-black text-slate-900">Archive Record</h3>
                                     <p className="mt-1 text-sm font-semibold text-slate-500">
-                                        {confirmArchiveInfant.first_name} {confirmArchiveInfant.last_name}
+                                        {formatFullNameFromObject(confirmArchiveInfant)}
                                     </p>
                                 </div>
                             </div>

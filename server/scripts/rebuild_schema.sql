@@ -47,7 +47,7 @@ CREATE TABLE barangays (
 CREATE TABLE users (
     id VARCHAR(36) PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('Super Admin', 'Admin', 'Midwife', 'BHW', 'Caregiver')),
+    role VARCHAR(50) NOT NULL CHECK (role IN ('Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW', 'Caregiver')),
     assigned_barangay VARCHAR(100),
     password VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -67,20 +67,28 @@ CREATE TABLE users (
     )
 );
 
+CREATE UNIQUE INDEX idx_users_full_name_unique_ci
+    ON users (LOWER(full_name));
+
 CREATE TABLE m1_immunization_targets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     barangay_id UUID NOT NULL REFERENCES barangays(id) ON DELETE CASCADE,
     report_year INTEGER NOT NULL CHECK (report_year BETWEEN 2000 AND 2100),
-    antigen_code VARCHAR(20) NOT NULL CHECK (antigen_code IN ('PENTA', 'MCV')),
-    annual_target INTEGER NOT NULL CHECK (annual_target >= 0),
-    monthly_targets JSONB,
+    total_population INTEGER NOT NULL DEFAULT 0 CHECK (total_population >= 0),
+    eligible_population_0_11_months INTEGER NOT NULL DEFAULT 0 CHECK (eligible_population_0_11_months >= 0),
+    eligible_population_0_12_months INTEGER NOT NULL DEFAULT 0 CHECK (eligible_population_0_12_months >= 0),
+    monthly_target NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (monthly_target >= 0),
+    monthly_target_is_manual BOOLEAN NOT NULL DEFAULT FALSE,
+    ep_percent NUMERIC(8,5) NOT NULL DEFAULT 0.027 CHECK (ep_percent >= 0),
+    created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    updated_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (barangay_id, report_year, antigen_code)
+    UNIQUE (barangay_id, report_year)
 );
 
-CREATE INDEX idx_m1_targets_year_antigen
-    ON m1_immunization_targets (report_year, antigen_code);
+CREATE INDEX idx_m1_targets_year
+    ON m1_immunization_targets (report_year);
 
 CREATE INDEX idx_m1_targets_barangay_year
     ON m1_immunization_targets (barangay_id, report_year);
@@ -112,6 +120,7 @@ CREATE TABLE infants (
     id VARCHAR(36) PRIMARY KEY,
     reference_id VARCHAR(50) UNIQUE NOT NULL,
     first_name VARCHAR(100) NOT NULL,
+    has_no_middle_name BOOLEAN NOT NULL DEFAULT FALSE,
     middle_name VARCHAR(100),
     last_name VARCHAR(100) NOT NULL,
     suffix VARCHAR(10),
@@ -164,7 +173,7 @@ CREATE TABLE infants (
     family_resident_number VARCHAR(50),
     tcn VARCHAR(50),
     created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
-    encoded_by_role VARCHAR(50) CHECK (encoded_by_role IN ('BHW', 'Midwife', 'Super Admin')),
+    encoded_by_role VARCHAR(50) CHECK (encoded_by_role IN ('BHW', 'Midwife', 'Nurse', 'Admin', 'Super Admin')),
     approved_registration_id VARCHAR(36),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -178,17 +187,32 @@ CREATE TABLE infant_registrations (
         status IN ('DRAFT', 'PENDING_VALIDATION', 'NEEDS_CORRECTION', 'APPROVED', 'REJECTED')
     ),
     barangay VARCHAR(100) NOT NULL,
+    has_no_middle_name BOOLEAN NOT NULL DEFAULT FALSE,
     created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     submitted_at TIMESTAMPTZ,
     reviewed_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TIMESTAMPTZ,
     correction_notes TEXT,
     rejection_reason TEXT,
+    rejection_notes TEXT,
     promoted_infant_id VARCHAR(36) REFERENCES infants(id) ON DELETE SET NULL,
     correction_cycle_count INTEGER NOT NULL DEFAULT 0,
     review_history JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE registration_validation_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    registration_id VARCHAR(36) NOT NULL REFERENCES infant_registrations(id) ON DELETE CASCADE,
+    event_type VARCHAR(50) NOT NULL CHECK (
+        event_type IN ('APPROVED', 'REJECTED', 'RETURNED_FOR_CORRECTION', 'DIRECT_CORRECTION')
+    ),
+    reviewer_user_id VARCHAR(36) REFERENCES users(id) ON DELETE RESTRICT,
+    reason TEXT,
+    notes TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 ALTER TABLE infants
@@ -252,8 +276,22 @@ CREATE TABLE vaccinations (
     correction_reason TEXT,
     validation_status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED' CHECK (validation_status IN ('PENDING_VALIDATION', 'VALIDATED')),
     is_early_override BOOLEAN NOT NULL DEFAULT FALSE,
+    report_antigen_code VARCHAR(20),
+    report_dose_code VARCHAR(20),
+    report_age_bucket VARCHAR(30) CHECK (
+        report_age_bucket IS NULL OR report_age_bucket IN (
+            'BIRTH_0_24H', 'AFTER_24H', 'AGE_UNDER_9M', 'AGE_0_12M',
+            'AGE_9_12M', 'AGE_12M', 'AGE_13_23M', 'AGE_24_59M', 'OVER_59M'
+        )
+    ),
+    report_classification VARCHAR(20) CHECK (
+        report_classification IS NULL OR report_classification IN ('ROUTINE', 'ORI', 'CATCH_UP')
+    ),
+    report_period_month INTEGER CHECK (report_period_month IS NULL OR report_period_month BETWEEN 1 AND 12),
+    report_period_year INTEGER,
+    barangay_at_administration VARCHAR(100),
     recorded_by VARCHAR(50) NOT NULL,
-    recorded_by_role VARCHAR(50) NOT NULL CHECK (recorded_by_role IN ('BHW', 'Midwife', 'Super Admin')),
+    recorded_by_role VARCHAR(50) NOT NULL CHECK (recorded_by_role IN ('Midwife', 'Nurse', 'Admin', 'Super Admin')),
     validated_by_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
     validated_by_name VARCHAR(255),
     validated_at TIMESTAMPTZ,
@@ -411,7 +449,7 @@ CREATE TABLE approval_audit (
     infant_id VARCHAR(36) REFERENCES infants(id) ON DELETE CASCADE,
     action VARCHAR(50) NOT NULL CHECK (action IN ('APPROVED', 'REJECTED', 'NEEDS_CORRECTION')),
     approver_id VARCHAR(50) NOT NULL,
-    approver_role VARCHAR(50) NOT NULL CHECK (approver_role IN ('Midwife', 'Super Admin')),
+    approver_role VARCHAR(50) NOT NULL CHECK (approver_role IN ('Midwife', 'Nurse', 'Admin', 'Super Admin')),
     remarks TEXT,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -514,6 +552,8 @@ CREATE INDEX idx_infants_location ON infants USING GIST(location);
 CREATE INDEX idx_infants_immunization_status ON infants(immunization_status);
 CREATE INDEX idx_infant_registrations_barangay_status ON infant_registrations(barangay, status);
 CREATE INDEX idx_infant_registrations_created_by ON infant_registrations(created_by);
+CREATE INDEX idx_registration_validation_events_registration_id ON registration_validation_events(registration_id);
+CREATE INDEX idx_registration_validation_events_reviewer_user_id ON registration_validation_events(reviewer_user_id);
 CREATE INDEX idx_infant_schedules_infant_status ON infant_schedules(infant_id, status);
 CREATE INDEX idx_vaccinations_infant ON vaccinations(infant_id);
 CREATE INDEX idx_follow_up_tasks_barangay_status ON follow_up_tasks(barangay, status);

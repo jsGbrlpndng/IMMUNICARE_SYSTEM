@@ -38,7 +38,7 @@ const navItems = [
 ];
 
 const BHWLayout = () => {
-    const { user, logout } = useAuth();
+    const { user, logout, auditLogout } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
     const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -69,12 +69,14 @@ const BHWLayout = () => {
     }, []);
 
     const handleLogout = () => {
+        auditLogout?.();
         logout();
         navigate('/login');
     };
 
-    const initials = user?.full_name
-        ? user.full_name.split(' ').map((name) => name[0]).join('').toUpperCase().slice(0, 2)
+    const displayName = user?.full_name || user?.name || 'Clinical Staff';
+    const initials = displayName
+        ? displayName.split(' ').map((name) => name[0]).join('').toUpperCase().slice(0, 2)
         : 'BH';
 
     const pageName = location.pathname
@@ -232,7 +234,7 @@ const BHWLayout = () => {
                                 <>
                                     <div className="ml-3 min-w-0 flex-1">
                                         <p className="truncate text-sm font-bold text-white">
-                                            {user?.full_name || 'BHW User'}
+                                            {displayName}
                                         </p>
                                         <p className="truncate text-[0.68rem] font-bold uppercase tracking-[0.14em] text-emerald-100/90">
                                             BHW · {user?.assigned_barangay || 'San Pedro'}
@@ -254,7 +256,7 @@ const BHWLayout = () => {
                             >
                                 <div className="border-b px-4 py-3" style={{ borderColor: BRAND.border }}>
                                     <p className="truncate text-sm font-bold" style={{ color: BRAND.text }}>
-                                        {user?.full_name || 'BHW User'}
+                                        {displayName}
                                     </p>
                                     <p className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em]" style={{ color: BRAND.textSoft }}>
                                         Barangay {user?.assigned_barangay || 'Unassigned'}

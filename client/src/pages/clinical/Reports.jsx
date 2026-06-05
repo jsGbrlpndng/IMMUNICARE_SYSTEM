@@ -73,7 +73,7 @@ const MUTED_TEXT = [100, 116, 139];
 const Reports = () => {
     const { user } = useAuth();
     const assignedBarangay = user?.assigned_barangay || user?.barangay || 'Municipality';
-    const generatedBy = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || 'Authenticated User';
+    const generatedBy = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.full_name || 'Authenticated User';
 
     const initialRange = useMemo(() => getThisMonthRange(), []);
     const [rangeMode, setRangeMode] = useState('this_month');

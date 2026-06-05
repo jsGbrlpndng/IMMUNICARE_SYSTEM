@@ -1,9 +1,19 @@
 const path = require('path');
 const db = require('../db');
+const { enforceUniqueFullNames } = require('./20260602_enforce_unique_full_names');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 async function applyHardening() {
     console.log('--- Applying PostgreSQL Governance Hardening ---');
+
+    const fullNameHardening = await enforceUniqueFullNames({ strict: false });
+    if (fullNameHardening?.blocked) {
+        const duplicateSummary = (fullNameHardening.duplicates || [])
+            .map((row) => `${row.normalized_full_name}: ${row.user_ids.join(', ')}`)
+            .join(' | ');
+        console.warn('[HARDENING WARNING] Full-name uniqueness was not enforced because duplicate staff names already exist.');
+        console.warn(`[HARDENING WARNING] Resolve these duplicates in User Management, then rerun hardening: ${duplicateSummary}`);
+    }
 
     const [tableRows] = await db.execute(`
         SELECT table_name
@@ -23,6 +33,11 @@ async function applyHardening() {
     `);
 
     await db.execute(`
+        ALTER TABLE IF EXISTS infant_registrations
+        ADD COLUMN IF NOT EXISTS rejection_notes TEXT
+    `);
+
+    await db.execute(`
         ALTER TABLE IF EXISTS users
         DROP CONSTRAINT IF EXISTS users_role_check
     `);
@@ -32,7 +47,7 @@ async function applyHardening() {
     `);
     await db.execute(`
         ALTER TABLE IF EXISTS users
-        ADD CONSTRAINT users_role_check CHECK (role IN ('Super Admin', 'Admin', 'Midwife', 'BHW', 'Caregiver'))
+        ADD CONSTRAINT users_role_check CHECK (role IN ('Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW', 'Caregiver'))
     `);
     await db.execute(`
         ALTER TABLE IF EXISTS users
@@ -105,6 +120,31 @@ async function applyHardening() {
         await db.execute(`
             CREATE INDEX IF NOT EXISTS idx_follow_up_logs_infant_created
             ON follow_up_logs (infant_id, created_at DESC)
+        `);
+    }
+
+    if (existingTables.has('infant_registrations') && existingTables.has('users')) {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS registration_validation_events (
+                id UUID PRIMARY KEY,
+                registration_id VARCHAR(36) NOT NULL REFERENCES infant_registrations(id) ON DELETE CASCADE,
+                event_type VARCHAR(50) NOT NULL CHECK (
+                    event_type IN ('APPROVED', 'REJECTED', 'RETURNED_FOR_CORRECTION', 'DIRECT_CORRECTION')
+                ),
+                reviewer_user_id VARCHAR(36) REFERENCES users(id) ON DELETE RESTRICT,
+                reason TEXT,
+                notes TEXT,
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await db.execute(`
+            CREATE INDEX IF NOT EXISTS idx_registration_validation_events_registration_id
+            ON registration_validation_events (registration_id)
+        `);
+        await db.execute(`
+            CREATE INDEX IF NOT EXISTS idx_registration_validation_events_reviewer_user_id
+            ON registration_validation_events (reviewer_user_id)
         `);
     }
 

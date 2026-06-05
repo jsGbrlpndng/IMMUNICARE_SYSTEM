@@ -3,6 +3,7 @@ const router = express.Router();
 const clinicalAuth = require('../middleware/clinicalAuth');
 const requireRole = require('../middleware/requireRole');
 const db = require('../db');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 // Protect schedule - block Admin
 router.use(clinicalAuth);
@@ -18,6 +19,11 @@ const NIPScheduleService = require('../services/NIPScheduleService');
 const enhancedEngine = new EnhancedNIPScheduleEngine(db);
 const authController = new AuthorizationController(db);
 const nipScheduleService = new NIPScheduleService(db);
+
+const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || null;
 
 // Helper to calculate complete NIP vaccination schedule - DEPRECATED, logic moved to NIPScheduleService static methods
 // Removed local calculateCompleteNIPSchedule
@@ -409,6 +415,16 @@ router.post('/reschedule', async (req, res) => {
         const { v4: uuidv4 } = require('uuid');
         const deferralId = uuidv4();
         const userId = req.user?.id || rescheduled_by;
+        const [infantRows] = await db.execute(
+            'SELECT id, barangay, reference_id, first_name, middle_name, last_name FROM infants WHERE id = ? LIMIT 1',
+            [infant_id]
+        );
+        if (!infantRows.length) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
+        if (req.user.role !== 'Super Admin' && infantRows[0].barangay !== req.user.assigned_barangay) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
 
         await db.execute(
             `INSERT INTO schedule_deferrals 
@@ -428,6 +444,28 @@ router.post('/reschedule', async (req, res) => {
             req.user?.role || 'Midwife',
             ipAddress
         );
+
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'VACCINATION_RESCHEDULE',
+            targetEntity: 'schedule_deferrals',
+            targetRecordId: deferralId,
+            targetName: infantTargetName(infantRows[0]),
+            barangay: infantRows[0].barangay,
+            oldValues: {
+                infant_id,
+                vaccine_name,
+                due_date: original_due_date
+            },
+            newValues: {
+                infant_id,
+                vaccine_name,
+                due_date: new_due_date,
+                reason,
+                defer_type: 'reschedule'
+            },
+            req
+        });
 
         res.status(201).json({
             success: true,
@@ -510,6 +548,16 @@ router.post('/defer', async (req, res) => {
         const { v4: uuidv4 } = require('uuid');
         const deferralId = uuidv4();
         const userId = req.user?.id || deferred_by;
+        const [infantRows] = await db.execute(
+            'SELECT id, barangay, reference_id, first_name, middle_name, last_name FROM infants WHERE id = ? LIMIT 1',
+            [infant_id]
+        );
+        if (!infantRows.length) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
+        if (req.user.role !== 'Super Admin' && infantRows[0].barangay !== req.user.assigned_barangay) {
+            return res.status(404).json({ success: false, error: 'Infant not found' });
+        }
 
         await db.execute(
             `INSERT INTO schedule_deferrals 
@@ -529,6 +577,28 @@ router.post('/defer', async (req, res) => {
             req.user?.role || 'Midwife',
             ipAddress
         );
+
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'VACCINATION_DEFER',
+            targetEntity: 'schedule_deferrals',
+            targetRecordId: deferralId,
+            targetName: infantTargetName(infantRows[0]),
+            barangay: infantRows[0].barangay,
+            oldValues: {
+                infant_id,
+                vaccine_name
+            },
+            newValues: {
+                infant_id,
+                vaccine_name,
+                defer_type,
+                reason: reason || medical_note,
+                medical_note,
+                deferred_until
+            },
+            req
+        });
 
         res.status(201).json({
             success: true,

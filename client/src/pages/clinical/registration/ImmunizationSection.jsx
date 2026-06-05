@@ -1,7 +1,7 @@
 import React from 'react';
 import { InputWrapper, inputClasses } from './FormComponents';
 
-const ImmunizationSection = ({ formData, errors, handleChange }) => {
+const ImmunizationSection = ({ formData, errors, handleChange, isReadOnly = false }) => {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="bg-green-50 p-6 rounded-2xl border border-green-100">
@@ -12,7 +12,7 @@ const ImmunizationSection = ({ formData, errors, handleChange }) => {
                     {/* BCG Section */}
                     <div className="bg-white p-5 rounded-xl border border-green-200 shadow-sm space-y-4">
                         <InputWrapper label="BCG" required hasError={!!errors.bcg_status}>
-                            <select name="bcg_status" value={formData.bcg_status} onChange={handleChange} className={inputClasses}>
+                            <select name="bcg_status" value={formData.bcg_status} onChange={handleChange} className={inputClasses} disabled={isReadOnly}>
                                 <option value="">Select Status</option>
                                 <option value="Given">Given</option>
                                 <option value="Not Given">Not Given</option>
@@ -25,7 +25,7 @@ const ImmunizationSection = ({ formData, errors, handleChange }) => {
                                 name="bcg_date" 
                                 value={formData.bcg_date} 
                                 onChange={handleChange} 
-                                disabled={formData.bcg_status !== 'Given'} 
+                                disabled={formData.bcg_status !== 'Given' || isReadOnly} 
                                 min={formData.dob}
                                 max={new Date().toISOString().split('T')[0]}
                                 className={inputClasses} 
@@ -36,7 +36,7 @@ const ImmunizationSection = ({ formData, errors, handleChange }) => {
                     {/* Hepa B Section */}
                     <div className="bg-white p-5 rounded-xl border border-green-200 shadow-sm space-y-4">
                         <InputWrapper label="Hepa B" required hasError={!!errors.hepatitis_b_status}>
-                            <select name="hepatitis_b_status" value={formData.hepatitis_b_status} onChange={handleChange} className={inputClasses}>
+                            <select name="hepatitis_b_status" value={formData.hepatitis_b_status} onChange={handleChange} className={inputClasses} disabled={isReadOnly}>
                                 <option value="">Select Status</option>
                                 <option value="Given within 24 hours">Given within 24 hours</option>
                                 <option value="Given more than 24 hours">Given more than 24 hours</option>
@@ -50,7 +50,7 @@ const ImmunizationSection = ({ formData, errors, handleChange }) => {
                                 name="hepatitis_b_date" 
                                 value={formData.hepatitis_b_date} 
                                 onChange={handleChange} 
-                                disabled={formData.hepatitis_b_status !== 'Given more than 24 hours'} 
+                                disabled={formData.hepatitis_b_status !== 'Given more than 24 hours' || isReadOnly} 
                                 min={formData.dob}
                                 max={new Date().toISOString().split('T')[0]}
                                 className={inputClasses} 

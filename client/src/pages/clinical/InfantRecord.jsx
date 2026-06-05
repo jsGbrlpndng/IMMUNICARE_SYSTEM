@@ -90,6 +90,16 @@ export default function InfantRecord() {
     const isArchived = infant?.status === 'Archived';
     const isBhw = user?.role === 'BHW';
 
+    const getClinicalStatusLabel = (vax) => {
+        if (vax.status === 'COMPLETED_VALIDATED') return 'Administered';
+        if (vax.status === 'PENDING_VALIDATION') return 'Pending Validation';
+        if (vax.original_schedule_status === 'INELIGIBLE') return 'Ineligible';
+        if (['DEFAULTER', 'DEFAULTED', 'OVERDUE'].includes(vax.original_schedule_status)) return 'Overdue';
+        if (vax.original_schedule_status === 'DUE_TODAY') return 'Due Today';
+        if (vax.original_schedule_status === 'DUE_SOON') return 'Due Soon';
+        return 'Scheduled';
+    };
+
     return (
         <div className="flex flex-col gap-8 pb-20">
             {/* 1. CLINICAL HEADER (STICKY) */}
@@ -330,7 +340,7 @@ export default function InfantRecord() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-slate-500 font-medium">
-                                            {vax.target_age || 'ROUTINE'}
+                                            {vax.target_age || '--'}
                                         </td>
                                         <td className="px-6 py-4 text-slate-600">
                                             {new Date(vax.recommended_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -342,15 +352,19 @@ export default function InfantRecord() {
                                                     <span className="text-[8px] text-red-400 italic font-medium lowercase">administered before min age: {new Date(vax.earliest_allowed_date).toLocaleDateString()}</span>
                                                 </div>
                                             ) : isCompletedRow ? (
-                                                <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={12} /> COMPLETED</span>
+                                                <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isPendingRow ? (
-                                                <span className="text-amber-500 flex items-center gap-1"><Clock size={12} /> PENDING VALIDATION</span>
+                                                <span className="text-amber-500 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isIneligibleRow ? (
-                                                <span className="text-slate-500 flex items-center gap-1"><AlertCircle size={12} /> INELIGIBLE</span>
+                                                <span className="text-slate-500 flex items-center gap-1"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isOverdueRow ? (
-                                                <span className="text-red-600 flex items-center gap-1"><AlertCircle size={12} /> {vax.original_schedule_status}</span>
+                                                <span className="text-red-600 flex items-center gap-1"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                            ) : vax.original_schedule_status === 'DUE_TODAY' ? (
+                                                <span className="text-orange-600 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                            ) : vax.original_schedule_status === 'DUE_SOON' ? (
+                                                <span className="text-amber-600 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : (
-                                                <span className="text-slate-400">UPCOMING</span>
+                                                <span className="text-slate-400">{getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-slate-500">

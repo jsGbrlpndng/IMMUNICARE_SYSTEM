@@ -9,22 +9,37 @@ import {
     Clock3,
     ChevronRight
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const STATUS_FILTERS = ['All', 'Draft', 'Pending', 'Approved', 'Needs Correction'];
 
 const MySubmissions = () => {
     const { user } = useAuth();
+    const location = useLocation();
     const [infants, setInfants] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    const [toast, setToast] = useState(location.state?.toast || null);
 
     useEffect(() => {
         if (user) fetchSubmissions();
     }, [user]);
+
+    useEffect(() => {
+        if (!toast) return undefined;
+        const timer = setTimeout(() => setToast(null), 3000);
+        return () => clearTimeout(timer);
+    }, [toast]);
+
+    useEffect(() => {
+        if (location.state?.toast) {
+            setToast(location.state.toast);
+        }
+    }, [location.state]);
 
     const fetchSubmissions = async () => {
         try {
@@ -42,8 +57,7 @@ const MySubmissions = () => {
 
     const filteredInfants = infants.filter((infant) => {
         const matchesSearch =
-            (infant.first_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (infant.last_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+            formatFullNameFromObject(infant).toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesStatus = statusFilter === 'All' ||
             (statusFilter === 'Pending' && infant.status === 'PENDING_VALIDATION') ||
@@ -99,6 +113,11 @@ const MySubmissions = () => {
 
     return (
         <div className="space-y-6">
+            {toast && (
+                <div className="rounded border border-[#064E3B] bg-[#ECFDF5] px-4 py-3 text-sm font-semibold text-[#064E3B] shadow-sm">
+                    {toast}
+                </div>
+            )}
             <section className="flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#0B6E4F]">
@@ -188,7 +207,7 @@ const MySubmissions = () => {
                                         <tr key={infant.id} className="transition-colors hover:bg-slate-50">
                                             <td className="px-6 py-5">
                                                 <div className="font-bold text-slate-900">
-                                                    {infant.first_name} {infant.last_name}
+                                                    {formatFullNameFromObject(infant)}
                                                 </div>
                                                 <div className="mt-1 text-xs font-medium text-slate-500">
                                                     {infant.sex === 'M' ? 'Male' : 'Female'}

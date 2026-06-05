@@ -1,6 +1,8 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const path = require('path');
+const { RHU2_BARANGAYS } = require('../constants/rhu2Barangays');
+const UserIdentityService = require('../services/UserIdentityService');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const pool = new Pool({
@@ -11,20 +13,7 @@ const pool = new Pool({
     port: parseInt(process.env.PG_PORT || '5432')
 });
 
-const barangays = [
-    'LANGGAM',
-    'CALENDOLA',
-    'GSIS',
-    'MAGSAYSAY',
-    'SAMPAGUITA',
-    'UBL',
-    'UB',
-    'LARAM',
-    'ESTRELLA',
-    'BAGONG SILANG',
-    'RIVERSIDE',
-    'NARRA'
-];
+const barangays = RHU2_BARANGAYS;
 
 const users = [
     {
@@ -53,6 +42,18 @@ const users = [
     }
 ];
 
+const buildClientAdapter = (client) => ({
+    execute: async (sql, params = []) => {
+        let index = 0;
+        const pgSql = sql.replace(/\?/g, () => `$${++index}`);
+        const result = await client.query(pgSql, params);
+        if (/^\s*select/i.test(sql)) {
+            return [result.rows, result.fields];
+        }
+        return [{ affectedRows: result.rowCount, rowCount: result.rowCount, rows: result.rows }, result.fields];
+    }
+});
+
 async function upsertBarangay(client, name) {
     await client.query(
         `
@@ -67,38 +68,20 @@ async function upsertBarangay(client, name) {
 
 async function upsertUser(client, user) {
     const hashedPassword = await bcrypt.hash(user.plainPassword, 10);
+    const userIdentityService = new UserIdentityService(buildClientAdapter(client));
 
-    await client.query(
-        `
-        INSERT INTO users (
-            id,
-            full_name,
-            role,
-            assigned_barangay,
-            password,
-            is_active,
-            failed_login_attempts,
-            locked_until,
-            last_login_at
-        )
-        VALUES ($1, $2, $3, $4, $5, TRUE, 0, NULL, NULL)
-        ON CONFLICT (id) DO UPDATE SET
-            full_name = EXCLUDED.full_name,
-            role = EXCLUDED.role,
-            assigned_barangay = EXCLUDED.assigned_barangay,
-            password = EXCLUDED.password,
-            is_active = TRUE,
-            failed_login_attempts = 0,
-            locked_until = NULL
-        `,
-        [
-            user.id,
-            user.full_name,
-            user.role,
-            user.assigned_barangay,
-            hashedPassword
-        ]
-    );
+    await userIdentityService.upsertUser({
+        id: user.id,
+        full_name: user.full_name,
+        role: user.role,
+        assigned_barangay: user.assigned_barangay,
+        password: hashedPassword,
+        is_active: true,
+        failed_login_attempts: 0,
+        locked_until: null,
+        last_login_at: null,
+        must_change_password: true
+    });
 }
 
 async function upsertAssignment(client, userId, barangayName, actorId) {
@@ -139,6 +122,15 @@ async function seedCanonicalReferenceData() {
 
     try {
         await client.query('BEGIN');
+
+        await client.query(
+            `
+            UPDATE barangays
+            SET is_active = FALSE
+            WHERE UPPER(TRIM(name)) <> ALL($1::text[])
+            `,
+            [barangays]
+        );
 
         for (const barangay of barangays) {
             await upsertBarangay(client, barangay);

@@ -33,8 +33,8 @@ class AuthorizationController {
             'SELECT full_name, role FROM users WHERE id = ?',
             [midwifeId]
         );
-        if (midwives.length === 0 || midwives[0].role !== ROLES.MIDWIFE) {
-            throw new Error('Midwife not found or invalid role');
+        if (midwives.length === 0 || ![ROLES.MIDWIFE, ROLES.NURSE].includes(midwives[0].role)) {
+            throw new Error('Midwife/Nurse not found or invalid role');
         }
         const midwife = midwives[0];
 

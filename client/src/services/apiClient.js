@@ -40,6 +40,11 @@ class ApiClient {
      * Make authenticated API request
      */
     async request(endpoint, options = {}) {
+        if (localStorage.getItem('auth_token') && sessionStorage.getItem('immunicare_idle_locked') === 'true') {
+            window.dispatchEvent(new Event('immunicare:idle-lock'));
+            throw new Error('Session locked. Please re-authenticate to continue.');
+        }
+
         const token = this.getToken();
         // Build headers
         const headers = {

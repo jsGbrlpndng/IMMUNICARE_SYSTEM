@@ -9,6 +9,7 @@ import apiClient from '../../services/apiClient';
 import RecordVaccinationModal from '../../components/RecordVaccinationModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../utils/formatters';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 /* Urgency config */
 const URGENCY = {
@@ -301,7 +302,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                 <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
                     <div>
                         <h2 className="text-lg font-bold text-slate-900 capitalize">
-                            {infant.last_name}, {infant.first_name}
+                            {formatFullNameFromObject(infant)}
                         </h2>
                         <p className="text-xs font-medium text-slate-500 mt-0.5">
                             {infant.reference_id} · Vaccination Timeline
@@ -548,7 +549,7 @@ const NIPSchedulePage = () => {
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             list = list.filter(i =>
-                `${i.first_name} ${i.last_name}`.toLowerCase().includes(q) ||
+                formatFullNameFromObject(i).toLowerCase().includes(q) ||
                 (i.reference_id || '').toLowerCase().includes(q) ||
                 (i.barangay    || '').toLowerCase().includes(q)
             );
@@ -566,7 +567,7 @@ const NIPSchedulePage = () => {
             // Ensure infant.name is available - RecordVaccinationModal uses this for display
             infant: {
                 ...timelineModal,
-                name: `${timelineModal.first_name} ${timelineModal.last_name}`,
+                name: formatFullNameFromObject(timelineModal),
             },
             vaccine: {
                 vaccineName: item.vaccineName  || item.vaccine_name,
@@ -741,7 +742,7 @@ const NIPSchedulePage = () => {
                                                 <td className="clinical-table-td">
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-semibold text-slate-900 capitalize">
-                                                            {infant.last_name}, {infant.first_name}
+                                                            {formatFullNameFromObject(infant)}
                                                         </span>
                                                         <span className="text-xs text-slate-500 font-medium mt-0.5">
                                                             {infant.guardian_name || infant.mothers_maiden_name || infant.mother_name || '-'}

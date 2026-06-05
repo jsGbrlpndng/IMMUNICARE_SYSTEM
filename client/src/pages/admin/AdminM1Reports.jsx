@@ -3,12 +3,9 @@ import { CalendarDays, FileText, Lock, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import M1ReportView from '../../components/M1ReportView';
+import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
 
-const BARANGAYS = [
-    'LANGGAM', 'CALENDOLA', 'GSIS', 'MAGSAYSAY', 'SAMPAGUITA',
-    'UBL', 'UB', 'LARAM', 'ESTRELLA', 'BAGONG SILANG',
-    'RIVERSIDE', 'NARRA'
-];
+const BARANGAYS = RHU2_BARANGAYS;
 
 const MONTHS = [
     'January',
@@ -45,7 +42,7 @@ const AdminM1Reports = () => {
         : undefined;
     const reportMode = scopedBarangay ? 'micro' : (isSuperAdmin ? 'macro' : 'micro');
     const scopeLabel = isSuperAdmin
-        ? (currentSelectedBarangay === 'all' ? 'RHU I Aggregate' : `Barangay ${currentSelectedBarangay}`)
+        ? (currentSelectedBarangay === 'all' ? 'RHU 2 Aggregate' : `Barangay ${currentSelectedBarangay}`)
         : `Barangay ${user?.assigned_barangay || 'Assigned Scope'}`;
     const selectedMonthLabel = MONTHS?.[month - 1] || 'Selected Month';
 
@@ -118,7 +115,7 @@ const AdminM1Reports = () => {
                                             onChange={(event) => setSelectedBarangay?.(event?.target?.value || 'all')}
                                             className="min-w-48 bg-white text-sm font-bold text-slate-900 outline-none"
                                         >
-                                            <option value="all">RHU I - All Barangays</option>
+                                            <option value="all">RHU 2 - All Barangays</option>
                                             {(BARANGAYS || []).map((barangayName) => (
                                                 <option key={barangayName} value={barangayName}>{barangayName}</option>
                                             ))}

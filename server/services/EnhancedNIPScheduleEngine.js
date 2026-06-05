@@ -697,9 +697,11 @@ class EnhancedNIPScheduleEngine {
                 const computedScheduleStatus = computedStatusMap.get(infant.id) || 'COMPLETED';
                 const nextSchedule = nextScheduleMap.get(infant.id);
 
-                if (schedule.defaulter && schedule.defaulter.length > 0) {
-                    vaccinationNeeds = schedule.defaulter;
-                    const overdueVaccine = schedule.defaulter[0];
+                const eligible_doses = (schedule.defaulter || []).filter(dose => dose.status !== 'EXPIRED' && dose.status !== 'INELIGIBLE');
+
+                if (eligible_doses.length > 0 && eligible_doses.some(dose => (dose.daysOverdue > 0 || dose.days_overdue > 0))) {
+                    vaccinationNeeds = eligible_doses;
+                    const overdueVaccine = eligible_doses[0];
                     nextDueVaccine = overdueVaccine.vaccineName || overdueVaccine.vaccine;
                     nextDueDate = overdueVaccine.dueDate;
                     

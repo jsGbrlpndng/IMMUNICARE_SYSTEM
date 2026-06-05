@@ -23,6 +23,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
+import { formatAuditAction, formatAuditTarget } from '../../utils/auditFormatter';
 
 const DEFAULT_KPIS = {
     target_population: 0,
@@ -70,9 +71,9 @@ const formatAuditTime = (value) => {
 
 const formatAuditSentence = (event) => {
     const actor = event?.user_name || 'A staff member';
-    const action = String(event?.action_type || 'updated a record').toLowerCase().replace(/_/g, ' ');
-    const target = event?.target_entity ? ` in ${String(event.target_entity).replace(/_/g, ' ')}` : '';
-    return `${actor} ${action}${target}.`;
+    const action = formatAuditAction(event?.action_type || event?.action);
+    const target = formatAuditTarget(event);
+    return `${actor}: ${action}${target ? ` (${target})` : ''}.`;
 };
 
 const isEnterOrSpace = (event) => event.key === 'Enter' || event.key === ' ';
@@ -89,6 +90,7 @@ const PublicHealthDashboard = () => {
     const [users, setUsers] = useState({ total_active_personnel: 0, bhw_count: 0, midwife_count: 0, personnel: [] });
     const [trends, setTrends] = useState([]);
     const [targetStatus, setTargetStatus] = useState({ has_required_targets: true, system_message: null });
+    const [refreshNonce, setRefreshNonce] = useState(0);
     const [loading, setLoading] = useState({
         kpis: true,
         clusters: true,
@@ -105,6 +107,13 @@ const PublicHealthDashboard = () => {
 
     useEffect(() => {
         const timer = window.setInterval(() => setLiveTimestamp(new Date()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => {
+            setRefreshNonce((current) => current + 1);
+        }, 10000);
         return () => window.clearInterval(timer);
     }, []);
 
@@ -202,7 +211,7 @@ const PublicHealthDashboard = () => {
         return () => {
             active = false;
         };
-    }, [requestOptions]);
+    }, [requestOptions, refreshNonce]);
 
     useEffect(() => {
         let active = true;
@@ -231,7 +240,7 @@ const PublicHealthDashboard = () => {
         return () => {
             active = false;
         };
-    }, [requestOptions]);
+    }, [requestOptions, refreshNonce]);
 
     useEffect(() => {
         let active = true;
@@ -259,7 +268,7 @@ const PublicHealthDashboard = () => {
         return () => {
             active = false;
         };
-    }, [requestOptions]);
+    }, [requestOptions, refreshNonce]);
 
     useEffect(() => {
         let active = true;
@@ -289,7 +298,7 @@ const PublicHealthDashboard = () => {
         return () => {
             active = false;
         };
-    }, [requestOptions]);
+    }, [requestOptions, refreshNonce]);
 
     const assignedBarangay = scope.barangay || sessionUser?.assigned_barangay || 'No barangay assigned';
     const assignedBarangayId = scope.barangay_id || sessionUser?.barangay_id || 'Session scoped';

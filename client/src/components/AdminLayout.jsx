@@ -46,8 +46,9 @@ const AdminLayout = ({ children }) => {
                 setIsCollapsed={setIsCollapsed}
                 isMobileOpen={isMobileOpen}
                 setIsMobileOpen={setIsMobileOpen}
-                navigation={adminNavigation}
+                navItems={adminNavigation}
                 accountSettingsPath="/admin/account-settings"
+                logoutRedirectPath="/portal"
             />
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>

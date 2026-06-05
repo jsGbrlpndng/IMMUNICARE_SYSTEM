@@ -28,6 +28,7 @@ const requireRole = (allowedRoles, message = null) => {
 
 requireRole.CLINICAL_PRIVILEGED = [
     ROLES.MIDWIFE,
+    ROLES.NURSE,
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN
 ];

@@ -38,6 +38,7 @@ import apiClient from '../../services/apiClient';
 import { MapContainer, TileLayer, Circle, Popup, LayerGroup, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { formatFullName } from '../../utils/formatFullName';
 
 // Fix Leaflet default marker icons
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -115,8 +116,10 @@ export default function MidwifeDashboard() {
 
     // -- DATA BINDING --
     useEffect(() => {
-        const fetchAll = async () => {
-            setLoading(true);
+        const fetchAll = async ({ silent = false } = {}) => {
+            if (!silent) {
+                setLoading(true);
+            }
             try {
                 const [statsRes, gapRes, spatialRes, alertRes, priorityRes, urgentRes, impactRes, deploymentRes, myDeploymentRes] = await Promise.all([
                     apiClient.get('/analytics/dashboard-stats'),
@@ -171,10 +174,14 @@ export default function MidwifeDashboard() {
                 console.error('DSS Load Failure:', err);
                 setActiveDeployments([]);
             } finally {
-                setLoading(false);
+                if (!silent) {
+                    setLoading(false);
+                }
             }
         };
         fetchAll();
+        const intervalId = window.setInterval(() => fetchAll({ silent: true }), 10000);
+        return () => window.clearInterval(intervalId);
     }, []);
 
     useEffect(() => {
@@ -199,23 +206,17 @@ export default function MidwifeDashboard() {
             }
         };
         fetchFieldKit();
+        const intervalId = window.setInterval(fetchFieldKit, 10000);
+        return () => window.clearInterval(intervalId);
     }, [timeframe]);
 
 
     // -- HELPERS --
     const DEFAULT_CENTER = [14.3555, 121.0515]; // Barangay Langgam center
 
-    const formatName = (first, last, referenceId) => {
-        if (!first && !last) return 'Unnamed Infant';
-
-        const fName = first ? String(first).trim() : '';
-        const lName = last ? String(last).trim() : '';
-
-        if (!fName && !lName) return 'Unnamed Infant';
-
-        // Removed mock logic
-
-        const capitalized = `${fName.charAt(0).toUpperCase() + fName.slice(1).toLowerCase()} ${lName.charAt(0).toUpperCase() + lName.slice(1).toLowerCase()}`;
+    const formatName = (first, middle, last, referenceId) => {
+        const capitalized = formatFullName(first, middle, last);
+        if (!capitalized) return 'Unnamed Infant';
 
         return (
             <div className="flex flex-col">
@@ -459,7 +460,7 @@ export default function MidwifeDashboard() {
                                                             <div className="w-8 h-8 rounded-sm bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-800 transition-colors shrink-0">
                                                                 {inf.first_name?.[0]}{inf.last_name?.[0]}
                                                             </div>
-                                                            {formatName(inf.first_name, inf.last_name, inf.reference_id)}
+                                                            {formatName(inf.first_name, inf.middle_name, inf.last_name, inf.reference_id)}
                                                         </div>
                                                     </div>
                                                     <div className="py-4 px-5 flex items-center">

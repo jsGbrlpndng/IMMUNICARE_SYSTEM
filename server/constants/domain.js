@@ -2,6 +2,7 @@ const ROLES = Object.freeze({
   SUPER_ADMIN: 'Super Admin',
   ADMIN: 'Admin',
   MIDWIFE: 'Midwife',
+  NURSE: 'Nurse',
   BHW: 'BHW',
   CAREGIVER: 'Caregiver'
 });
@@ -10,6 +11,7 @@ const STAFF_ROLES = Object.freeze([
   ROLES.SUPER_ADMIN,
   ROLES.ADMIN,
   ROLES.MIDWIFE,
+  ROLES.NURSE,
   ROLES.BHW
 ]);
 

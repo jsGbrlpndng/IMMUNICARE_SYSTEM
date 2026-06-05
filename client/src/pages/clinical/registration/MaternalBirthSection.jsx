@@ -1,14 +1,14 @@
 import React from 'react';
 import { InputWrapper, inputClasses } from './FormComponents';
 
-const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) => {
+const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isReadOnly = false }) => {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="col-span-full border-b border-slate-100 pb-2">
                 <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em]">Maternal Tetanus History</h3>
             </div>
             <InputWrapper label="Mother TT Status">
-                <select name="mother_tt_status" value={formData.mother_tt_status} onChange={handleChange} disabled={formData.tt_history_unknown} className={inputClasses}>
+                <select name="mother_tt_status" value={formData.mother_tt_status} onChange={handleChange} disabled={formData.tt_history_unknown || isReadOnly} className={inputClasses}>
                     <option value="0">Unknown / No History</option>
                     <option value="TT1">TT1 (No protection)</option>
                     <option value="TT2">TT2 (3 years protection)</option>
@@ -23,13 +23,13 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                     name="last_tt_date" 
                     value={formData.last_tt_date} 
                     onChange={handleChange} 
-                    disabled={formData.tt_history_unknown} 
+                    disabled={formData.tt_history_unknown || isReadOnly} 
                     max={new Date().toISOString().split('T')[0]}
                     className={inputClasses} 
                 />
             </InputWrapper>
             <div className="flex items-center gap-3 px-1 py-2">
-                <input type="checkbox" name="tt_history_unknown" id="tt_history_unknown" checked={formData.tt_history_unknown} onChange={handleChange} className="w-5 h-5 accent-[#065f46] rounded" />
+                <input type="checkbox" name="tt_history_unknown" id="tt_history_unknown" checked={formData.tt_history_unknown} onChange={handleChange} disabled={isReadOnly} className="w-5 h-5 accent-[#065f46] rounded" />
                 <label htmlFor="tt_history_unknown" className="text-xs font-black text-slate-500 uppercase tracking-widest cursor-pointer select-none">TT History Unknown</label>
             </div>
 
@@ -46,7 +46,9 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                     value={formData.birth_weight} 
                     onChange={handleChange} 
                     placeholder="e.g. 3.20" 
-                    className={inputClasses} 
+                    className={inputClasses}
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
                 />
             </InputWrapper>
             <InputWrapper label="Birth Status (Auto-calculated)">
@@ -66,12 +68,14 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                     value={formData.length_at_birth_cm} 
                     onChange={handleChange} 
                     placeholder="e.g. 50.5" 
-                    className={inputClasses} 
+                    className={inputClasses}
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
                 />
             </InputWrapper>
 
             <InputWrapper label="Birth Setting">
-                <select name="birth_setting" value={formData.birth_setting} onChange={handleChange} className={inputClasses}>
+                <select name="birth_setting" value={formData.birth_setting} onChange={handleChange} className={inputClasses} disabled={isReadOnly}>
                     <option value="FACILITY">Hospital / Health Center / Facility</option>
                     <option value="HOME">Home Delivery</option>
                 </select>
@@ -86,7 +90,9 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                         onBlur={handleBlur}
                         autoComplete="new-password"
                         placeholder="e.g. San Pedro District Hospital" 
-                        className={inputClasses} 
+                        className={inputClasses}
+                        disabled={isReadOnly}
+                        readOnly={isReadOnly}
                     />
                 </InputWrapper>
             )}
@@ -104,6 +110,7 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                         <button
                             type="button"
                             onClick={() => handleChange({ target: { name: 'initiated_breastfeeding', value: true } })}
+                            disabled={isReadOnly}
                             className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.initiated_breastfeeding === true ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-blue-400 hover:bg-blue-50'}`}
                         >
                             Yes
@@ -111,6 +118,7 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur }) =>
                         <button
                             type="button"
                             onClick={() => handleChange({ target: { name: 'initiated_breastfeeding', value: false } })}
+                            disabled={isReadOnly}
                             className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.initiated_breastfeeding === false ? 'bg-slate-200 text-slate-600' : 'text-slate-400 hover:bg-slate-50'}`}
                         >
                             No

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
 import RecordVaccinationModal from '../../components/RecordVaccinationModal';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 import {
     AlertCircle,
     Archive,
@@ -30,9 +31,7 @@ const formatDate = (value) => {
     return new Date(value).toLocaleDateString();
 };
 
-const infantName = (infant) => (
-    [infant?.first_name, infant?.middle_name, infant?.last_name].filter(Boolean).join(' ') || 'Unnamed infant'
-);
+const infantName = (infant) => formatFullNameFromObject(infant) || 'Unnamed infant';
 
 const statusClasses = (status) => {
     if (status === 'DEFAULTER') return 'border-rose-200 bg-rose-50 text-rose-700';

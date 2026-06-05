@@ -7,6 +7,7 @@ const InfantService = require('../services/InfantService');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const VaccinationService = require('../services/VaccinationService');
 const { ROLES } = require('../constants/domain');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 // Initialize Services
 const infantService = new InfantService(db);
@@ -38,6 +39,27 @@ const getScopedInfantStatus = async (id, barangay) => {
     );
     return rows[0] || null;
 };
+
+const getScopedInfantRecord = async (id, barangay) => {
+    const barangayClause = barangay ? 'AND barangay = ?' : '';
+    const params = barangay ? [id, id, barangay] : [id, id];
+    const [rows] = await db.execute(
+        `
+        SELECT *
+        FROM infants
+        WHERE (id = ? OR reference_id = ?)
+          ${barangayClause}
+        LIMIT 1
+        `,
+        params
+    );
+    return rows[0] || null;
+};
+
+const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || infant.infant_name || infant.name || null;
 
 // Protect all infant routes with canonical token auth and barangay scope.
 router.use(clinicalAuth);
@@ -139,10 +161,10 @@ router.put('/:id/reject', requireClinicalPrivilege, async (req, res) => {
 // PUT /api/infants/:id/restore - Explicit archived-record restoration workflow
 router.put('/:id/restore', requireClinicalPrivilege, async (req, res) => {
     try {
-        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
             return res.status(403).json({
                 success: false,
-                error: 'Forbidden: only Midwives and Super Admins can restore archived infant records.'
+                error: 'Forbidden: only Midwives, Nurses, and Super Admins can restore archived infant records.'
             });
         }
 
@@ -155,6 +177,7 @@ router.put('/:id/restore', requireClinicalPrivilege, async (req, res) => {
         if (infant.status !== 'Archived') {
             return res.status(400).json({ success: false, error: 'Only archived infant records can be restored.' });
         }
+        const oldInfant = await getScopedInfantRecord(req.params.id, barangay);
 
         const barangayClause = barangay ? 'AND barangay = ?' : '';
         const params = barangay
@@ -178,6 +201,19 @@ router.put('/:id/restore', requireClinicalPrivilege, async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
         }
+
+        const newInfant = await getScopedInfantRecord(req.params.id, barangay);
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'INFANT_RESTORE',
+            targetEntity: 'infants',
+            targetRecordId: oldInfant?.id || req.params.id,
+            targetName: infantTargetName(oldInfant) || infantTargetName(newInfant),
+            barangay: oldInfant?.barangay || newInfant?.barangay || barangay,
+            oldValues: oldInfant || {},
+            newValues: newInfant || {},
+            req
+        });
 
         return res.json({ success: true, message: 'Infant record restored successfully' });
     } catch (error) {
@@ -329,7 +365,27 @@ router.post('/:id/vaccinations', requireClinicalPrivilege, async (req, res) => {
             administered_date: req.body.administered_date || new Date()
         };
 
-        await vaccinationService.recordVaccination(vaccinationData);
+        const vaccinationResult = await vaccinationService.recordVaccination(vaccinationData);
+        const [newVaccinationRows] = await db.execute(
+            'SELECT * FROM vaccinations WHERE id = ? LIMIT 1',
+            [vaccinationResult.vaccination_id]
+        );
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'VACCINATION_RECORD',
+            targetEntity: 'vaccinations',
+            targetRecordId: vaccinationResult.vaccination_id,
+            targetName: infantTargetName(infant),
+            barangay: infant.barangay || barangay,
+            oldValues: {},
+            newValues: newVaccinationRows[0] || { ...vaccinationData, id: vaccinationResult.vaccination_id },
+            metadata: {
+                infant_id: internalId,
+                vaccine_code: vaccinationData.vaccine_code,
+                dose_number: vaccinationData.dose_number
+            },
+            req
+        });
         // Use internalId (UUID) — never the raw REG- string
         const updatedSchedule = await nipScheduleService.getSchedule(internalId);
 
@@ -378,6 +434,7 @@ router.put('/:id', requireClinicalPrivilege, async (req, res) => {
                 return res.status(400).json({ success: false, error: 'Invalid archive_reason.' });
             }
 
+            const oldInfant = await getScopedInfantRecord(req.params.id, barangay);
             await ensureArchiveColumns();
             const barangayClause = barangay ? 'AND barangay = ?' : '';
             const params = barangay
@@ -401,6 +458,23 @@ router.put('/:id', requireClinicalPrivilege, async (req, res) => {
                 return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
             }
 
+            const newInfant = await getScopedInfantRecord(req.params.id, barangay);
+            await safeRecordAuditEvent({
+                actor: req.user,
+                action: 'INFANT_ARCHIVE',
+                targetEntity: 'infants',
+                targetRecordId: oldInfant?.id || req.params.id,
+                targetName: infantTargetName(oldInfant) || infantTargetName(newInfant),
+                barangay: oldInfant?.barangay || newInfant?.barangay || barangay,
+                oldValues: oldInfant || {},
+                newValues: newInfant || {
+                    status: 'Archived',
+                    archive_reason: archiveReason,
+                    archive_notes: archiveNotes
+                },
+                req
+            });
+
             return res.json({ success: true, message: 'Infant record archived successfully' });
         }
 
@@ -411,10 +485,23 @@ router.put('/:id', requireClinicalPrivilege, async (req, res) => {
             });
         }
 
+        const oldInfant = await getScopedInfantRecord(req.params.id, barangay);
         const success = await infantService.updateInfant(req.params.id, updateData, barangay);
         if (!success) {
             return res.status(404).json({ success: false, error: 'Infant not found or no changes made' });
         }
+        const newInfant = await getScopedInfantRecord(req.params.id, barangay);
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'INFANT_UPDATE',
+            targetEntity: 'infants',
+            targetRecordId: oldInfant?.id || newInfant?.id || req.params.id,
+            targetName: infantTargetName(newInfant) || infantTargetName(oldInfant),
+            barangay: oldInfant?.barangay || newInfant?.barangay || barangay,
+            oldValues: oldInfant || {},
+            newValues: newInfant || updateData,
+            req
+        });
         res.json({ success: true, message: 'Infant record updated successfully' });
     } catch (error) {
         console.error('Error updating infant:', error);

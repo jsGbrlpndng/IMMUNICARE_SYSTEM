@@ -1,607 +1,431 @@
-﻿import React from 'react';
-import { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ClipboardList,
-    Search,
-    ChevronLeft,
-    ChevronRight,
-    X,
-    Clock,
-    User,
     Activity,
-    Building2,
-    CheckCircle2,
-    XCircle,
-    Info,
-    Users,
-    Stethoscope,
-    ChevronDown,
-    ChevronUp,
-    CalendarDays
+    Download,
+    Eye,
+    Filter,
+    Lock,
+    Search,
+    Shield,
+    User,
+    X
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
-import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
+import {
+    buildAuditDeltaRows,
+    buildAuditTechnicalRows,
+    formatAuditAction,
+    formatAuditField,
+    formatAuditRole,
+    formatAuditScope,
+    formatAuditTarget,
+    formatAuditValue,
+    isAuditSystemField
+} from '../../utils/auditFormatter';
 
-/* â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const ROLE_OPTIONS = ['Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW'];
 
-/**
- * Format a UTC/ISO timestamp into a local, human-readable string.
- * e.g. "Feb 21, 2026 â€“ 11:48 AM"
- */
+const initialFilters = {
+    barangay: 'all',
+    actorRole: '',
+    actor: '',
+    action: '',
+    targetEntity: '',
+    infantName: '',
+    bhwName: '',
+    startDate: '',
+    endDate: ''
+};
+
 const formatDate = (raw) => {
-    if (!raw) return 'â€”';
-    const d = new Date(raw);
-    if (isNaN(d)) return raw;
-    const date = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-    const time = d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true });
-    return `${date} â€“ ${time}`;
+    if (!raw) return '-';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return String(raw);
+    return parsed.toLocaleString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
 };
 
-/**
- * Map raw action_type codes to plain-language descriptions.
- */
-const friendlyAction = (action) => {
-    if (!action) return 'â€”';
-    const map = {
-        USER_CREATED: 'Created user',
-        USER_UPDATED: 'Updated user',
-        USER_DISABLED: 'Disabled user',
-        USER_ENABLED: 'Enabled user',
-        PASSWORD_RESET: 'Reset password',
-        PASSWORD_CHANGED: 'Changed password',
-        LOGIN_SUCCESS: 'Logged in',
-        LOGIN_FAILED: 'Login failed',
-        LOGIN: 'Logged in',
-        LOGOUT: 'Logged out',
-        ROLE_CHANGED: 'Changed role',
-        SETTINGS_UPDATED: 'Updated settings',
-        SCHEDULE_UPDATED: 'Updated schedule',
-        VACCINATION_RECORDED: 'Recorded vaccination',
-        VACCINATION_UPDATED: 'Updated vaccination',
-        DOSAGE_VALIDATED: 'Validated dosage',
-        INFANT_REGISTERED: 'Registered infant',
-        INFANT_UPDATED: 'Updated infant record',
-    };
-    const key = action.toUpperCase().replace(/ /g, '_');
-    return map[key] || action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-};
+const Field = ({ label, children }) => (
+    <label className="block">
+        <span className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+            {label}
+        </span>
+        {children}
+    </label>
+);
 
-/**
- * Whether an action/status indicates success.
- */
-const isSuccess = (log) => {
-    const status = (log.status || log.result || '').toLowerCase();
-    if (status.includes('fail') || status.includes('error') || status.includes('denied') || status.includes('invalid')) {
-        return false;
-    }
-    const action = (log.action_type || '').toLowerCase();
-    if (action.includes('fail') || action.includes('error')) return false;
-    return true;
-};
+const inputClass = 'h-9 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 outline-none focus:border-[#064E3B]';
 
-/**
- * Extract a friendly result/status label.
- */
-const friendlyStatus = (log) => {
-    const raw = log.status || log.result || '';
-    if (!raw) return isSuccess(log) ? 'Success' : null;
-    if (raw.toLowerCase() === 'success' || raw.toLowerCase() === 'ok') return 'Success';
-    // Prefix with "Failed â€“" for error strings
-    if (!isSuccess(log)) return `Failed â€“ ${raw}`;
-    return raw;
-};
-
-/**
- * Extract "target" text from a log entry.
- */
-const friendlyTarget = (log) => {
-    const target = log.target_entity || log.vaccine_name || '';
-    if (!target) {
-        // Try to extract from details object
-        const d = log.details || {};
-        if (d.target_name) return d.target_name;
-        if (d.full_name) return `User: ${d.full_name}`;
-        return 'â€”';
-    }
-    return target;
-};
-
-/**
- * Render the details object as a set of friendly key-value rows.
- * Shows known fields with labels first, then any extras.
- */
-const KNOWN_FIELDS = {
-    role: 'Role',
-    full_name: 'Full Name',
-    target_id: 'Target ID',
-    user_id: 'User ID',
-    assigned_barangay: 'Assigned Barangay',
-    barangay: 'Barangay',
-    email: 'Email',
-    action: 'Action',
-    ip_address: 'IP Address',
-    user_agent: 'Device / Browser',
-    previous_role: 'Previous Role',
-    new_role: 'New Role',
-    reason: 'Reason',
-};
-
-const MetaSummaryCard = ({ details }) => {
-    const [expanded, setExpanded] = useState(false);
-
-    if (!details || typeof details !== 'object' || Object.keys(details).length === 0) {
-        return (
-            <p className="text-sm text-slate-400 italic">No additional details recorded.</p>
-        );
-    }
-
-    const known = Object.entries(KNOWN_FIELDS)
-        .filter(([key]) => details[key] !== undefined && details[key] !== null && details[key] !== '')
-        .map(([key, label]) => ({ label, value: String(details[key]) }));
-
-    const extra = Object.entries(details)
-        .filter(([key]) => !(key in KNOWN_FIELDS))
-        .map(([key, value]) => ({
-            label: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-            value: typeof value === 'object' ? JSON.stringify(value) : String(value)
-        }));
+const DeltaModal = ({ log, onClose }) => {
+    if (!log) return null;
+    const rows = buildAuditDeltaRows({
+        action: log.action,
+        oldValues: log.old_values,
+        newValues: log.new_values
+    }).filter((row) => !isAuditSystemField(row.key));
+    const metadataRows = buildAuditTechnicalRows({
+        oldValues: log.old_values,
+        newValues: log.new_values,
+        metadata: log.metadata
+    });
 
     return (
-        <div className="space-y-2">
-            {known.map(({ label, value }) => (
-                <div key={label} className="flex flex-col gap-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-                    <span className="text-sm font-semibold text-slate-800">{value}</span>
-                </div>
-            ))}
-            {extra.length > 0 && (
-                <>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4">
+            <section className="max-h-[86vh] w-full max-w-5xl overflow-hidden border border-slate-400 bg-white shadow-2xl">
+                <div className="flex items-start justify-between border-b border-slate-300 bg-[#064E3B] px-5 py-4 text-white">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100">Activity Details</p>
+                        <h2 className="text-lg font-black">{formatAuditAction(log.action)}</h2>
+                        <p className="mt-1 text-xs font-semibold text-emerald-100">{formatAuditTarget(log.target_entity, log.target_record_id, log.target_name)}</p>
+                    </div>
                     <button
-                        onClick={() => setExpanded(v => !v)}
-                        className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-600 mt-2 transition-colors"
+                        type="button"
+                        onClick={onClose}
+                        className="border border-white/40 p-2 text-white hover:bg-white/10"
+                        aria-label="Close delta view"
                     >
-                        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        {expanded ? 'Hide' : 'Show'} technical details ({extra.length})
+                        <X className="h-4 w-4" />
                     </button>
-                    {expanded && (
-                        <div className="mt-2 bg-slate-50 rounded-lg border border-slate-100 p-3 space-y-2">
-                            {extra.map(({ label, value }) => (
-                                <div key={label} className="flex flex-col gap-0.5">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-                                    <span className="text-xs font-mono text-slate-700 break-all">{value}</span>
-                                </div>
-                            ))}
+                </div>
+
+                <div className="max-h-[70vh] overflow-auto p-5">
+                    <div className="mb-4 grid gap-3 text-xs font-bold text-slate-700 md:grid-cols-4">
+                        <div className="border border-slate-300 p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500">Staff</p>
+                            <p className="mt-1 text-slate-950">{log.actor_name || log.actor_user_id || '-'}</p>
                         </div>
-                    )}
-                </>
-            )}
+                        <div className="border border-slate-300 p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500">Role</p>
+                            <p className="mt-1 text-slate-950">{formatAuditRole(log.actor_role)}</p>
+                        </div>
+                        <div className="border border-slate-300 p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500">Area</p>
+                            <p className="mt-1 text-slate-950">{formatAuditScope(log)}</p>
+                        </div>
+                        <div className="border border-slate-300 p-3">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500">Timestamp</p>
+                            <p className="mt-1 text-slate-950">{formatDate(log.created_at)}</p>
+                        </div>
+                    </div>
+
+                    <table className="w-full border-collapse text-left text-xs">
+                        <thead className="sticky top-0 bg-[#064E3B] text-white">
+                            <tr>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Detail</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Before</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">After</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.length === 0 ? (
+                                <tr>
+                                    <td colSpan={3} className="border border-slate-300 px-3 py-6 text-center font-bold text-slate-500">
+                                        No before/after values recorded.
+                                    </td>
+                                </tr>
+                            ) : rows.map((row) => (
+                                <tr key={row.key} className={row.changed ? 'bg-emerald-50' : 'bg-white'}>
+                                    <td className="border border-slate-300 px-3 py-2 font-black uppercase text-slate-700">{formatAuditField(row.key)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 text-[11px] font-semibold text-slate-700">{formatAuditValue(row.key, row.oldValue)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 text-[11px] font-semibold text-slate-950">{formatAuditValue(row.key, row.newValue)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+
+                    {metadataRows.length > 0 ? (
+                        <details className="mt-4 border border-slate-300 bg-slate-50 p-3">
+                            <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-slate-600">Show technical metadata</summary>
+                            <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+                                {metadataRows.map(([key, value]) => (
+                                    <div key={key} className="border border-slate-200 bg-white p-2">
+                                        <p className="font-black uppercase text-slate-500">{formatAuditField(key)}</p>
+                                        <p className="mt-1 break-all text-[11px] font-semibold text-slate-700">{formatAuditValue(key, value)}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </details>
+                    ) : null}
+                </div>
+            </section>
         </div>
     );
 };
 
-/* â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
 const AuditLogs = () => {
     const { user } = useAuth();
-    const { selectedBarangay } = useBarangayFilter();
+    const isSuperAdmin = user?.role === 'Super Admin';
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('system');
-    const [pagination, setPagination] = useState({ page: 1, limit: 15, total: 0 });
+    const [error, setError] = useState('');
     const [selectedLog, setSelectedLog] = useState(null);
-    const [filters, setFilters] = useState({
-        actor: '',
-        startDate: '',
-        endDate: ''
-    });
+    const [filters, setFilters] = useState(initialFilters);
+    const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0 });
 
-    useEffect(() => {
-        fetchLogs();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, pagination.page, filters, selectedBarangay]);
+    const lockedBarangay = user?.assigned_barangay || 'Assigned Barangay';
+    const visibleFilters = useMemo(() => {
+        if (isSuperAdmin) return filters;
+        return {
+            ...filters,
+            barangay: '',
+            actorRole: ''
+        };
+    }, [filters, isSuperAdmin]);
 
-    const fetchLogs = async () => {
+    const buildQuery = useCallback((forExport = false) => {
+        const params = new URLSearchParams();
+        if (!forExport) {
+            params.set('page', String(pagination.page));
+            params.set('limit', String(pagination.limit));
+        }
+        Object.entries(visibleFilters).forEach(([key, value]) => {
+            if (value && value !== 'all') params.set(key, value);
+        });
+        return params.toString();
+    }, [pagination.limit, pagination.page, visibleFilters]);
+
+    const fetchLogs = useCallback(async () => {
+        setLoading(true);
+        setError('');
         try {
-            setLoading(true);
-            // Remove empty params so backend doesn't get blank strings
-            const raw = { page: pagination.page, limit: pagination.limit, ...filters };
-            const queryParams = new URLSearchParams(
-                Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== ''))
-            );
-
-            const endpoint = activeTab === 'system'
-                ? `/admin/audit/system?${queryParams}`
-                : `/admin/audit/clinical?${queryParams}`;
-
-            const res = await apiClient.get(endpoint);
-            if (!res.ok) {
-                setLogs([]);
-                setPagination(prev => ({ ...prev, total: 0 }));
-                return;
+            const response = await apiClient.get(`/audit-logs?${buildQuery(false)}`);
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.error || 'Unable to load audit logs.');
             }
-            const data = await res.json();
-
-            setLogs(data?.logs ?? []);
-            setPagination(prev => ({
-                ...prev,
-                total: data?.pagination?.total ?? 0
+            setLogs(Array.isArray(payload.logs) ? payload.logs : []);
+            setPagination((current) => ({
+                ...current,
+                total: Number(payload?.pagination?.total || 0)
             }));
-        } catch (error) {
-            console.error('Audit log fetch error:', error);
+        } catch (requestError) {
+            console.error('[AUDIT_LOGS]', requestError);
             setLogs([]);
-            setPagination(prev => ({ ...prev, total: 0 }));
+            setError(requestError.message || 'Unable to load audit logs.');
         } finally {
             setLoading(false);
         }
+    }, [buildQuery]);
+
+    useEffect(() => {
+        fetchLogs();
+    }, [fetchLogs]);
+
+    const handleFilter = (key, value) => {
+        setFilters((current) => ({ ...current, [key]: value }));
+        setPagination((current) => ({ ...current, page: 1 }));
     };
 
-    const handleTabChange = (tab) => {
-        setActiveTab(tab);
-        setSelectedLog(null);
-        setPagination(prev => ({ ...prev, page: 1 }));
+    const clearFilters = () => {
+        setFilters(initialFilters);
+        setPagination((current) => ({ ...current, page: 1 }));
     };
 
-    const handleFilterChange = (key, value) => {
-        setFilters(prev => ({ ...prev, [key]: value }));
-        setPagination(prev => ({ ...prev, page: 1 }));
+    const exportCsv = async () => {
+        const response = await apiClient.get(`/audit-logs/export.csv?${buildQuery(true)}`);
+        if (!response.ok) return;
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `immunicare_audit_logs_${Date.now()}.csv`;
+        anchor.click();
+        URL.revokeObjectURL(url);
     };
 
-    const totalPages = Math.ceil((pagination.total ?? 0) / pagination.limit);
+    const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
 
     return (
         <div className="space-y-5">
-            {/* Page Header */}
-            <div className="bg-white rounded-xl border border-slate-200 px-6 py-5">
-                <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center">
-                        <ClipboardList className="w-5 h-5 text-slate-600" />
+            <section className="border border-slate-300 bg-white px-5 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center border border-[#064E3B] bg-[#064E3B] text-white">
+                            <Shield className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">
+                                {isSuperAdmin ? 'Head Nurse Audit Ledger' : 'Barangay Audit Ledger'}
+                            </p>
+                            <h1 className="text-2xl font-black text-slate-950">Immutable Activity History</h1>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">
+                                {isSuperAdmin ? 'All RHU 2 barangays and system-level activity' : `Locked to ${lockedBarangay}`}
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold text-slate-900">Activity History</h1>
-                        <p className="text-sm text-slate-500 mt-0.5">
-                            {selectedBarangay === 'all' ? 'Municipal Overview' : `Barangay ${selectedBarangay}`} â€¢ A record of all actions taken by staff.
-                        </p>
-                    </div>
+                    {isSuperAdmin ? (
+                        <button
+                            type="button"
+                            onClick={exportCsv}
+                            className="inline-flex h-10 items-center gap-2 border border-[#064E3B] bg-[#064E3B] px-4 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-[#043828]"
+                        >
+                            <Download className="h-4 w-4" />
+                            Export CSV
+                        </button>
+                    ) : (
+                        <div className="inline-flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-[#064E3B]">
+                            <Lock className="h-4 w-4" />
+                            Export disabled
+                        </div>
+                    )}
                 </div>
-            </div>
+            </section>
 
-            {/* Filter Bar */}
-            <div className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-                <div className="flex flex-wrap gap-4 items-end">
-                    {/* Actor search */}
-                    <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                            <Search className="w-3 h-3" />
-                            Search by Staff ID
-                        </label>
+            <section className="border border-slate-300 bg-white p-4">
+                <div className="grid gap-3 lg:grid-cols-6">
+                    {isSuperAdmin ? (
+                        <>
+                            <Field label="Barangay">
+                                <select className={`${inputClass} w-full`} value={filters.barangay} onChange={(event) => handleFilter('barangay', event.target.value)}>
+                                    <option value="all">All RHU 2 + System</option>
+                                    <option value="SYSTEM">System Events</option>
+                                    {RHU2_BARANGAYS.map((barangay) => (
+                                        <option key={barangay} value={barangay}>{barangay}</option>
+                                    ))}
+                                </select>
+                            </Field>
+                            <Field label="Staff Role">
+                                <select className={`${inputClass} w-full`} value={filters.actorRole} onChange={(event) => handleFilter('actorRole', event.target.value)}>
+                                    <option value="">All Roles</option>
+                                    {ROLE_OPTIONS.map((role) => (
+                                        <option key={role} value={role}>{formatAuditRole(role)}</option>
+                                    ))}
+                                </select>
+                            </Field>
+                        </>
+                    ) : (
+                        <>
+                            <Field label="Infant Name">
+                                <input className={`${inputClass} w-full`} value={filters.infantName} onChange={(event) => handleFilter('infantName', event.target.value)} placeholder="Search infant" />
+                            </Field>
+                            <Field label="BHW Name">
+                                <input className={`${inputClass} w-full`} value={filters.bhwName} onChange={(event) => handleFilter('bhwName', event.target.value)} placeholder="Search BHW" />
+                            </Field>
+                        </>
+                    )}
+                    <Field label="Staff">
                         <div className="relative">
-                            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-300" />
-                            <input
-                                type="text"
-                                placeholder="e.g. ADMIN-001"
-                                className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm w-48 focus:ring-2 focus:ring-blue-500 focus:border-blue-400 outline-none transition"
-                                value={filters.actor}
-                                onChange={(e) => handleFilterChange('actor', e.target.value)}
-                            />
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                            <input className={`${inputClass} w-full pl-8`} value={filters.actor} onChange={(event) => handleFilter('actor', event.target.value)} placeholder="Staff ID or name" />
                         </div>
-                    </div>
-
-                    {/* Date range */}
-                    <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                            <CalendarDays className="w-3 h-3" />
-                            Date Range
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="date"
-                                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
-                                value={filters.startDate}
-                                onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                            />
-                            <span className="text-slate-400 text-xs font-medium">to</span>
-                            <input
-                                type="date"
-                                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
-                                value={filters.endDate}
-                                onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                            />
-                            {(filters.actor || filters.startDate || filters.endDate) && (
-                                <button
-                                    onClick={() => {
-                                        setFilters({ actor: '', startDate: '', endDate: '' });
-                                        setPagination(prev => ({ ...prev, page: 1 }));
-                                    }}
-                                    className="flex items-center gap-1 px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                                >
-                                    <X className="w-3 h-3" />
-                                    Clear
-                                </button>
-                            )}
+                    </Field>
+                    <Field label="Activity">
+                        <input className={`${inputClass} w-full`} value={filters.action} onChange={(event) => handleFilter('action', event.target.value)} placeholder="Search activity type..." />
+                    </Field>
+                    <Field label="Start Date">
+                        <input type="date" className={`${inputClass} w-full`} value={filters.startDate} onChange={(event) => handleFilter('startDate', event.target.value)} />
+                    </Field>
+                    <Field label="End Date">
+                        <div className="flex gap-2">
+                            <input type="date" className={`${inputClass} w-full`} value={filters.endDate} onChange={(event) => handleFilter('endDate', event.target.value)} />
+                            <button type="button" onClick={clearFilters} className="border border-slate-300 px-3 text-slate-600 hover:border-[#064E3B] hover:text-[#064E3B]">
+                                <X className="h-4 w-4" />
+                            </button>
                         </div>
+                    </Field>
+                </div>
+            </section>
+
+            {error ? (
+                <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">{error}</div>
+            ) : null}
+
+            <section className="border border-slate-300 bg-white">
+                <div className="flex items-center justify-between border-b border-slate-300 px-4 py-3">
+                    <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">Audit Entries</p>
+                        <p className="text-xs font-bold text-slate-500">{pagination.total.toLocaleString()} event(s)</p>
                     </div>
+                    <Filter className="h-4 w-4 text-slate-400" />
                 </div>
-            </div>
-
-            {/* Main Panel */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                {/* Stream Tabs */}
-                <div className="flex border-b border-slate-200 bg-slate-50/50">
-                    <button
-                        onClick={() => handleTabChange('system')}
-                        className={`flex items-center gap-2.5 px-6 py-4 text-sm font-semibold transition-all border-b-2 ${activeTab === 'system'
-                                ? 'border-slate-800 text-slate-900 bg-white'
-                                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/60'
-                            }`}
-                    >
-                        <Users className="w-4 h-4" />
-                        <span>Staff &amp; System</span>
-                        <span className="text-[10px] text-slate-400 font-normal">Stream A</span>
-                    </button>
-                    <button
-                        onClick={() => handleTabChange('clinical')}
-                        className={`flex items-center gap-2.5 px-6 py-4 text-sm font-semibold transition-all border-b-2 ${activeTab === 'clinical'
-                                ? 'border-blue-600 text-blue-700 bg-white'
-                                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-white/60'
-                            }`}
-                    >
-                        <Stethoscope className="w-4 h-4" />
-                        <span>Clinical Activity</span>
-                        <span className="text-[10px] text-slate-400 font-normal">Stream B</span>
-                    </button>
-                </div>
-
-                {/* Table */}
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                                <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Date &amp; Time</th>
-                                <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Done By</th>
-                                <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                                <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">What Was Changed</th>
-                                <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Result</th>
+                <div className="max-w-full overflow-x-auto">
+                    <table className="min-w-[1180px] w-full border-collapse text-left text-xs">
+                        <thead className="bg-[#064E3B] text-white">
+                            <tr>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Timestamp</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Staff</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Role</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Area</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Activity</th>
+                                <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-wider">Record</th>
+                                <th className="border border-[#043828] px-3 py-2 text-center font-black uppercase tracking-wider">Details/Changes</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="px-5 py-14 text-center">
-                                        <div className="flex flex-col items-center gap-2 text-slate-400">
-                                            <Activity className="w-6 h-6 animate-pulse" />
-                                            <span className="text-sm">Loading activity historyâ€¦</span>
-                                        </div>
+                                    <td colSpan={7} className="border border-slate-300 px-4 py-10 text-center font-bold text-slate-500">
+                                        <Activity className="mx-auto mb-2 h-5 w-5 animate-pulse" />
+                                        Loading audit logs...
                                     </td>
                                 </tr>
                             ) : logs.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="px-5 py-16 text-center">
-                                        <div className="flex flex-col items-center gap-2 text-slate-400">
-                                            <ClipboardList className="w-8 h-8 text-slate-200" />
-                                            <p className="text-sm font-medium text-slate-500">No activity found</p>
-                                            <p className="text-xs text-slate-400">
-                                                {filters.actor || filters.startDate || filters.endDate
-                                                    ? 'No activity found for this staff ID and date range.'
-                                                    : 'There are no logged activities yet.'}
-                                            </p>
-                                        </div>
+                                    <td colSpan={7} className="border border-slate-300 px-4 py-10 text-center font-bold text-slate-500">
+                                        No audit records found.
                                     </td>
                                 </tr>
-                            ) : (
-                                logs.map((log, idx) => {
-                                    const success = isSuccess(log);
-                                    const statusLabel = friendlyStatus(log);
-                                    return (
-                                        <tr
-                                            key={log.id || log.audit_id || idx}
-                                            className={`cursor-pointer transition-colors hover:bg-blue-50/40 ${selectedLog === log
-                                                    ? 'bg-blue-50 border-l-2 border-blue-500'
-                                                    : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
-                                                }`}
-                                            onClick={() => setSelectedLog(selectedLog === log ? null : log)}
+                            ) : logs.map((log, index) => (
+                                <tr key={log.id || index} className="odd:bg-white even:bg-slate-50 hover:bg-emerald-50/50">
+                                    <td className="border border-slate-300 px-3 py-2 font-mono text-[11px] font-bold text-slate-700">{formatDate(log.created_at)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 font-black text-slate-950">
+                                        <span className="inline-flex items-center gap-1">
+                                            <User className="h-3.5 w-3.5 text-slate-400" />
+                                            {log.actor_name || log.actor_user_id || '-'}
+                                        </span>
+                                    </td>
+                                    <td className="border border-slate-300 px-3 py-2 font-bold text-slate-700">{formatAuditRole(log.actor_role)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 font-bold text-slate-700">{formatAuditScope(log)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 font-black text-[#064E3B]">{formatAuditAction(log.action)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 font-bold text-slate-800">{formatAuditTarget(log.target_entity, log.target_record_id, log.target_name)}</td>
+                                    <td className="border border-slate-300 px-3 py-2 text-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedLog(log)}
+                                            className="inline-flex h-8 items-center gap-1 border border-[#064E3B] px-2 text-[11px] font-black uppercase tracking-[0.08em] text-[#064E3B] hover:bg-[#064E3B] hover:text-white"
                                         >
-                                            <td className="px-5 py-3.5">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Clock className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
-                                                    <span className="text-sm text-slate-600 font-medium whitespace-nowrap">
-                                                        {formatDate(log.timestamp || log.created_at)}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-5 py-3.5">
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-bold">
-                                                    <User className="w-3 h-3 text-slate-400" />
-                                                    {log.user_id || log.midwife_id || 'â€”'}
-                                                </span>
-                                            </td>
-                                            <td className="px-5 py-3.5">
-                                                <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-semibold border ${activeTab === 'system'
-                                                        ? 'bg-slate-50 text-slate-700 border-slate-200'
-                                                        : 'bg-blue-50 text-blue-700 border-blue-100'
-                                                    }`}>
-                                                    {friendlyAction(log.action_type)}
-                                                </span>
-                                            </td>
-                                            <td className="px-5 py-3.5 text-sm text-slate-700 font-medium max-w-xs truncate">
-                                                {activeTab === 'clinical' ? (
-                                                    <span className="text-slate-400 italic text-xs">Protected â€“ clinical data</span>
-                                                ) : (
-                                                    friendlyTarget(log)
-                                                )}
-                                            </td>
-                                            <td className="px-5 py-3.5">
-                                                {statusLabel ? (
-                                                    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${success ? 'text-emerald-700' : 'text-red-600'
-                                                        }`}>
-                                                        {success
-                                                            ? <CheckCircle2 className="w-3.5 h-3.5" />
-                                                            : <XCircle className="w-3.5 h-3.5" />}
-                                                        {statusLabel}
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                                        Success
-                                                    </span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
+                                            <Eye className="h-3.5 w-3.5" />
+                                            View
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
-
-                {/* Pagination */}
-                <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-between">
-                    <p className="text-xs font-medium text-slate-500">
-                        {pagination.total === 0
-                            ? 'No entries'
-                            : `Showing ${Math.max(1, (pagination.page - 1) * pagination.limit + 1)}â€“${Math.min(pagination.page * pagination.limit, pagination.total ?? 0)} of ${pagination.total ?? 0}`}
+                <div className="flex items-center justify-between border-t border-slate-300 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-bold text-slate-500">
+                        Page {pagination.page} of {totalPages}
                     </p>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex gap-2">
                         <button
-                            disabled={pagination.page === 1}
-                            onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                            className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            type="button"
+                            disabled={pagination.page <= 1}
+                            onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))}
+                            className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 disabled:opacity-40"
                         >
-                            <ChevronLeft className="w-4 h-4 text-slate-600" />
+                            Previous
                         </button>
-                        <span className="text-xs font-semibold text-slate-600 px-2">
-                            {pagination.page} / {Math.max(1, totalPages)}
-                        </span>
                         <button
+                            type="button"
                             disabled={pagination.page >= totalPages}
-                            onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                            className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
+                            className="border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 disabled:opacity-40"
                         >
-                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                            Next
                         </button>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            {/* Detail Side Panel */}
-            {selectedLog && (
-                <>
-                    {/* Backdrop overlay (click to close) */}
-                    <div
-                        className="fixed inset-0 z-40 bg-black/10"
-                        onClick={() => setSelectedLog(null)}
-                    />
-                    <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-50 border-l border-slate-200 flex flex-col">
-                        {/* Panel Header */}
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-slate-50">
-                            <div>
-                                <h2 className="text-sm font-bold text-slate-800">Activity Details</h2>
-                                <p className="text-xs text-slate-400 mt-0.5">Full record for this log entry</p>
-                            </div>
-                            <button
-                                onClick={() => setSelectedLog(null)}
-                                className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"
-                            >
-                                <X className="w-4 h-4 text-slate-500" />
-                            </button>
-                        </div>
-
-                        {/* Panel Body */}
-                        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                            {/* Key facts */}
-                            <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-4">
-                                {/* Date/Time */}
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Date &amp; Time</p>
-                                    <div className="flex items-center gap-2 text-slate-800">
-                                        <Clock className="w-4 h-4 text-slate-400" />
-                                        <span className="text-sm font-semibold">
-                                            {formatDate(selectedLog.timestamp || selectedLog.created_at)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Done By */}
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Done By</p>
-                                    <div className="flex items-center gap-2">
-                                        <User className="w-4 h-4 text-slate-400" />
-                                        <span className="text-sm font-bold bg-slate-200 px-2.5 py-0.5 rounded-md text-slate-800">
-                                            {selectedLog.user_id || selectedLog.midwife_id || 'â€”'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Action */}
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Action</p>
-                                    <div className="flex items-center gap-2">
-                                        <Activity className="w-4 h-4 text-slate-400" />
-                                        <span className="text-sm font-semibold text-slate-800">
-                                            {friendlyAction(selectedLog.action_type)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Target (System stream only) */}
-                                {activeTab === 'system' && (
-                                    <div>
-                                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">What Was Changed</p>
-                                        <div className="flex items-start gap-2">
-                                            <Building2 className="w-4 h-4 text-slate-400 mt-0.5" />
-                                            <span className="text-sm font-semibold text-slate-800">
-                                                {friendlyTarget(selectedLog)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Result */}
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Result</p>
-                                    {isSuccess(selectedLog) ? (
-                                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
-                                            <CheckCircle2 className="w-4 h-4" />
-                                            {friendlyStatus(selectedLog) || 'Success'}
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-red-600">
-                                            <XCircle className="w-4 h-4" />
-                                            {friendlyStatus(selectedLog)}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Details Section */}
-                            <div>
-                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                                    <Info className="w-3.5 h-3.5" />
-                                    Additional Information
-                                </h3>
-
-                                {activeTab === 'clinical' ? (
-                                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">
-                                        <p className="font-semibold mb-1">Clinical Data Protected</p>
-                                        <p className="text-xs text-amber-700 leading-relaxed">
-                                            Patient identifiers and clinical details are not shown here to protect patient privacy. Only authorized clinical staff can view this information.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="bg-white rounded-xl border border-slate-100 p-4">
-                                        <MetaSummaryCard details={selectedLog.details} />
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Log ID (for reference) */}
-                            <p className="text-[10px] text-slate-300 font-mono">
-                                Log ID: {selectedLog.id || selectedLog.audit_id || 'N/A'}
-                            </p>
-                        </div>
-                    </div>
-                </>
-            )}
+            <DeltaModal log={selectedLog} onClose={() => setSelectedLog(null)} />
         </div>
     );
 };

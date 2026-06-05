@@ -124,4 +124,24 @@ describe('VaccinationService clinical interval enforcement', () => {
 
         expect(mockConnection.rollback).toHaveBeenCalled();
     });
+
+    test('rejects recording when administered_date is missing instead of defaulting to now', async () => {
+        await expect(service.recordVaccination({
+            ...baseVaccinationData,
+            administered_date: ''
+        })).rejects.toThrow('Missing required clinical fields.');
+
+        expect(mockConnection.rollback).toHaveBeenCalled();
+        expect(mockConnection.execute).not.toHaveBeenCalled();
+    });
+
+    test('rejects recording when provider name is missing instead of injecting a fallback', async () => {
+        await expect(service.recordVaccination({
+            ...baseVaccinationData,
+            vaccinator_name: '   '
+        })).rejects.toThrow('Missing required clinical fields.');
+
+        expect(mockConnection.rollback).toHaveBeenCalled();
+        expect(mockConnection.execute).not.toHaveBeenCalled();
+    });
 });

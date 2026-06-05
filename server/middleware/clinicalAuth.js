@@ -7,6 +7,7 @@ const clinicalAuth = async (req, res, next) => {
             ROLES.SUPER_ADMIN,
             ROLES.ADMIN,
             ROLES.MIDWIFE,
+            ROLES.NURSE,
             ROLES.BHW
         ]);
 

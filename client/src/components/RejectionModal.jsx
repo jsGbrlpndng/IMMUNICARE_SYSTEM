@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 /**
  * RejectionModal - Modal for rejecting infant registrations
@@ -78,7 +79,7 @@ function RejectionModal({ infant, onClose, onReject }) {
             <div>
               <h3 className="text-2xl font-bold text-slate-900">Reject Registration</h3>
               <p className="text-sm text-slate-600">
-                {infant?.name || `${infant?.first_name} ${infant?.last_name}`}
+                {infant?.name || formatFullNameFromObject(infant)}
               </p>
             </div>
           </div>

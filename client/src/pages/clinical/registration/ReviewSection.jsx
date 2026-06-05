@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { SummaryItem } from './FormComponents';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const ReviewSection = ({ 
     formData, 
@@ -17,7 +18,7 @@ const ReviewSection = ({
                 <div className="col-span-full mb-2">
                     <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em] border-b border-green-200 pb-2">Master Patient Index</h3>
                 </div>
-                <SummaryItem label="Full Name" value={`${formData.first_name} ${formData.middle_name || ''} ${formData.last_name} ${formData.suffix || ''}`} />
+                <SummaryItem label="Full Name" value={formatFullNameFromObject(formData)} />
                 <SummaryItem label="Sex / DOB" value={`${formData.sex} | ${formData.dob ? new Date(formData.dob).toLocaleDateString() : 'N/A'}`} />
                 <SummaryItem label="Location" value={`${formData.locality || 'N/A'}, ${formData.barangay}`} />
                 <SummaryItem label="Full Address" value={formData.exact_address} />
@@ -59,7 +60,7 @@ const ReviewSection = ({
                                 {duplicateMatches.map((match, i) => (
                                     <div key={i} className="bg-white/80 p-4 rounded-xl border border-amber-200 flex items-center justify-between shadow-sm">
                                         <div className="flex flex-col">
-                                            <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{match.first_name} {match.last_name}</span>
+                                            <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{formatFullNameFromObject(match)}</span>
                                             <span className="text-[10px] font-bold text-slate-500">{new Date(match.dob).toLocaleDateString()}</span>
                                         </div>
                                         <span className="text-[10px] font-black uppercase bg-amber-200 px-3 py-1 rounded-full text-amber-900 border border-amber-300">{match.match_type}</span>

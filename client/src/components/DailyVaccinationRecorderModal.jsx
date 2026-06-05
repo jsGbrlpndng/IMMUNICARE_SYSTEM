@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Search, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../services/apiClient';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 // Philippine NIP Vaccine List (14 vaccines)
 const PHILIPPINE_NIP_VACCINES = [
@@ -94,7 +95,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
   const filteredInfants = infants.filter(infant => {
     if (!debouncedSearchQuery) return true;
     const searchLower = debouncedSearchQuery.toLowerCase();
-    const fullName = `${infant.first_name} ${infant.last_name}`.toLowerCase();
+    const fullName = formatFullNameFromObject(infant).toLowerCase();
     const referenceId = (infant.reference_id || '').toLowerCase();
     const motherName = (infant.mothers_maiden_name || infant.mother_name || '').toLowerCase();
     
@@ -184,14 +185,14 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
         const data = await response.json();
         successfulRecords.push({
           infantId,
-          infantName: `${infant.first_name} ${infant.last_name}`,
+          infantName: formatFullNameFromObject(infant),
           vaccinationId: data.vaccination_id
         });
       } catch (error) {
         console.error(`Error recording vaccination for infant ${infantId}:`, error);
         failedRecords.push({
           infantId,
-          infantName: `${infant.first_name} ${infant.last_name}`,
+          infantName: formatFullNameFromObject(infant),
           error: error.message
         });
       }
@@ -402,7 +403,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-900 truncate">
-                          {infant.first_name} {infant.last_name}
+                          {formatFullNameFromObject(infant)}
                         </p>
                         <p className="text-sm text-slate-500">
                           {infant.reference_id} â€¢ {calculateAge(infant.dob)} â€¢ {infant.sex === 'M' ? 'Male' : 'Female'}
@@ -614,7 +615,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-slate-900 text-sm truncate">
-                            {infant.first_name} {infant.last_name}
+                            {formatFullNameFromObject(infant)}
                           </p>
                           <p className="text-xs text-slate-500">
                             {infant.reference_id}

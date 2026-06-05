@@ -12,6 +12,7 @@ import {
     Loader2
 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const CICCatchUpAnalysis = () => {
     const [data, setData] = useState([]);
@@ -39,7 +40,7 @@ const CICCatchUpAnalysis = () => {
     }, []);
 
     const filteredData = data.filter(item => 
-        `${item.first_name} ${item.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        formatFullNameFromObject(item).toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.barangay.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -139,7 +140,7 @@ const CICCatchUpAnalysis = () => {
                                             </div>
                                             <div>
                                                 <div className="text-sm font-black text-slate-800 uppercase tracking-tight">
-                                                    {row.first_name} {row.last_name}
+                                                    {formatFullNameFromObject(row)}
                                                 </div>
                                                 <div className="text-[10px] font-bold text-slate-400 uppercase">
                                                     DOB: {new Date(row.dob).toLocaleDateString()}

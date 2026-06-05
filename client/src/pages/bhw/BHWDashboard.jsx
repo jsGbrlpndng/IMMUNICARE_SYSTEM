@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const BHWDashboard = () => {
     const { user } = useAuth();
@@ -20,6 +21,8 @@ const BHWDashboard = () => {
         drafts: 0,
         pending: 0,
         approved: 0,
+        validated: 0,
+        rejected: 0,
         needsCorrection: 0
     });
     const [recentInfants, setRecentInfants] = useState([]);
@@ -29,10 +32,19 @@ const BHWDashboard = () => {
 
     useEffect(() => {
         fetchDashboardData();
+        const intervalId = window.setInterval(() => {
+            fetchDashboardData({ silent: true });
+        }, 10000);
+
+        return () => window.clearInterval(intervalId);
     }, [user]);
 
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = async ({ silent = false } = {}) => {
         if (!user) return;
+
+        if (!silent) {
+            setLoading(true);
+        }
 
         try {
             const statsRes = await apiClient.get('/registrations/stats');
@@ -42,6 +54,8 @@ const BHWDashboard = () => {
                     drafts: 0,
                     pending: 0,
                     approved: 0,
+                    validated: 0,
+                    rejected: 0,
                     needs_correction: 0
                 });
             }
@@ -76,7 +90,9 @@ const BHWDashboard = () => {
             setFieldTasks([]);
             setActiveDeployments([]);
         } finally {
-            setLoading(false);
+            if (!silent) {
+                setLoading(false);
+            }
         }
     };
 
@@ -99,7 +115,7 @@ const BHWDashboard = () => {
         },
         {
             label: 'Approved',
-            value: stats.approved || 0,
+            value: stats.validated || stats.approved || 0,
             description: 'Accepted and promoted records',
             icon: CheckCircle2,
             iconClass: 'text-[#0B6E4F]',
@@ -292,7 +308,7 @@ const BHWDashboard = () => {
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-3">
                                         <p className="text-lg font-bold tracking-tight text-slate-900">
-                                            {infant.first_name} {infant.last_name}
+                                            {formatFullNameFromObject(infant)}
                                         </p>
                                         <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-rose-700">
                                             Needs Correction
@@ -353,7 +369,7 @@ const BHWDashboard = () => {
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-3">
                                         <p className="text-lg font-bold tracking-tight text-slate-900">
-                                            {[task.first_name, task.middle_name, task.last_name].filter(Boolean).join(' ') || 'Unnamed infant'}
+                                            {formatFullNameFromObject(task) || 'Unnamed infant'}
                                         </p>
                                         <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${getTaskStatusPill(task.status)}`}>
                                             {task.status}
@@ -442,7 +458,7 @@ const BHWDashboard = () => {
                                         </div>
                                         <div>
                                             <p className="text-lg font-bold tracking-tight text-slate-900">
-                                                {infant.first_name} {infant.last_name}
+                                                {formatFullNameFromObject(infant)}
                                             </p>
                                             <p className="mt-1 text-sm text-slate-500">
                                                 Born {infant.dob ? new Date(infant.dob).toLocaleDateString() : 'N/A'}

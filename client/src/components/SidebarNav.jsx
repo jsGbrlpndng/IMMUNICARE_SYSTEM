@@ -1,91 +1,28 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-    LayoutDashboard,
-    ClipboardList,
-    CalendarDays,
-    Map as MapIcon,
-    BarChart2,
     ChevronLeft,
     ChevronRight,
-    MessageSquare,
     LogOut,
     Settings,
     ChevronDown,
-    ShieldCheck,
     Activity,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   Design Tokens â€” Light Clinical System
-   Philosophy: White-field precision, Clinical Mint accent,
-   Charcoal legibility. The sidebar reads like a printed form:
-   clean, structured, no visual noise.
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const T = {
-    // Backgrounds
-    bg:          '#F9FBFC',              // Light clinical slate
-    bgSubtle:    '#F1F5F9',
-    bgHover:     '#F1F5F9',              // Subtle slate hover
-    bgActive:    '#FFFFFF',              // Pure white for active item to pop
-
-    // Borders
-    border:      '#E5EAEF',              // Sharp, crisp borders
-
-    // Text
-    textHeading: '#0F172A',             // Slate 900 â€” high contrast
-    textLabel:   '#475569',             // Slate 600 â€” section headers
-    textMeta:    '#94A3B8',             // Slate 400 â€” role badge
-
-    // Accent â€” San Pedro Green (Official & Confident)
-    green:       '#059669',             // Emerald 600
-    greenDeep:   '#064E3B',             // Emerald 900 (Authority)
-    greenLight:  '#ECFDF5',             // Emerald 50 (Tints)
-
-    // Active state
-    activeBar:   '#059669',
-    activeText:  '#059669',
-    activeWeight: 600,
+    bg: '#F9FBFC',
+    bgHover: '#F1F5F9',
+    border: '#E5EAEF',
+    textHeading: '#0F172A',
+    textLabel: '#475569',
+    textMeta: '#94A3B8',
+    green: '#059669',
+    greenDeep: '#064E3B'
 };
 
-/* â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-const navigation = [
-    {
-        group: 'Clinical',
-        items: [
-            { name: 'Dashboard',       path: '/clinical/dashboard',  icon: LayoutDashboard },
-            { name: 'Infant Registry', path: '/clinical/registry',   icon: ClipboardList   },
-            { name: 'Validation',      path: '/clinical/validation', icon: ShieldCheck     },
-            { name: 'NIP Schedule',    path: '/clinical/schedule',   icon: CalendarDays    },
-        ],
-    },
-    {
-        group: 'Insights',
-        items: [
-            { name: 'Reports', path: '/clinical/reports', icon: BarChart2 },
-            { name: 'Heatmap', path: '/clinical/map',     icon: MapIcon   },
-            { name: 'Follow-Ups', path: '/clinical/follow-ups', icon: ClipboardList },
-        ],
-    },
-    {
-        group: 'Messaging',
-        items: [
-            { name: 'SMS', path: '/clinical/sms', icon: MessageSquare },
-        ],
-    },
-    {
-        group: 'Security',
-        items: [
-            { name: 'Account Settings', path: '/clinical/profile', icon: Settings },
-        ],
-    },
-];
-
-
-
-/* â”€â”€â”€ Logo mark â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Logo mark ──────────────────────────────────────────────────── */
 const LogoMark = () => (
     <div style={{
         width: 32, height: 32,
@@ -100,7 +37,7 @@ const LogoMark = () => (
     </div>
 );
 
-/* â”€â”€â”€ NavItem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── NavItem ────────────────────────────────────────────────────── */
 const NavItem = ({ item, active, isCollapsed, onClick }) => {
     const [hovered, setHovered] = useState(false);
     const Icon = item.icon;
@@ -147,7 +84,7 @@ const NavItem = ({ item, active, isCollapsed, onClick }) => {
     );
 };
 
-/* â”€â”€â”€ Dropdown row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Dropdown row ───────────────────────────────────────────────── */
 const DropRow = ({ icon, label, onClick, danger }) => {
     const [h, setH] = useState(false);
     return (
@@ -175,18 +112,20 @@ const DropRow = ({ icon, label, onClick, danger }) => {
     );
 };
 
-/* â”€â”€â”€ Main Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Main Sidebar ───────────────────────────────────────────────── */
 const SidebarNav = ({
     isCollapsed,
     setIsCollapsed,
     isMobileOpen,
     setIsMobileOpen,
-    navigation: navigationConfig = navigation,
-    accountSettingsPath = '/clinical/profile'
+    navItems = [],
+    accountSettingsPath = '/clinical/profile',
+    brandSubtitle = null,
+    logoutRedirectPath = '/'
 }) => {
     const location  = useLocation();
     const navigate  = useNavigate();
-    const { user, logout } = useAuth();
+    const { user, logout, auditLogout } = useAuth();
     const [accountOpen,   setAccountOpen]   = useState(false);
     const [collapseHover, setCollapseHover] = useState(false);
     const accountRef = useRef(null);
@@ -203,7 +142,11 @@ const SidebarNav = ({
         return () => document.removeEventListener('mousedown', h);
     }, []);
 
-    const handleLogout = () => { logout(); navigate('/'); };
+    const handleLogout = () => {
+        auditLogout?.();
+        logout();
+        navigate(logoutRedirectPath);
+    };
 
     const displayName = user?.full_name || user?.name || 'Clinical Staff';
     const initials    = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -220,7 +163,7 @@ const SidebarNav = ({
                 />
             )}
 
-            {/* â”€â”€ Sidebar shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── Sidebar shell ─────────────────────────────────────── */}
             <aside
                 style={{
                     background:  T.bg,
@@ -238,7 +181,7 @@ const SidebarNav = ({
                 }}
                 className={!isMobileOpen ? '-translate-x-full lg:translate-x-0' : ''}
             >
-                {/* â”€â”€ Logo header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* ── Logo header ─────────────────────────────────────── */}
                 <div style={{
                     display:        'flex',
                     alignItems:     'center',
@@ -257,16 +200,16 @@ const SidebarNav = ({
                                 ImmuniCare
                             </span>
                             <span style={{ color: T.green, fontSize:9, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', opacity: 0.9 }}>
-                                {user?.assigned_barangay ? `BARANGAY ${user.assigned_barangay}` : 'San Pedro RHU'}
+                                {brandSubtitle || (user?.assigned_barangay ? `BARANGAY ${user.assigned_barangay}` : 'San Pedro RHU')}
                             </span>
                         </div>
                     )}
                 </div>
 
-                {/* â”€â”€ Navigation body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* ── Navigation body ──────────────────────────────────── */}
                 <div style={{ flex:1, overflowY:'auto', overflowX:'hidden', padding:'14px 8px 8px', scrollbarWidth:'none' }}>
-                    {navigationConfig.map((group, gi) => (
-                        <div key={group.group} style={{ marginBottom: gi < navigation.length - 1 ? 2 : 0 }}>
+                    {navItems.map((group, gi) => (
+                        <div key={group.group} style={{ marginBottom: gi < navItems.length - 1 ? 2 : 0 }}>
                             {/* Thin divider between groups */}
                             {gi > 0 && (
                                 <div style={{
@@ -309,7 +252,7 @@ const SidebarNav = ({
                     ))}
                 </div>
 
-                {/* â”€â”€ User profile footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* ── User profile footer ──────────────────────────────── */}
                 <div
                     ref={accountRef}
                     style={{
@@ -384,7 +327,7 @@ const SidebarNav = ({
                         )}
                     </button>
 
-                    {/* Dropdown â€” upward */}
+                    {/* Dropdown — upward */}
                     {accountOpen && (
                         <div style={{
                             position:     'absolute',
@@ -418,7 +361,7 @@ const SidebarNav = ({
                     )}
                 </div>
 
-                {/* â”€â”€ Collapse toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* ── Collapse toggle ──────────────────────────────────── */}
                 <div
                     style={{ borderTop:`1px solid ${T.border}`, padding:'7px 8px 8px', flexShrink:0 }}
                     className="hidden lg:block"
@@ -458,3 +401,4 @@ const SidebarNav = ({
 };
 
 export default SidebarNav;
+

@@ -6,17 +6,32 @@ const { ROLES } = require('../constants/domain');
 
 const registrationService = new InfantRegistrationService(db);
 
+const canReadValidationQueue = (role) => [ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(role);
+const requireMidwifeValidationRole = (req, res) => {
+    if (req.user.role !== ROLES.MIDWIFE) {
+        res.status(403).json({
+            success: false,
+            error: 'Clinical validation actions are restricted to Midwife roles.'
+        });
+        return false;
+    }
+    return true;
+};
+
 /**
  * GET /api/validation/queue
  * Returns records pending validation from the NEW table.
  */
 router.get('/queue', async (req, res) => {
     try {
-        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
-            return res.status(403).json({ success: false, error: 'Only Midwives and Super Admins can view the validation queue.' });
+        if (!canReadValidationQueue(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only Midwives, Admins, and Super Admins can view the validation queue.' });
         }
 
-        const queue = await registrationService.getValidationQueue(req.query.barangay || req.user.assigned_barangay, req.user);
+        const scopedBarangay = req.user.role === ROLES.SUPER_ADMIN
+            ? ((req.query.barangay || '').trim() || null)
+            : req.user.assigned_barangay;
+        const queue = await registrationService.getValidationQueue(scopedBarangay, req.user);
         
         // Fetch daily stats from audit_trail instead of dropped legacy approval_audit table
         const [statsRow] = await db.execute(`
@@ -42,6 +57,24 @@ router.get('/queue', async (req, res) => {
 });
 
 /**
+ * GET /api/validation/:id
+ * Returns the full clinical chart payload for a pending validation record.
+ */
+router.get('/:id', async (req, res) => {
+    try {
+        if (!canReadValidationQueue(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only clinical reviewers can view validation details.' });
+        }
+
+        const detail = await registrationService.getValidationDetail(req.params.id, req.user);
+        res.json(detail);
+    } catch (err) {
+        console.error('[Validation Detail] Error:', err);
+        res.status(err.status || 500).json({ success: false, error: err.message || 'Failed to fetch validation detail' });
+    }
+});
+
+/**
  * POST /api/validation/:id/approve
  * Promotes a registration to the master infants table.
  */
@@ -50,15 +83,34 @@ router.post('/:id/approve', async (req, res) => {
         const { id } = req.params;
         const { notes } = req.body;
 
-        if (req.user.role !== ROLES.MIDWIFE) {
-            return res.status(403).json({ success: false, error: 'Insufficient permissions for approval.' });
-        }
+        if (!requireMidwifeValidationRole(req, res)) return;
 
         const result = await registrationService.approveAndPromote(id, req.user, notes);
         res.json({ success: true, ...result });
     } catch (err) {
         console.error('[Validation Approval] Error:', err);
-        res.status(err.status || (err.message.includes('Forbidden') ? 409 : 500)).json({ success: false, error: err.message });
+        res.status(err.status || (err.message.includes('Forbidden') ? 409 : 500)).json({
+            success: false,
+            error: err.message,
+            error_code: err.error_code || null,
+            duplicate_alert: err.duplicate_alert || null,
+            matches: err.matches || []
+        });
+    }
+});
+
+router.post('/:id/merge-transfer', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { notes } = req.body || {};
+
+        if (!requireMidwifeValidationRole(req, res)) return;
+
+        const result = await registrationService.mergeTransferRegistration(id, req.user, notes);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error('[Validation Merge Transfer] Error:', err);
+        res.status(err.status || 500).json({ success: false, error: err.message });
     }
 });
 
@@ -69,20 +121,19 @@ router.post('/:id/approve', async (req, res) => {
 router.post('/:id/reject', async (req, res) => {
     try {
         const { id } = req.params;
-        const { rejection_reason } = req.body;
+        const { rejection_reason, rejection_notes } = req.body;
 
         console.log(`[REJECT ROUTE] Received request for ID: ${id}, Role: ${req.user.role}`);
 
         if (!rejection_reason || rejection_reason.trim() === '') {
-            return res.status(400).json({ success: false, error: 'rejection_reason is required.' });
+            return res.status(400).json({ success: false, error: 'A valid rejection rationale is required to proceed.' });
         }
 
-        if (req.user.role !== ROLES.MIDWIFE) {
-            return res.status(403).json({ success: false, error: 'Insufficient permissions for rejection.' });
-        }
+        if (!requireMidwifeValidationRole(req, res)) return;
 
         await registrationService.rejectRegistration(id, req.user, {
-            rejection_reason
+            rejection_reason,
+            rejection_notes
         });
         console.log(`[REJECT ROUTE] Success for ID: ${id}`);
         res.json({ success: true });
@@ -107,9 +158,7 @@ const handleReturnForCorrection = async (req, res) => {
             return res.status(400).json({ success: false, error: 'correction_notes is required.' });
         }
 
-        if (req.user.role !== ROLES.MIDWIFE) {
-            return res.status(403).json({ success: false, error: 'Insufficient permissions for revision.' });
-        }
+        if (!requireMidwifeValidationRole(req, res)) return;
 
         await registrationService.returnForCorrection(id, req.user, { correction_notes });
         res.json({ success: true });
@@ -135,9 +184,7 @@ router.patch('/:id', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Updated data object is required.' });
         }
 
-        if (req.user.role !== ROLES.MIDWIFE) {
-            return res.status(403).json({ success: false, error: 'Insufficient permissions for direct corrections.' });
-        }
+        if (!requireMidwifeValidationRole(req, res)) return;
 
         const result = await registrationService.updateRegistrationData(id, req.user, data);
         res.json({ success: true, ...result });

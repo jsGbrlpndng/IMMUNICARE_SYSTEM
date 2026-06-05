@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { X, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import apiClient from '../services/apiClient';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 const RescheduleModal = ({ infant, vaccine, originalDueDate, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -105,7 +106,7 @@ const RescheduleModal = ({ infant, vaccine, originalDueDate, onSave, onCancel })
                             <div>
                                 <h2 className="text-xl font-bold text-slate-900">Reschedule Vaccination</h2>
                                 <p className="text-sm text-slate-600">
-                                    {infant.first_name} {infant.last_name}
+                                    {formatFullNameFromObject(infant)}
                                 </p>
                             </div>
                         </div>

@@ -48,7 +48,7 @@ const pool = new Pool({
         console.log('\n=============================================================');
         console.log('✅ Foundational Super Admin Seeded Successfully!');
         console.log('-------------------------------------------------------------');
-        console.log(`👤 Name / Username:  RHU Head Nurse`);
+        console.log(`👤 Name:             RHU Head Nurse`);
         console.log(`🔑 Role:             Super Admin`);
         console.log(`🆔 User ID (Login):  ${adminId}`);
         console.log(`🔓 Password:         ${plainPassword}`);

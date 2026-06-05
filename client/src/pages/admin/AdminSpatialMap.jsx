@@ -6,6 +6,7 @@ import { getBarangayCenter } from '../../utils/barangayConfig';
 import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 const CLUSTER_COLORS = ['#0f766e', '#16a34a', '#d97706', '#dc2626', '#2563eb'];
 
@@ -530,7 +531,7 @@ export default function AdminSpatialMap() {
                                                     <Popup>
                                                         <div className="text-sm">
                                                             <p className="font-black text-slate-950">{point.reference_id || point.id}</p>
-                                                            <p className="font-semibold text-slate-700">{point.first_name || 'Infant'} {point.last_name || ''}</p>
+                                                            <p className="font-semibold text-slate-700">{formatFullNameFromObject(point) || 'Infant'}</p>
                                                             <p className="text-xs font-medium text-slate-500">{point.purok || cluster?.locality || assignedBarangay}</p>
                                                         </div>
                                                     </Popup>

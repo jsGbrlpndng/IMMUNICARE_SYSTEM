@@ -10,9 +10,10 @@ import { formatDate, getDoseTimingStatus } from '../utils/formatters';
 const StatusBadge = ({ status }) => {
     const styles = {
         overdue: 'bg-red-100 text-red-700 border-red-200',
-        due: 'bg-blue-100 text-blue-700 border-blue-200',
-        upcoming: 'bg-gray-100 text-gray-600 border-gray-200',
-        completed: 'bg-green-100 text-green-700 border-green-200',
+        due_today: 'bg-orange-100 text-orange-700 border-orange-200',
+        due_soon: 'bg-amber-100 text-amber-700 border-amber-200',
+        scheduled: 'bg-gray-100 text-gray-600 border-gray-200',
+        administered: 'bg-green-100 text-green-700 border-green-200',
         pending_validation: 'bg-amber-100 text-amber-700 border-amber-200',
         ineligible: 'bg-slate-100 text-slate-600 border-slate-200',
         default: 'bg-gray-100 text-gray-600'
@@ -20,18 +21,20 @@ const StatusBadge = ({ status }) => {
 
     const labels = {
         overdue: 'Overdue',
-        due: 'Due Now',
-        upcoming: 'Upcoming',
-        completed: 'Completed',
+        due_today: 'Due Today',
+        due_soon: 'Due Soon',
+        scheduled: 'Scheduled',
+        administered: 'Administered',
         pending_validation: 'Pending',
         ineligible: 'Ineligible'
     };
 
     const icon = {
         overdue: <AlertCircle className="w-3 h-3" />,
-        due: <Clock className="w-3 h-3" />,
-        upcoming: <Calendar className="w-3 h-3" />,
-        completed: <CheckCircle2 className="w-3 h-3" />,
+        due_today: <Clock className="w-3 h-3" />,
+        due_soon: <Clock className="w-3 h-3" />,
+        scheduled: <Calendar className="w-3 h-3" />,
+        administered: <CheckCircle2 className="w-3 h-3" />,
         pending_validation: <Clock className="w-3 h-3" />,
         ineligible: <AlertCircle className="w-3 h-3" />
     };
@@ -50,7 +53,7 @@ const prepareScheduleForDisplay = (scheduleData) => {
     const recordArray = Array.isArray(scheduleData) ? scheduleData : (scheduleData?.record || []);
     if (!recordArray.length) return [];
 
-    const urgencyOrder = { overdue: 0, due: 1, pending_validation: 2, upcoming: 3, ineligible: 4, completed: 5 };
+    const urgencyOrder = { overdue: 0, due_today: 1, due_soon: 2, pending_validation: 3, scheduled: 4, ineligible: 5, administered: 6 };
 
     return recordArray.map(v => {
         const vaxStatus = v.status || 'NOT_GIVEN';
@@ -59,17 +62,17 @@ const prepareScheduleForDisplay = (scheduleData) => {
         // Normalize: the DB returns UPPER_CASE, the frontend historically used lowercase.
         const scheduleStatus = (v.original_schedule_status || '').toUpperCase();
 
-        let urgency = 'upcoming';
+        let urgency = 'scheduled';
         if (vaxStatus === 'COMPLETED_VALIDATED' || vaxStatus === 'COMPLETED') {
-            urgency = 'completed';
+            urgency = 'administered';
         } else if (vaxStatus === 'PENDING_VALIDATION') {
             urgency = 'pending_validation';
         } else {
             if (scheduleStatus === 'DEFAULTER' || scheduleStatus === 'DEFAULTED' || scheduleStatus === 'OVERDUE') urgency = 'overdue';
-            else if (scheduleStatus === 'DUE_TODAY' || scheduleStatus === 'DUE')                                  urgency = 'due';
-            else if (scheduleStatus === 'DUE_SOON')                                                               urgency = 'due';
+            else if (scheduleStatus === 'DUE_TODAY' || scheduleStatus === 'DUE')                                  urgency = 'due_today';
+            else if (scheduleStatus === 'DUE_SOON')                                                               urgency = 'due_soon';
             else if (scheduleStatus === 'INELIGIBLE')                                                             urgency = 'ineligible';
-            else                                                                                                  urgency = 'upcoming';
+            else                                                                                                  urgency = 'scheduled';
         }
 
         return {
@@ -80,6 +83,7 @@ const prepareScheduleForDisplay = (scheduleData) => {
             infantId: v.infant_id || v.infantId,
             dueDate: v.recommended_date || v.dueDate,
             administeredDate: v.actual_date || v.administeredDate,
+            targetAge: v.target_age || v.targetAge || null,
             urgency: urgency,
             scheduleStatus,
             timingStatus,
@@ -112,6 +116,7 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider font-semibold">
                         <tr>
                             <th className="px-6 py-4">Vaccine / Dose</th>
+                            <th className="px-6 py-4">Age Window</th>
                             <th className="px-6 py-4">Recommended Date</th>
                             <th className="px-6 py-4">Status</th>
                             <th className="px-6 py-4">Actual Date</th>
@@ -120,7 +125,7 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {allVaccines.map((vax, idx) => {
-                            const isCompleted = vax.urgency === 'completed' && vax.administeredDate;
+                            const isCompleted = vax.urgency === 'administered' && vax.administeredDate;
                             const isIneligible = vax.urgency === 'ineligible' || vax.scheduleStatus === 'INELIGIBLE';
 
                             return (
@@ -128,6 +133,9 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                                     <td className="px-6 py-4">
                                         <p className="font-bold text-gray-900">{vax.vaccineName}</p>
                                         <p className="text-xs text-gray-500">Dose #{vax.doseNumber}</p>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">
+                                        {vax.targetAge || '--'}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-600">
                                         {formatDate(vax.dueDate)}

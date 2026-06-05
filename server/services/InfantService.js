@@ -564,6 +564,7 @@ class InfantService {
         const formattedRecord = rows.map(row => ({
             ...row,
             actual_date: row.vax_actual_date || row.schedule_actual_date || null,
+            target_age: this.nipScheduleService.getTargetAgeLabel(row.vaccine_code),
             // COMPLETED and COMPLETED_VALIDATED both mean the dose is administered & confirmed.
             // At-birth doses auto-logged by approveAndPromote have schedule_status = 'COMPLETED'.
             status: (row.schedule_status === 'COMPLETED')

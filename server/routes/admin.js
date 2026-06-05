@@ -7,8 +7,14 @@ const { performAuditLog } = require('../utils/auditLogger');
 const { ROLES, STAFF_ROLES } = require('../constants/domain');
 const M1ReportService = require('../services/M1ReportService');
 const InfantService = require('../services/InfantService');
+const AuditLogService = require('../services/AuditLogService');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
+const UserProfileService = require('../services/UserProfileService');
+const UserIdentityService = require('../services/UserIdentityService');
 
 const infantService = new InfantService(db);
+const userProfileService = new UserProfileService(db);
+const userIdentityService = new UserIdentityService(db);
 
 // Apply Admin Auth to ALL routes in this file
 router.use(adminAuth);
@@ -96,7 +102,11 @@ router.put('/m1-targets/bulk', async (req, res) => {
             ? requestBody.targets.map((target) => ({
                 ...target,
                 total_population: parseInt(String(target?.total_population ?? '0'), 10) || 0,
-                eligible_population: parseInt(String(target?.eligible_population ?? '0'), 10) || 0
+                eligible_population: parseInt(String(target?.eligible_population ?? '0'), 10) || 0,
+                eligible_population_0_11_months: parseInt(String(target?.eligible_population_0_11_months ?? target?.eligible_population ?? '0'), 10) || 0,
+                eligible_population_0_12_months: parseInt(String(target?.eligible_population_0_12_months ?? target?.eligible_population_0_11_months ?? target?.eligible_population ?? '0'), 10) || 0,
+                monthly_target: target?.monthly_target === undefined ? undefined : Number(target.monthly_target),
+                monthly_target_is_manual: target?.monthly_target_is_manual === true
             }))
             : [];
         const service = new M1ReportService(db);
@@ -204,49 +214,9 @@ const getDashboardKpis = async (barangay) => {
     };
 };
 
-const getAuditSummary = async (barangay) => {
-    const [summaryRows, recentRows] = await Promise.all([
-        db.execute(
-            `
-            SELECT
-                COUNT(*)::int AS total_events,
-                COUNT(*) FILTER (WHERE u.role = 'BHW')::int AS bhw_events,
-                COUNT(*) FILTER (WHERE u.role = 'Midwife')::int AS midwife_events,
-                COUNT(*) FILTER (WHERE sal.timestamp >= DATE_TRUNC('day', CURRENT_DATE))::int AS today_events
-            FROM system_audit_logs sal
-            JOIN users u ON u.id = sal.user_id
-            WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
-              AND u.role IN ('BHW', 'Midwife')
-            `,
-            [barangay]
-        ),
-        db.execute(
-            `
-            SELECT
-                sal.id,
-                sal.action_type,
-                sal.target_entity,
-                sal.timestamp,
-                COALESCE(u.full_name, u.id) AS user_name,
-                u.role AS user_role
-            FROM system_audit_logs sal
-            JOIN users u ON u.id = sal.user_id
-            WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
-              AND u.role IN ('BHW', 'Midwife')
-            ORDER BY sal.timestamp DESC
-            LIMIT 5
-            `,
-            [barangay]
-        )
-    ]);
-
-    return {
-        total_events: Number(summaryRows[0][0]?.total_events || 0),
-        bhw_events: Number(summaryRows[0][0]?.bhw_events || 0),
-        midwife_events: Number(summaryRows[0][0]?.midwife_events || 0),
-        today_events: Number(summaryRows[0][0]?.today_events || 0),
-        recent_events: recentRows[0] || []
-    };
+const getAuditSummary = async (user) => {
+    const service = new AuditLogService(db);
+    return service.getDashboardSummary({ user });
 };
 
 const getUserSummary = async (barangay) => {
@@ -262,7 +232,7 @@ const getUserSummary = async (barangay) => {
         FROM users
         WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
           AND is_active = TRUE
-          AND role IN ('BHW', 'Midwife')
+          AND role IN ('BHW', 'Midwife', 'Nurse')
         ORDER BY role ASC, full_name ASC
         `,
         [barangay]
@@ -272,7 +242,7 @@ const getUserSummary = async (barangay) => {
     return {
         total_active_personnel: personnel.length,
         bhw_count: personnel.filter((person) => person.role === 'BHW').length,
-        midwife_count: personnel.filter((person) => person.role === 'Midwife').length,
+        midwife_count: personnel.filter((person) => ['Midwife', 'Nurse'].includes(person.role)).length,
         personnel
     };
 };
@@ -321,8 +291,7 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
             pentaRows,
             recentRegistrationRows,
             spatialData,
-            auditSummaryRows,
-            auditRecentRows,
+            auditSummary,
             personnelRows
         ] = await Promise.all([
             db.execute(
@@ -486,38 +455,7 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
                 minPts: 3,
                 scope: 'defaulter'
             }),
-            db.execute(
-                `
-                SELECT
-                    COUNT(*)::int AS total_events,
-                    COUNT(*) FILTER (WHERE u.role = 'BHW')::int AS bhw_events,
-                    COUNT(*) FILTER (WHERE u.role = 'Midwife')::int AS midwife_events,
-                    COUNT(*) FILTER (WHERE sal.timestamp >= DATE_TRUNC('day', CURRENT_DATE))::int AS today_events
-                FROM system_audit_logs sal
-                JOIN users u ON u.id = sal.user_id
-                WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
-                  AND u.role IN ('BHW', 'Midwife')
-                `,
-                [assignedBarangay]
-            ),
-            db.execute(
-                `
-                SELECT
-                    sal.id,
-                    sal.action_type,
-                    sal.target_entity,
-                    sal.timestamp,
-                    COALESCE(u.full_name, u.id) AS user_name,
-                    u.role AS user_role
-                FROM system_audit_logs sal
-                JOIN users u ON u.id = sal.user_id
-                WHERE UPPER(TRIM(u.assigned_barangay)) = UPPER(TRIM(?))
-                  AND u.role IN ('BHW', 'Midwife')
-                ORDER BY sal.timestamp DESC
-                LIMIT 5
-                `,
-                [assignedBarangay]
-            ),
+            getAuditSummary(req.user),
             db.execute(
                 `
                 SELECT
@@ -530,7 +468,7 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
                 FROM users
                 WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
                   AND is_active = TRUE
-                  AND role IN ('BHW', 'Midwife')
+                  AND role IN ('BHW', 'Midwife', 'Nurse')
                 ORDER BY role ASC, full_name ASC
                 `,
                 [assignedBarangay]
@@ -557,7 +495,6 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
         }, {});
         const clusterCount = Number(spatialData?.clusters?.length || 0);
         const defaultersInClusters = Number((spatialData?.clusters || []).reduce((sum, cluster) => sum + Number(cluster.total_infants || 0), 0));
-        const auditSummary = auditSummaryRows[0][0] || {};
         const personnel = personnelRows[0] || [];
 
         const cardTrend = (current, previous) => ({
@@ -615,12 +552,12 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
                 bhw_events: Number(auditSummary.bhw_events || 0),
                 midwife_events: Number(auditSummary.midwife_events || 0),
                 today_events: Number(auditSummary.today_events || 0),
-                recent_events: auditRecentRows[0] || []
+                recent_events: auditSummary.recent_events || []
             },
             user_summary: {
                 total_active_personnel: personnel.length,
                 bhw_count: personnel.filter((person) => person.role === 'BHW').length,
-                midwife_count: personnel.filter((person) => person.role === 'Midwife').length,
+                midwife_count: personnel.filter((person) => ['Midwife', 'Nurse'].includes(person.role)).length,
                 personnel
             }
         });
@@ -688,7 +625,7 @@ router.get('/dashboard/clusters', async (req, res) => {
 router.get('/dashboard/audit-summary', async (req, res) => {
     try {
         const scope = await getAdminBarangayScope(req);
-        const audit = await getAuditSummary(scope.barangay);
+        const audit = await getAuditSummary(req.user);
         res.json({
             success: true,
             ...scope,
@@ -752,14 +689,44 @@ router.get('/dashboard/trends', async (req, res) => {
 // GET /api/admin/dashboard/stats
 router.get('/dashboard/stats', async (req, res) => {
     try {
-        const { barangay } = req.query;
+        const scopedBarangay = req.user?.role === ROLES.SUPER_ADMIN
+            ? (req.query.barangay || '').trim() || null
+            : getAssignedBarangayScope(req);
+
+        const registrationStateQuery = `
+            SELECT
+                status,
+                COUNT(*)::int AS count
+            FROM infant_registrations
+            ${scopedBarangay ? 'WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))' : ''}
+            GROUP BY status
+        `;
+        const registrationStateParams = scopedBarangay ? [scopedBarangay] : [];
+        const [registrationStateRows] = await db.execute(registrationStateQuery, registrationStateParams);
+        const registration_states = {
+            drafts: 0,
+            pending: 0,
+            validated: 0,
+            rejected: 0,
+            needs_correction: 0
+        };
+
+        for (const row of registrationStateRows) {
+            const normalizedStatus = String(row?.status || '').trim().toUpperCase();
+            const count = Number(row?.count || 0);
+            if (normalizedStatus === 'DRAFT') registration_states.drafts = count;
+            else if (normalizedStatus === 'PENDING_VALIDATION') registration_states.pending = count;
+            else if (normalizedStatus === 'APPROVED' || normalizedStatus === 'VALIDATED') registration_states.validated += count;
+            else if (normalizedStatus === 'REJECTED') registration_states.rejected = count;
+            else if (normalizedStatus === 'NEEDS_CORRECTION') registration_states.needs_correction = count;
+        }
 
         // 1. Total Licensed Users
         let userQuery = 'SELECT COUNT(*) as count FROM users WHERE is_active = true';
         let userParams = [];
-        if (barangay) {
+        if (scopedBarangay) {
             userQuery += ' AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))';
-            userParams.push(barangay);
+            userParams.push(scopedBarangay);
         }
         const [userCountRows] = await db.execute(userQuery, userParams);
         const totalUsers = userCountRows[0].count;
@@ -767,9 +734,9 @@ router.get('/dashboard/stats', async (req, res) => {
         // 2. Pending Approvals
         let pendingQuery = "SELECT COUNT(*) as count FROM infant_registrations WHERE status = 'PENDING_VALIDATION'";
         let pendingParams = [];
-        if (barangay) {
+        if (scopedBarangay) {
             pendingQuery += ' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))';
-            pendingParams.push(barangay);
+            pendingParams.push(scopedBarangay);
         }
         const [pendingRows] = await db.execute(pendingQuery, pendingParams);
         const pendingApprovals = pendingRows[0].count;
@@ -777,9 +744,9 @@ router.get('/dashboard/stats', async (req, res) => {
         // 3. Registered Infants
         let regQuery = "SELECT COUNT(*) as count FROM infants WHERE registration_status = 'APPROVED'";
         let regParams = [];
-        if (barangay) {
+        if (scopedBarangay) {
             regQuery += ' AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))';
-            regParams.push(barangay);
+            regParams.push(scopedBarangay);
         }
         const [registeredRows] = await db.execute(regQuery, regParams);
         const registeredInfants = registeredRows[0].count;
@@ -792,9 +759,9 @@ router.get('/dashboard/stats', async (req, res) => {
             WHERE s.status IN ('OVERDUE', 'DEFAULTED')
         `;
         let overdueParams = [];
-        if (barangay) {
+        if (scopedBarangay) {
             overdueQuery += ' AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))';
-            overdueParams.push(barangay);
+            overdueParams.push(scopedBarangay);
         }
         const [overdueRows] = await db.execute(overdueQuery, overdueParams);
         const overdueCount = overdueRows[0].count;
@@ -806,9 +773,9 @@ router.get('/dashboard/stats', async (req, res) => {
             WHERE so.authorization_status = 'APPROVED'
         `;
         let overrideParams = [];
-        if (barangay) {
+        if (scopedBarangay) {
             overrideQuery += ' AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))';
-            overrideParams.push(barangay);
+            overrideParams.push(scopedBarangay);
         }
         const [approvedOverridesRows] = await db.execute(overrideQuery, overrideParams);
         const approvedOverrides = approvedOverridesRows[0].count;
@@ -831,6 +798,10 @@ router.get('/dashboard/stats', async (req, res) => {
         }
 
         res.json({
+            success: true,
+            barangay: scopedBarangay,
+            registration_states,
+            registration_state_sql: registrationStateQuery.replace(/\s+/g, ' ').trim(),
             total_users: totalUsers,
             pending_approvals: pendingApprovals,
             registered_infants: registeredInfants,
@@ -860,11 +831,11 @@ router.get('/users', async (req, res) => {
                     id = ?
                     OR (
                         UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
-                        AND role IN (?, ?)
+                        AND role IN (?, ?, ?)
                     )
                 )
             `;
-            params.push(req.user.id, req.user.assigned_barangay, ROLES.MIDWIFE, ROLES.BHW);
+            params.push(req.user.id, req.user.assigned_barangay, ROLES.MIDWIFE, ROLES.NURSE, ROLES.BHW);
         } else if (req.user.role === ROLES.SUPER_ADMIN) {
             query += ' WHERE role = ?';
             params.push(ROLES.ADMIN);
@@ -885,12 +856,42 @@ router.get('/users', async (req, res) => {
     }
 });
 
+router.get('/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const profile = await userProfileService.getById(id);
+
+        if (!profile) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        if (req.user.role === ROLES.ADMIN) {
+            const sameBarangay = normalizeBarangayInput(profile.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
+            if (!STAFF_MANAGED_BY_ADMIN.includes(profile.role) || !sameBarangay) {
+                return res.status(403).json({ error: 'Admins can view only Midwife, Nurse, and BHW accounts in their assigned barangay.' });
+            }
+        } else if (req.user.role === ROLES.SUPER_ADMIN) {
+            if (profile.role !== ROLES.ADMIN && profile.role !== ROLES.SUPER_ADMIN) {
+                return res.status(403).json({ error: 'Super Admins can view only administrative accounts from this endpoint.' });
+            }
+        }
+
+        return res.json({
+            success: true,
+            user: profile
+        });
+    } catch (error) {
+        console.error('[ADMIN_USER_DETAIL_ERROR]', error);
+        return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+    }
+});
+
 const bcrypt = require('bcrypt'); // Added dependency
 
 // ... existing imports ...
 
-const SCOPED_STAFF_ROLES = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.BHW];
-const STAFF_MANAGED_BY_ADMIN = [ROLES.MIDWIFE, ROLES.BHW];
+const SCOPED_STAFF_ROLES = [ROLES.ADMIN, ROLES.MIDWIFE, ROLES.NURSE, ROLES.BHW];
+const STAFF_MANAGED_BY_ADMIN = [ROLES.MIDWIFE, ROLES.NURSE, ROLES.BHW];
 const STAFF_MANAGED_BY_SUPER_ADMIN = [ROLES.ADMIN];
 
 const normalizeBarangayInput = (value) => {
@@ -915,6 +916,7 @@ const generateUserId = async (role) => {
     let prefix = '';
     switch (role) {
         case ROLES.MIDWIFE: prefix = 'MW'; break;
+        case ROLES.NURSE: prefix = 'NURSE'; break;
         case ROLES.BHW: prefix = 'BHW'; break;
         case ROLES.SUPER_ADMIN: prefix = 'SADMIN'; break;
         case ROLES.ADMIN: prefix = 'ADMIN'; break;
@@ -964,6 +966,67 @@ const generateTemporaryPassword = () => {
     return `Temp#${suffix}`;
 };
 
+const ensureCanManageTargetUser = (req, target, actionLabel = 'manage') => {
+    if (target.id === req.user.id) {
+        const error = new Error(`Use account settings to ${actionLabel} your own account.`);
+        error.status = 403;
+        throw error;
+    }
+
+    if (req.user.role === ROLES.ADMIN) {
+        const sameBarangay = normalizeBarangayInput(target.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
+        if (!STAFF_MANAGED_BY_ADMIN.includes(target.role) || !sameBarangay) {
+            const error = new Error(`Admins can ${actionLabel} only Midwife, Nurse, and BHW accounts in their assigned barangay.`);
+            error.status = 403;
+            throw error;
+        }
+        return;
+    }
+
+    if (req.user.role === ROLES.SUPER_ADMIN) {
+        if (target.role !== ROLES.ADMIN) {
+            const error = new Error(`Super Admins can ${actionLabel} only Barangay Admin accounts.`);
+            error.status = 403;
+            throw error;
+        }
+        return;
+    }
+
+    const error = new Error('Forbidden');
+    error.status = 403;
+    throw error;
+};
+
+const countClinicalReferences = async (userId) => {
+    const [rows] = await db.execute(`
+        SELECT
+            (SELECT COUNT(*)::int FROM infants WHERE created_by = ?) AS infant_records,
+            (SELECT COUNT(*)::int FROM infant_registrations WHERE created_by = ? OR reviewed_by = ?) AS infant_registrations,
+            (SELECT COUNT(*)::int FROM vaccinations WHERE recorded_by = ? OR validated_by_id = ?) AS vaccination_logs,
+            (SELECT COUNT(*)::int FROM follow_up_tasks WHERE assigned_to_bhw_id = ? OR assigned_by_midwife_id = ? OR reviewed_by = ?) AS follow_up_tasks,
+            (SELECT COUNT(*)::int FROM follow_up_logs WHERE bhw_id = ?) AS follow_up_logs,
+            (SELECT COUNT(*)::int FROM authorization_audit WHERE midwife_id = ?) AS authorization_audit,
+            (SELECT COUNT(*)::int FROM authorization_sessions WHERE midwife_id = ?) AS authorization_sessions,
+            (SELECT COUNT(*)::int FROM cluster_assignments WHERE assigned_bhw_id = ? OR assigned_by_admin_id = ?) AS cluster_assignments
+    `, [
+        userId,
+        userId, userId,
+        userId, userId,
+        userId, userId, userId,
+        userId,
+        userId,
+        userId,
+        userId, userId
+    ]);
+
+    const counts = rows[0] || {};
+    const normalized = Object.fromEntries(
+        Object.entries(counts).map(([key, value]) => [key, Number(value || 0)])
+    );
+    const total = Object.values(normalized).reduce((sum, value) => sum + value, 0);
+    return { counts: normalized, total };
+};
+
 // POST /api/admin/users
 router.post('/users', async (req, res) => {
     try {
@@ -991,7 +1054,7 @@ router.post('/users', async (req, res) => {
         }
 
         if (req.user.role === ROLES.ADMIN && !STAFF_MANAGED_BY_ADMIN.includes(role)) {
-            return res.status(403).json({ error: 'Admins can only create Midwife and BHW accounts within their assigned barangay.' });
+            return res.status(403).json({ error: 'Admins can only create Midwife, Nurse, and BHW accounts within their assigned barangay.' });
         }
 
         if (role === ROLES.SUPER_ADMIN) {
@@ -1023,10 +1086,26 @@ router.post('/users', async (req, res) => {
         try {
             await connection.beginTransaction();
 
-            await connection.execute(`
-                INSERT INTO users (id, full_name, role, assigned_barangay, is_active, password, must_change_password)
-                VALUES (?, ?, ?, ?, true, ?, TRUE)
-            `, [id, full_name, role, sanitizedBarangay, hashedPassword]);
+            const normalizedFullName = userIdentityService.normalizeFullName(full_name);
+            const fullNameAvailable = await userIdentityService.isFullNameAvailable(normalizedFullName, connection);
+            if (!fullNameAvailable) {
+                await connection.rollback();
+                return res.status(409).json({
+                    error: 'Conflict',
+                    message: `Account with the name '${normalizedFullName}' already exists.`
+                });
+            }
+
+            await userIdentityService.createUser({
+                id,
+                full_name,
+                role,
+                assigned_barangay: sanitizedBarangay,
+                is_active: true,
+                password: hashedPassword,
+                must_change_password: true,
+                created_by_user_id: req.user.id
+            }, connection);
 
             if (sanitizedBarangay) {
                 await connection.execute(`
@@ -1062,15 +1141,35 @@ router.post('/users', async (req, res) => {
             await connection.commit();
         } catch (dbError) {
             await connection.rollback();
+            if (dbError.status === 409 || userIdentityService.isFullNameUniqueViolation(dbError)) {
+                return res.status(409).json({
+                    error: 'Conflict',
+                    message: dbError.message || `Account with the name '${userIdentityService.normalizeFullName(full_name)}' already exists.`
+                });
+            }
             if (dbError.code === '23505') {
-                return res.status(409).json({ error: 'Conflict', message: 'User ID or Name already exists.' });
+                return res.status(409).json({ error: 'Conflict', message: 'User ID already exists.' });
             }
             throw dbError;
         } finally {
             connection.release();
         }
 
-        await performAuditLog(req.user.id, 'USER_CREATE', 'users', id, { full_name, role, assigned_barangay: sanitizedBarangay }, req);
+        await performAuditLog(req.user.id, 'USER_CREATE', 'users', id, {
+            old_values: {},
+            new_values: {
+                id,
+                full_name: userIdentityService.normalizeFullName(full_name),
+                role,
+                assigned_barangay: sanitizedBarangay,
+                is_active: true,
+                must_change_password: true
+            },
+            full_name: userIdentityService.normalizeFullName(full_name),
+            target_name: userIdentityService.normalizeFullName(full_name),
+            role,
+            assigned_barangay: sanitizedBarangay
+        }, req);
 
         res.status(201).json({
             success: true,
@@ -1101,7 +1200,7 @@ router.put('/users/:id/status', async (req, res) => {
 
         const statusValue = is_active === true || is_active === 1 || is_active === 'true';
         const [targetRows] = await db.execute(`
-            SELECT id, role, assigned_barangay
+            SELECT id, full_name, role, assigned_barangay, is_active, must_change_password
             FROM users
             WHERE id = ?
             LIMIT 1
@@ -1119,7 +1218,7 @@ router.put('/users/:id/status', async (req, res) => {
         if (req.user.role === ROLES.ADMIN) {
             const sameBarangay = normalizeBarangayInput(target.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
             if (!STAFF_MANAGED_BY_ADMIN.includes(target.role) || !sameBarangay) {
-                return res.status(403).json({ error: 'Admins can manage only Midwife and BHW accounts in their assigned barangay.' });
+                return res.status(403).json({ error: 'Admins can manage only Midwife, Nurse, and BHW accounts in their assigned barangay.' });
             }
         } else if (req.user.role === ROLES.SUPER_ADMIN) {
             if (target.role !== ROLES.ADMIN) {
@@ -1129,7 +1228,17 @@ router.put('/users/:id/status', async (req, res) => {
 
         await db.execute('UPDATE users SET is_active = ? WHERE id = ?', [statusValue, id]);
 
-        await performAuditLog(req.user.id, 'USER_STATUS_TOGGLE', 'users', id, { is_active: statusValue }, req);
+        await performAuditLog(req.user.id, 'USER_STATUS_TOGGLE', 'users', id, {
+            old_values: target,
+            new_values: {
+                ...target,
+                is_active: statusValue
+            },
+            target_role: target.role,
+            target_barangay: target.assigned_barangay,
+            target_name: target.full_name,
+            is_active: statusValue
+        }, req);
 
         res.json({ success: true, is_active: statusValue });
     } catch (error) {
@@ -1138,12 +1247,105 @@ router.put('/users/:id/status', async (req, res) => {
     }
 });
 
+// DELETE /api/admin/users/:id
+router.delete('/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [targetRows] = await db.execute(`
+            SELECT id, full_name, role, assigned_barangay, is_active, must_change_password
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+        `, [id]);
+
+        if (targetRows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const target = targetRows[0];
+        ensureCanManageTargetUser(req, target, 'delete');
+
+        const references = await countClinicalReferences(id);
+        if (references.total > 0) {
+            await safeRecordAuditEvent({
+                actor: req.user,
+                action: 'USER_DELETE_BLOCKED_CLINICAL_RECORDS',
+                targetEntity: 'users',
+                targetRecordId: id,
+                targetName: target.full_name,
+                oldValues: target,
+                newValues: target,
+                metadata: {
+                    activity: 'Blocked Staff Account Deletion',
+                    reason: 'USER_HAS_CLINICAL_RECORDS',
+                    target_role: target.role,
+                    target_barangay: target.assigned_barangay,
+                    target_name: target.full_name,
+                    clinical_reference_counts: references.counts,
+                    can_deactivate: true
+                },
+                req
+            });
+
+            return res.status(409).json({
+                success: false,
+                code: 'USER_HAS_CLINICAL_RECORDS',
+                error: 'This staff account has linked clinical records and cannot be deleted. Deactivate the account instead.',
+                can_deactivate: true,
+                clinical_reference_counts: references.counts
+            });
+        }
+
+        const [deleteResult] = await db.execute('DELETE FROM users WHERE id = ?', [id]);
+        if (deleteResult.affectedRows === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'USER_DELETE',
+            targetEntity: 'users',
+            targetRecordId: id,
+            targetName: target.full_name,
+            oldValues: target,
+            newValues: {},
+            metadata: {
+                activity: 'Deleted Staff Account',
+                target_role: target.role,
+                target_barangay: target.assigned_barangay,
+                target_name: target.full_name
+            },
+            req
+        });
+
+        return res.json({
+            success: true,
+            message: 'Staff account deleted successfully.'
+        });
+    } catch (error) {
+        console.error('[ADMIN_USER_DELETE_ERROR]', error);
+        if (error.status) {
+            return res.status(error.status).json({ error: error.message });
+        }
+        if (error.code === '23503') {
+            return res.status(409).json({
+                success: false,
+                code: 'USER_HAS_CLINICAL_RECORDS',
+                error: 'This staff account has linked records and cannot be deleted. Deactivate the account instead.',
+                can_deactivate: true,
+                constraint: error.constraint
+            });
+        }
+        return res.status(500).json({ error: 'Internal Server Error', message: error.message });
+    }
+});
+
 // POST /api/admin/users/:id/reset-password
 router.post('/users/:id/reset-password', async (req, res) => {
     try {
         const { id } = req.params;
         const [targetRows] = await db.execute(`
-            SELECT id, full_name, role, assigned_barangay
+            SELECT id, full_name, role, assigned_barangay, is_active, must_change_password
             FROM users
             WHERE id = ?
             LIMIT 1
@@ -1161,7 +1363,7 @@ router.post('/users/:id/reset-password', async (req, res) => {
         if (req.user.role === ROLES.ADMIN) {
             const sameBarangay = normalizeBarangayInput(target.assigned_barangay) === normalizeBarangayInput(req.user.assigned_barangay);
             if (!STAFF_MANAGED_BY_ADMIN.includes(target.role) || !sameBarangay) {
-                return res.status(403).json({ error: 'Admins can reset only Midwife and BHW accounts in their assigned barangay.' });
+                return res.status(403).json({ error: 'Admins can reset only Midwife, Nurse, and BHW accounts in their assigned barangay.' });
             }
         } else if (req.user.role === ROLES.SUPER_ADMIN) {
             if (target.role !== ROLES.ADMIN) {
@@ -1193,13 +1395,40 @@ router.post('/users/:id/reset-password', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // 4. Log in system_audit_logs
-        await performAuditLog(req.user.id, 'USER_PASSWORD_RESET', 'users', id, {
-            status: 'SUCCESS',
-            target_role: target.role,
-            target_barangay: target.assigned_barangay,
-            must_change_password: true
-        }, req);
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'INITIATED_PASSWORD_RESET',
+            targetEntity: 'users',
+            targetRecordId: id,
+            targetName: target.full_name,
+            oldValues: {
+                id: target.id,
+                full_name: target.full_name,
+                role: target.role,
+                assigned_barangay: target.assigned_barangay,
+                must_change_password: target.must_change_password
+            },
+            newValues: {
+                id: target.id,
+                full_name: target.full_name,
+                role: target.role,
+                assigned_barangay: target.assigned_barangay,
+                must_change_password: true,
+                password_reset: true
+            },
+            metadata: {
+                activity: 'Initiated Password Reset',
+                status: 'SUCCESS',
+                target_role: target.role,
+                target_barangay: target.assigned_barangay,
+                target_name: target.full_name,
+                initiated_by: req.user.id,
+                initiated_by_name: req.user.name || req.user.full_name || null,
+                initiated_by_role: req.user.role,
+                must_change_password: true
+            },
+            req
+        });
 
         // 5. Return temporary password once
         res.json({
@@ -1342,7 +1571,10 @@ router.put('/settings', async (req, res) => {
             }
         }
 
-        await performAuditLog(req.user.id, 'SYSTEM_CONFIG_UPDATE', 'system_settings', 'N/A', settings, req);
+        await performAuditLog(req.user.id, 'SYSTEM_CONFIG_UPDATE', 'system_settings', 'N/A', {
+            ...settings,
+            target_name: 'System Settings'
+        }, req);
 
         res.json({ success: true });
 

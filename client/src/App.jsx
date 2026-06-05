@@ -16,6 +16,7 @@ import StaffLayout from './components/StaffLayout';
 import InfantRegistrationForm from './pages/clinical/InfantRegistrationForm';
 import SMSCampaigns from './pages/clinical/SMSCampaigns';
 import { AuthProvider } from './contexts/AuthContext';
+import { IdleSessionProvider } from './contexts/IdleSessionContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
@@ -23,8 +24,8 @@ import PublicHealthDashboard from './pages/admin/PublicHealthDashboard';
 import UserManagement from './pages/admin/UserManagement';
 // DOHRules removed from navigation â€“ component kept for legacy backend compatibility
 import AuditLogs from './pages/admin/AuditLogs';
-import SystemSettings from './pages/admin/SystemSettings';
-import AdminM1Reports from './pages/admin/AdminM1Reports';
+import BarangayMonthlyReport from './pages/admin/BarangayMonthlyReport';
+import SuperAdminAnalytics from './pages/admin/SuperAdminAnalytics';
 import CICCatchUpAnalysis from './pages/admin/CICCatchUpAnalysis';
 import BHWLayout from './layouts/BHWLayout';
 import SuperAdminLayout from './components/SuperAdminLayout';
@@ -46,6 +47,7 @@ function App() {
         <AuthProvider>
             <BarangayFilterProvider>
                 <Router>
+                <IdleSessionProvider>
                 <Routes>
                     {/* Public Landing Page is the entry point */}
                     <Route path="/" element={<LandingPage />} />
@@ -226,16 +228,6 @@ function App() {
                         }
                     />
                     <Route
-                        path="/admin/settings"
-                        element={
-                            <AdminRoute>
-                                <AdminLayout>
-                                    <SystemSettings />
-                                </AdminLayout>
-                            </AdminRoute>
-                        }
-                    />
-                    <Route
                         path="/admin/account-settings"
                         element={
                             <AdminRoute>
@@ -250,7 +242,7 @@ function App() {
                         element={
                             <AdminRoute>
                                 <AdminLayout>
-                                    <AdminM1Reports />
+                                    <BarangayMonthlyReport />
                                 </AdminLayout>
                             </AdminRoute>
                         }
@@ -320,14 +312,6 @@ function App() {
                         }
                     />
                     <Route
-                        path="/superadmin/settings"
-                        element={
-                            <SuperAdminRoute>
-                                <SuperAdminLayout><SystemSettings /></SuperAdminLayout>
-                            </SuperAdminRoute>
-                        }
-                    />
-                    <Route
                         path="/superadmin/account-settings"
                         element={
                             <SuperAdminRoute>
@@ -339,7 +323,7 @@ function App() {
                         path="/superadmin/reports"
                         element={
                             <SuperAdminRoute>
-                                <SuperAdminLayout><AdminM1Reports /></SuperAdminLayout>
+                                <SuperAdminLayout><SuperAdminAnalytics /></SuperAdminLayout>
                             </SuperAdminRoute>
                         }
                     />
@@ -347,6 +331,7 @@ function App() {
                     {/* Fallback to Landing Page */}
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
+                </IdleSessionProvider>
             </Router>
             </BarangayFilterProvider>
         </AuthProvider >

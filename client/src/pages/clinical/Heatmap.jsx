@@ -18,6 +18,7 @@ import ErrorBoundary from '../../components/common/ErrorBoundary';
 // Validation Logic
 import { getBarangayCenter } from '../../utils/barangayConfig';
 import { getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
+import { formatFullNameFromObject } from '../../utils/formatFullName';
 
 // --- Main Orchestrator ---
 export default function Heatmap() {
@@ -175,7 +176,7 @@ export default function Heatmap() {
 
     const formatDisplayName = useCallback((pt) => {
         if (!pt.first_name) return "Unnamed Infant";
-        return `${pt.first_name} ${pt.last_name || ''}`;
+        return formatFullNameFromObject(pt) || 'Unnamed Infant';
     }, []);
 
     const formatAge = (months) => {
@@ -260,7 +261,7 @@ export default function Heatmap() {
         if (!searchQuery.trim()) return null;
         const q = searchQuery.toLowerCase().trim();
         return (mapState?.all_infants || []).filter(pt => {
-            const name = `${pt.first_name || ''} ${pt.last_name || ''}`.toLowerCase();
+            const name = formatFullNameFromObject(pt).toLowerCase();
             const addr = (pt.exact_address || '').toLowerCase();
             const loc = (pt.locality || pt.barangay || '').toLowerCase();
             const guardian = (pt.guardian_name || pt.mothers_maiden_name || pt.mother_name || '').toLowerCase();

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { X, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
 import apiClient from '../services/apiClient';
+import { formatFullNameFromObject } from '../utils/formatFullName';
 
 const DeferralModal = ({ infant, vaccine, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -112,7 +113,7 @@ const DeferralModal = ({ infant, vaccine, onSave, onCancel }) => {
                             <div>
                                 <h2 className="text-xl font-bold text-slate-900">Defer Vaccination</h2>
                                 <p className="text-sm text-slate-600">
-                                    {infant.first_name} {infant.last_name}
+                                    {formatFullNameFromObject(infant)}
                                 </p>
                             </div>
                         </div>

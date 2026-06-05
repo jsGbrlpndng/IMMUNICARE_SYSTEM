@@ -6,13 +6,19 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const { ROLES } = require('../constants/domain');
 const { performAuditLog } = require('../utils/auditLogger');
 const NIPScheduleService = require('../services/NIPScheduleService');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 router.use(clinicalAuth);
 
 const FOLLOW_UP_STATUSES = ['DEFAULTER', 'DUE_SOON'];
 const nipScheduleService = new NIPScheduleService(db);
 
-const canUseFollowUps = (user) => [ROLES.SUPER_ADMIN, ROLES.MIDWIFE, ROLES.BHW].includes(user.role);
+const canUseFollowUps = (user) => [ROLES.SUPER_ADMIN, ROLES.MIDWIFE, ROLES.NURSE, ROLES.BHW].includes(user.role);
+
+const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || null;
 
 const getScopedBarangay = (req) => {
     if (req.user.role === ROLES.SUPER_ADMIN) {
@@ -328,7 +334,7 @@ router.post('/:infantId/logs', async (req, res) => {
         }
 
         const [infantRows] = await db.execute(
-            `SELECT id, barangay FROM infants WHERE id = ? AND barangay = ? AND COALESCE(status, '') != 'Archived' LIMIT 1`,
+            `SELECT id, first_name, middle_name, last_name, barangay FROM infants WHERE id = ? AND barangay = ? AND COALESCE(status, '') != 'Archived' LIMIT 1`,
             [req.params.infantId, req.user.assigned_barangay]
         );
         if (!infantRows.length) {
@@ -382,8 +388,25 @@ router.post('/:infantId/logs', async (req, res) => {
 
         await performAuditLog(req.user.id, 'FOLLOW_UP_VISIT_LOGGED', 'follow_up_logs', logId, {
             infant_id: req.params.infantId,
+            target_name: infantTargetName(infantRows[0]),
             barangay: req.user.assigned_barangay,
             outcome: req.body.outcome
+        });
+        const [newLogRows] = await db.execute('SELECT * FROM follow_up_logs WHERE id = ? LIMIT 1', [logId]);
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'FOLLOW_UP_VISIT_LOGGED',
+            targetEntity: 'follow_up_logs',
+            targetRecordId: logId,
+            targetName: infantTargetName(infantRows[0]),
+            barangay: infantRows[0].barangay,
+            oldValues: {},
+            newValues: newLogRows[0] || {
+                infant_id: req.params.infantId,
+                outcome: req.body.outcome,
+                visit_date: req.body.visit_date
+            },
+            req
         });
 
         res.status(201).json({ success: true, id: logId });
@@ -395,8 +418,8 @@ router.post('/:infantId/logs', async (req, res) => {
 
 router.put('/:infantId/archive', async (req, res) => {
     try {
-        if (![ROLES.MIDWIFE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
-            return res.status(403).json({ success: false, error: 'Only Midwife users can archive relocated follow-up records.' });
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Only Midwife, Nurse, or Super Admin users can archive relocated follow-up records.' });
         }
 
         const params = [req.params.infantId];
@@ -405,6 +428,11 @@ router.put('/:infantId/archive', async (req, res) => {
             filters.push('barangay = ?');
             params.push(req.user.assigned_barangay);
         }
+
+        const [oldRows] = await db.execute(
+            `SELECT * FROM infants WHERE ${filters.join(' AND ')} AND COALESCE(status, '') != 'Archived' LIMIT 1`,
+            params
+        );
 
         const [result] = await db.execute(
             `
@@ -423,7 +451,23 @@ router.put('/:infantId/archive', async (req, res) => {
 
         await performAuditLog(req.user.id, 'INFANT_ARCHIVED_FROM_FOLLOW_UP', 'infants', req.params.infantId, {
             infant_id: req.params.infantId,
+            target_name: infantTargetName(oldRows[0]),
+            barangay: result[0].barangay,
             reason: req.body?.reason || 'Relocated / Moved Away'
+        });
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'INFANT_ARCHIVE_FROM_FOLLOW_UP',
+            targetEntity: 'infants',
+            targetRecordId: result[0].id || req.params.infantId,
+            targetName: infantTargetName(oldRows[0]),
+            barangay: result[0].barangay,
+            oldValues: oldRows[0] || {},
+            newValues: result[0],
+            metadata: {
+                reason: req.body?.reason || 'Relocated / Moved Away'
+            },
+            req
         });
 
         res.json({ success: true, infant: result[0] });

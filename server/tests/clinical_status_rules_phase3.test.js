@@ -93,7 +93,7 @@ describe('Phase 3 clinical status rules', () => {
     test('routine infant vaccines are rejected after the 60-month catch-up ceiling', async () => {
         const db = {
             execute: jest.fn(async (sql) => {
-                if (sql.includes('SELECT id, dob, registration_status FROM infants')) {
+                if (sql.includes('SELECT id, dob, registration_status, barangay FROM infants')) {
                     return [[{ id: 'infant-old', dob: '2020-01-01', registration_status: 'APPROVED' }]];
                 }
                 if (sql.includes('SELECT id FROM vaccinations')) return [[]];
