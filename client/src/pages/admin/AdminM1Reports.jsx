@@ -3,24 +3,9 @@ import { CalendarDays, FileText, Lock, MapPin } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import M1ReportView from '../../components/M1ReportView';
-import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
+import { ALL_MONTH_VALUE, RHU2_BARANGAYS, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
 
 const BARANGAYS = RHU2_BARANGAYS;
-
-const MONTHS = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December'
-];
 
 const currentDate = new Date();
 
@@ -44,11 +29,11 @@ const AdminM1Reports = () => {
     const scopeLabel = isSuperAdmin
         ? (currentSelectedBarangay === 'all' ? 'RHU 2 Aggregate' : `Barangay ${currentSelectedBarangay}`)
         : `Barangay ${user?.assigned_barangay || 'Assigned Scope'}`;
-    const selectedMonthLabel = MONTHS?.[month - 1] || 'Selected Month';
+    const selectedPeriodLabel = formatReportingPeriodLabel(month, year || currentDate.getFullYear());
 
     return (
-        <div className="min-h-screen bg-slate-50 p-6 lg:p-8 print:bg-white print:p-0">
-            <div className="mx-auto max-w-7xl space-y-6">
+        <div className="w-full min-w-0 max-w-full overflow-x-hidden bg-slate-50 p-6 lg:p-8 print:bg-white print:p-0">
+            <div className="mx-auto w-full max-w-7xl min-w-0 space-y-6">
                 <section className="border border-slate-200 bg-white p-6 shadow-sm print:hidden">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                         <div className="flex items-start gap-4">
@@ -81,10 +66,14 @@ const AdminM1Reports = () => {
                                 </label>
                                 <select
                                     value={month}
-                                    onChange={(event) => setMonth(Number(event.target.value))}
+                                    onChange={(event) => setMonth(event.target.value === ALL_MONTH_VALUE ? ALL_MONTH_VALUE : Number(event.target.value))}
                                     className="border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-emerald-800"
                                 >
-                                    {(MONTHS || []).map((label, index) => (
+                                    <option value={ALL_MONTH_VALUE}>Whole Year</option>
+                                    {[
+                                        'January', 'February', 'March', 'April', 'May', 'June',
+                                        'July', 'August', 'September', 'October', 'November', 'December'
+                                    ].map((label, index) => (
                                         <option key={label} value={index + 1}>{label}</option>
                                     ))}
                                 </select>
@@ -135,19 +124,21 @@ const AdminM1Reports = () => {
                             )}
                             <div className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-wider text-emerald-800">
                                 <CalendarDays className="h-4 w-4" />
-                                {selectedMonthLabel} {year || currentDate.getFullYear()}
+                                {selectedPeriodLabel}
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <M1ReportView
-                    key={`${month}-${year}-${scopedBarangay || 'municipal-or-admin-scope'}`}
-                    month={month}
-                    year={year}
-                    barangay={scopedBarangay}
-                    reportMode={reportMode}
-                />
+                <div className="min-w-0 max-w-full overflow-hidden">
+                    <M1ReportView
+                        key={`${month}-${year}-${scopedBarangay || 'municipal-or-admin-scope'}`}
+                        month={month}
+                        year={year}
+                        barangay={scopedBarangay}
+                        reportMode={reportMode}
+                    />
+                </div>
             </div>
         </div>
     );

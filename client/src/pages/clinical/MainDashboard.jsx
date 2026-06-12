@@ -9,6 +9,8 @@ import { formatFullNameFromObject } from '../../utils/formatFullName';
 import CoverageByDoseChart from '../../components/analytics/CoverageByDoseChart';
 import StatusBreakdownChart from '../../components/analytics/StatusBreakdownChart';
 import TimelinessTrendChart from '../../components/analytics/TimelinessTrendChart';
+import ClinicalOverview from '../../components/ClinicalOverview';
+import StatusBadge from '../../components/StatusBadge';
 
 import { MapContainer, TileLayer, Circle, Popup, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -37,7 +39,20 @@ export default function MainDashboard() {
     // States for specific fetch endpoints
     const [kpis, setKpis] = useState({
         loading: true,
-        data: { totalRegistered: 0, fullyImmunized: 0, zeroDoseCount: 0, underImmunized: 0 },
+        data: {
+            totalRegistered: 0,
+            fullyImmunized: 0,
+            zeroDoseCount: 0,
+            underImmunized: 0,
+            statusOverview: {
+                FULLY_IMMUNIZED: 0,
+                UP_TO_DATE: 0,
+                DUE_SOON: 0,
+                OVERDUE: 0,
+                DEFAULTED: 0,
+                INCOMPLETE: 0
+            }
+        },
         error: null
     });
 
@@ -211,7 +226,7 @@ export default function MainDashboard() {
                                 <Bell className="w-6 h-6 text-amber-500 animate-pulse" />
                                 <div>
                                     <h3 className="text-amber-800 font-bold text-sm">Urgent Action Needed</h3>
-                                    <p className="text-amber-700 text-xs font-medium">You have {pendingLogs.length} Provisional Registrations awaiting validation.</p>
+                                    <p className="text-amber-700 text-xs font-medium">You have {pendingLogs.length} provisional registration or dose entries awaiting Midwife validation.</p>
                                 </div>
                             </div>
                             <button 
@@ -259,7 +274,7 @@ export default function MainDashboard() {
                                 </div>
                                 <div>
                                     <h3 className="text-4xl font-black text-amber-700">{kpis.data.underImmunized}</h3>
-                                    <p className="text-xs font-bold text-amber-600 uppercase tracking-widest mt-1">Under-Immunized / Defaulters</p>
+                                    <p className="text-xs font-bold text-amber-600 uppercase tracking-widest mt-1">Under-Immunized / Defaulted</p>
                                 </div>
                             </div>
 
@@ -270,7 +285,7 @@ export default function MainDashboard() {
                                     <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center text-green-600">
                                         <ShieldCheck className="w-6 h-6" />
                                     </div>
-                                    <span className="px-2.5 py-1 bg-green-100 text-green-800 text-[10px] font-bold uppercase tracking-wider rounded-full">On Track</span>
+                                    <StatusBadge status="FULLY_IMMUNIZED" />
                                 </div>
                                 <div className="relative z-10">
                                     <h3 className="text-4xl font-black text-green-700">{kpis.data.fullyImmunized}%</h3>
@@ -293,6 +308,11 @@ export default function MainDashboard() {
                         </>
                     )}
                 </div>
+
+                <ClinicalOverview
+                    statusCounts={kpis.data?.statusOverview}
+                    loading={kpis.loading}
+                />
 
                 {/* 4. Middle Row - Action and Spatial Intelligence */}
                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -359,11 +379,7 @@ export default function MainDashboard() {
                                                     </div>
                                                 </td>
                                                 <td className="py-4 px-6">
-                                                    {infant.urgency === 'overdue' ? (
-                                                        <span className="px-2 py-1 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase">Overdue ({infant.days_overdue}d)</span>
-                                                    ) : (
-                                                        <span className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded uppercase">Due Today</span>
-                                                    )}
+                                                    <StatusBadge record={infant} />
                                                 </td>
                                                 <td className="py-4 px-6 text-sm font-medium text-slate-700">
                                                     {infant.next_due_vaccine}

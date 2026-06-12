@@ -5,8 +5,13 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const requireRole = require('../middleware/requireRole');
 const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
 const InfantService = require('../services/InfantService');
+const { CLINICAL_STATUS, ROLES } = require('../constants/domain');
 const enhancedEngine = new EnhancedNIPScheduleEngine(db);
 const infantService = new InfantService(db);
+const requireSuperAdminOnly = requireRole(
+    [ROLES.SUPER_ADMIN],
+    'Only Super Admins can access municipality-wide geospatial intelligence.'
+);
 
 router.use(clinicalAuth);
 router.use(requireRole(
@@ -58,8 +63,26 @@ router.get('/kpis', async (req, res) => {
             WHERE (bcg_given = TRUE AND hepatitis_b_given = FALSE) OR (bcg_given = FALSE AND hepatitis_b_given = TRUE)
         `, params);
         const underImmunizedCount = underResult[0].count;
-        
+
         const fullyImmunizedPercentage = totalRegistered > 0 ? Math.round((fullyImmunizedCount / totalRegistered) * 100) : 0;
+
+        const registryData = await enhancedEngine.getApprovedInfantsWithSchedule(
+            { barangay: assignedBarangay, urgency: 'all', lifecycle_status: 'Active' },
+            10000,
+            0
+        );
+
+        const statusOverview = Object.values(CLINICAL_STATUS).reduce((acc, key) => {
+            acc[key] = 0;
+            return acc;
+        }, {});
+
+        for (const infant of registryData.infants || []) {
+            const key = infant.clinical_status;
+            if (statusOverview[key] !== undefined) {
+                statusOverview[key] += 1;
+            }
+        }
 
         res.json({
             success: true,
@@ -69,7 +92,8 @@ router.get('/kpis', async (req, res) => {
                 fullyImmunized: fullyImmunizedPercentage,
                 fullyImmunizedCount,
                 zeroDoseCount,
-                underImmunized: underImmunizedCount
+                underImmunized: underImmunizedCount,
+                statusOverview
             }
         });
     } catch (e) {
@@ -240,6 +264,71 @@ router.get('/priority-followups', async (req, res) => {
     } catch (e) {
         console.error('Priority follow-ups error:', e);
         res.status(500).json({ success: false, error: 'Failed to fetch priority follow-ups' });
+    }
+});
+
+// GET /api/dashboard/superadmin/spatial-overview
+// Lightweight municipality-wide grouped counts. No DBSCAN on page load.
+router.get('/superadmin/spatial-overview', requireSuperAdminOnly, async (req, res) => {
+    try {
+        const targetBarangay = req.query.barangay && req.query.barangay !== 'all'
+            ? req.query.barangay
+            : null;
+
+        const result = await infantService.getMunicipalSpatialOverview({
+            barangay: targetBarangay,
+            ageGroup: req.query.ageGroup || null,
+            vaccineType: req.query.vaccineType || null,
+            assignedBhw: req.query.assignedBhw || null
+        });
+
+        res.json({
+            success: true,
+            scope: targetBarangay || 'MUNICIPALITY',
+            mode: 'overview',
+            barangay_counts: result.rows,
+            total_defaulters: result.total_defaulters,
+            filter_options: result.filter_options
+        });
+    } catch (error) {
+        console.error('[SUPERADMIN_SPATIAL_OVERVIEW]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to load municipality spatial overview'
+        });
+    }
+});
+
+// GET /api/dashboard/superadmin/spatial-analysis
+// Manual trigger for municipality-wide DBSCAN and detailed spatial triage.
+router.get('/superadmin/spatial-analysis', requireSuperAdminOnly, async (req, res) => {
+    try {
+        const targetBarangay = req.query.barangay && req.query.barangay !== 'all'
+            ? req.query.barangay
+            : null;
+
+        const spatialData = await infantService.getSpatialTriage({
+            barangay: targetBarangay,
+            eps: req.query.eps || 300,
+            minPts: req.query.minPts || 3,
+            scope: req.query.scope || 'defaulter',
+            ageGroup: req.query.ageGroup || null,
+            vaccineType: req.query.vaccineType || null,
+            assignedBhw: req.query.assignedBhw || null,
+            sortBy: req.query.sortBy || 'urgency'
+        });
+
+        res.json({
+            success: true,
+            mode: 'analysis',
+            ...spatialData
+        });
+    } catch (error) {
+        console.error('[SUPERADMIN_SPATIAL_ANALYSIS]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to run municipality spatial analysis'
+        });
     }
 });
 

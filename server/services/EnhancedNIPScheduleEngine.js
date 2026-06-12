@@ -9,6 +9,7 @@ const {
 const AuthorizationController = require('./AuthorizationController');
 const NIPScheduleService = require('./NIPScheduleService');
 const localityHelper = require('../utils/localityHelper');
+const { normalizeClinicalStatus } = require('../utils/clinicalStatus');
 
 /**
  * Enhanced NIP Schedule Engine Integration
@@ -20,6 +21,138 @@ class EnhancedNIPScheduleEngine {
         this.db = dbConnection;
         this.authController = new AuthorizationController(dbConnection);
         this.nipScheduleService = new NIPScheduleService(dbConnection);
+    }
+
+    resolveAgeGroup(ageInMonths) {
+        const age = Number(ageInMonths);
+        if (!Number.isFinite(age) || age < 0) return 'unknown';
+        if (age <= 5) return '0-5m';
+        if (age <= 11) return '6-11m';
+        if (age <= 23) return '12-23m';
+        return '24m+';
+    }
+
+    matchesAgeGroup(ageInMonths, requestedGroup) {
+        if (!requestedGroup || requestedGroup === 'All') return true;
+        return this.resolveAgeGroup(ageInMonths) === requestedGroup;
+    }
+
+    matchesVaccineType(vaccinationNeeds = [], nextDueVaccineCode = null, requestedCode = null) {
+        if (!requestedCode || requestedCode === 'All') return true;
+        const normalizedRequestedCode = String(requestedCode).trim().toUpperCase();
+        const pendingCodes = new Set(
+            (vaccinationNeeds || [])
+                .map((dose) => String(dose?.vaccineCode || dose?.vaccine_code || dose?.vaccine || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+
+        if (nextDueVaccineCode) {
+            pendingCodes.add(String(nextDueVaccineCode).trim().toUpperCase());
+        }
+
+        return pendingCodes.has(normalizedRequestedCode);
+    }
+
+    matchesAssignedBhw(infant = {}, requestedBhw = null) {
+        if (!requestedBhw || requestedBhw === 'All') return true;
+        const requested = String(requestedBhw).trim().toUpperCase();
+        const assignedId = String(infant.assigned_bhw_id || '').trim().toUpperCase();
+        const assignedName = String(infant.assigned_bhw_name || '').trim().toUpperCase();
+        return assignedId === requested || assignedName === requested;
+    }
+
+    sortRegistryInfants(infants = [], sortBy = 'urgency') {
+        const items = [...infants];
+
+        if (!sortBy || sortBy === 'urgency') {
+            return this.sortByUrgency(items);
+        }
+
+        const compareNames = (a, b) => {
+            const aName = `${a.last_name || ''}, ${a.first_name || ''}`.trim();
+            const bName = `${b.last_name || ''}, ${b.first_name || ''}`.trim();
+            return aName.localeCompare(bName);
+        };
+
+        switch (sortBy) {
+            case 'name_asc':
+                return items.sort(compareNames);
+            case 'name_desc':
+                return items.sort((a, b) => compareNames(b, a));
+            case 'age_youngest':
+                return items.sort((a, b) => (a.age_in_months || 0) - (b.age_in_months || 0) || compareNames(a, b));
+            case 'age_oldest':
+                return items.sort((a, b) => (b.age_in_months || 0) - (a.age_in_months || 0) || compareNames(a, b));
+            default:
+                return this.sortByUrgency(items);
+        }
+    }
+
+    async getRegistryFilterOptions({ barangay, lifecycleStatus }) {
+        const barangayParams = [];
+        const barangayScopeClause = barangay ? 'AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))' : '';
+        if (barangay) barangayParams.push(barangay);
+
+        const [barangayRows] = await this.db.query(
+            `
+            SELECT DISTINCT i.barangay
+            FROM infants i
+            WHERE i.status = ?
+              AND COALESCE(TRIM(i.barangay), '') <> ''
+            ORDER BY i.barangay ASC
+            `,
+            [lifecycleStatus]
+        );
+
+        const [bhwRows] = await this.db.query(
+            `
+            SELECT id, full_name
+            FROM users
+            WHERE role = 'BHW'
+              AND is_active = TRUE
+              ${barangay ? 'AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))' : ''}
+            ORDER BY full_name ASC, id ASC
+            `,
+            barangay ? [barangay] : []
+        );
+
+        return {
+            barangays: barangayRows.map((row) => row.barangay).filter(Boolean),
+            assignedBhws: bhwRows.map((row) => ({
+                value: row.id,
+                label: row.full_name
+            })),
+            ageGroups: [
+                { value: '0-5m', label: '0-5 months' },
+                { value: '6-11m', label: '6-11 months' },
+                { value: '12-23m', label: '12-23 months' },
+                { value: '24m+', label: '24+ months' }
+            ],
+            vaccineTypes: [
+                { value: 'BCG', label: 'BCG' },
+                { value: 'HEPB', label: 'Hepatitis B Birth Dose' },
+                { value: 'PENTA-1', label: 'Pentavalent 1' },
+                { value: 'PENTA-2', label: 'Pentavalent 2' },
+                { value: 'PENTA-3', label: 'Pentavalent 3' },
+                { value: 'OPV-1', label: 'OPV 1' },
+                { value: 'OPV-2', label: 'OPV 2' },
+                { value: 'OPV-3', label: 'OPV 3' },
+                { value: 'IPV-1', label: 'IPV 1' },
+                { value: 'IPV-2', label: 'IPV 2' },
+                { value: 'PCV-1', label: 'PCV 1' },
+                { value: 'PCV-2', label: 'PCV 2' },
+                { value: 'PCV-3', label: 'PCV 3' },
+                { value: 'MCV-1', label: 'MCV 1' },
+                { value: 'MCV-2', label: 'MCV 2' }
+            ],
+            sortOptions: [
+                { value: 'urgency', label: 'Urgency' },
+                { value: 'name_asc', label: 'Name (A-Z)' },
+                { value: 'name_desc', label: 'Name (Z-A)' },
+                { value: 'age_youngest', label: 'Age (Youngest)' },
+                { value: 'age_oldest', label: 'Age (Oldest)' }
+            ]
+        };
     }
 
     /**
@@ -547,7 +680,13 @@ class EnhancedNIPScheduleEngine {
             // If urgency filter is present, we must fetch ALL records to filter in-memory accurately
             // because urgency is a derived field that cannot be easily calculated in SQL.
             // For barangay-scale data (hundreds of infants), this is operationally acceptable.
-            const useInMemoryFiltering = filters.urgency && filters.urgency !== 'all';
+            const useInMemoryFiltering = Boolean(
+                (filters.urgency && filters.urgency !== 'all')
+                || (filters.ageGroup && filters.ageGroup !== 'All')
+                || (filters.vaccineType && filters.vaccineType !== 'All')
+                || (filters.assignedBhw && filters.assignedBhw !== 'All')
+                || (filters.sortBy && filters.sortBy !== 'urgency')
+            );
             
             const query = `
                 SELECT 
@@ -556,15 +695,32 @@ class EnhancedNIPScheduleEngine {
                     i.caregiver_phone, 'APPROVED' AS registration_status,
                     i.bcg_status, i.hepa_b_status,
                     i.landmark, i.length_at_birth_cm, i.initiated_breastfeeding, i.delivery_facility_name,
+                    i.created_by,
                     i.created_by as approved_by,
+                    creator.full_name AS created_by_name,
+                    creator.role AS created_by_role,
+                    latest_bhw.assigned_bhw_id,
+                    latest_bhw.assigned_bhw_name,
                     i.latitude IS NOT NULL AND i.longitude IS NOT NULL as geom_present, CAST(i.latitude AS FLOAT) as lat, CAST(i.longitude AS FLOAT) as lng,
                     aa.timestamp as approved_at,
                     aa.approver_role,
                     COALESCE(i.bcg_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Administered'), FALSE) AS bcg_given,
                     COALESCE(i.hepa_b_status IN ('Given', 'GIVEN', 'Given within 24 hours', 'Given more than 24 hours', 'Given within 24h', 'Given > 24h', 'Administered'), FALSE) AS hepatitis_b_given
                 FROM infants i
+                LEFT JOIN users creator ON creator.id = i.created_by
                 LEFT JOIN approval_audit aa ON i.id = aa.infant_id AND aa.action = 'APPROVED'
-
+                LEFT JOIN LATERAL (
+                    SELECT
+                        fut.assigned_to_bhw_id AS assigned_bhw_id,
+                        u.full_name AS assigned_bhw_name
+                    FROM follow_up_tasks fut
+                    LEFT JOIN users u ON u.id = fut.assigned_to_bhw_id
+                    WHERE fut.infant_id = i.id
+                      AND fut.assigned_to_bhw_id IS NOT NULL
+                      AND fut.status <> 'CANCELLED'
+                    ORDER BY fut.updated_at DESC, fut.created_at DESC
+                    LIMIT 1
+                ) latest_bhw ON TRUE
                 WHERE ${whereClause}
                 ORDER BY COALESCE(aa.timestamp, i.dob) DESC, i.dob DESC
                 ${useInMemoryFiltering ? '' : `LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`}
@@ -810,6 +966,17 @@ class EnhancedNIPScheduleEngine {
                     }
                 }
 
+                const clinicalStatus = normalizeClinicalStatus({
+                    computedStatus: computedScheduleStatus,
+                    urgency,
+                    registrationStatus: infant.registration_status
+                });
+
+                const assignedBhwId = infant.assigned_bhw_id
+                    || (String(infant.created_by_role || '').toUpperCase() === 'BHW' ? infant.created_by : null);
+                const assignedBhwName = infant.assigned_bhw_name
+                    || (String(infant.created_by_role || '').toUpperCase() === 'BHW' ? infant.created_by_name : null);
+
                 enrichedInfants.push({
                     id: infant.id,
                     reference_id: infant.reference_id,
@@ -826,6 +993,7 @@ class EnhancedNIPScheduleEngine {
                     next_due_date: nextDueDate ? (typeof nextDueDate === 'string' ? nextDueDate : nextDueDate.toISOString().split('T')[0]) : null,
                     urgency: urgency,
                     computed_schedule_status: computedScheduleStatus,
+                    clinical_status: clinicalStatus,
                     risk_tier: computedScheduleStatus === 'DEFAULTER'
                         ? 'HIGH'
                         : (computedScheduleStatus === 'DUE_TODAY' || computedScheduleStatus === 'DUE_SOON')
@@ -836,6 +1004,8 @@ class EnhancedNIPScheduleEngine {
                     approved_by: infant.approved_by,
                     approved_at: infant.approved_at,
                     approver_role: infant.approver_role || 'Midwife',
+                    assigned_bhw_id: assignedBhwId,
+                    assigned_bhw_name: assignedBhwName,
                     barangay: infant.barangay,
                     purok: infant.purok,
                     exact_address: infant.exact_address,
@@ -853,25 +1023,36 @@ class EnhancedNIPScheduleEngine {
 
             }
 
-            // Sort by urgency
-            const sortedInfants = this.sortByUrgency(enrichedInfants);
+            const registryFilteredInfants = enrichedInfants.filter((infant) => {
+                if (!this.matchesAgeGroup(infant.age_in_months, filters.ageGroup)) return false;
+                if (!this.matchesVaccineType(infant.vaccination_needs, infant.next_due_vaccine_code, filters.vaccineType)) return false;
+                if (!this.matchesAssignedBhw(infant, filters.assignedBhw)) return false;
+                return true;
+            });
+
+            const sortedInfants = this.sortRegistryInfants(registryFilteredInfants, filters.sortBy);
 
             // If using in-memory filtering, apply pagination now
             let paginatedInfants = sortedInfants;
             let displayTotalCount = totalCount;
 
-            if (useInMemoryFiltering) {
+            if (useInMemoryFiltering || registryFilteredInfants.length !== enrichedInfants.length) {
                 displayTotalCount = sortedInfants.length;
                 paginatedInfants = sortedInfants.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
             }
 
             // Calculate statistics
             const stats = await this.calculateStatistics(filters.barangay);
+            const filter_options = await this.getRegistryFilterOptions({
+                barangay: filters.barangay,
+                lifecycleStatus
+            });
 
             return {
                 success: true,
                 infants: paginatedInfants,
                 counts: stats,
+                filter_options,
                 total_count: displayTotalCount,
                 pagination: {
                     limit: limit,

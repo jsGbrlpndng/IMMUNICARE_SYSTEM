@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const EnhancedNIPScheduleEngine = require('./EnhancedNIPScheduleEngine');
 const NIPScheduleService = require('./NIPScheduleService');
+const AuditLogService = require('./AuditLogService');
 const { ROLES, REGISTRATION_STATUS } = require('../constants/domain');
 const {
     buildVaccinationReportFields,
@@ -121,6 +122,21 @@ const clinicalViolation = (message, code = 'CLINICAL_RULE_VIOLATION') => ({
     code
 });
 
+const normalizeValidationStatus = (value) => {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim().toUpperCase().replace(/\s+/g, '_');
+    if (normalized === 'VALIDATED') return 'VALIDATED';
+    if (normalized === 'PENDING_VALIDATION') return 'PENDING_VALIDATION';
+    return null;
+};
+
+const buildInfantFullName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ') || null;
+
+const cloneSnapshot = (value) => JSON.parse(JSON.stringify(value || {}));
+
 class VaccinationService {
     static ERRORS = VACCINATION_ERRORS;
 
@@ -128,6 +144,20 @@ class VaccinationService {
         this.db = dbConnection;
         this.engine = new EnhancedNIPScheduleEngine(dbConnection);
         this.nipScheduleService = new NIPScheduleService(dbConnection);
+        this.auditLogService = new AuditLogService(dbConnection);
+    }
+
+    async getVaccinationWithInfantContext(vaccinationId, connection = null) {
+        const db = connection || this.db;
+        const [rows] = await db.execute(
+            `SELECT v.*, i.first_name, i.middle_name, i.last_name, i.barangay, i.dob
+             FROM vaccinations v
+             JOIN infants i ON i.id = v.infant_id
+             WHERE v.id = ?
+             LIMIT 1`,
+            [vaccinationId]
+        );
+        return rows[0] || null;
     }
 
     /**
@@ -182,9 +212,10 @@ class VaccinationService {
                 throw err;
             }
 
-            if (vaccinationData.recorded_by_role === ROLES.BHW) {
-                const err = new Error('GOVERNANCE ERROR: BHW users are not authorized to record or edit vaccination doses.');
-                err.code = 'BHW_DOSE_MUTATION_FORBIDDEN';
+            const normalizedValidationStatus = normalizeValidationStatus(vaccinationData.validation_status) || 'PENDING_VALIDATION';
+            if (vaccinationData.recorded_by_role === ROLES.BHW && normalizedValidationStatus !== 'PENDING_VALIDATION') {
+                const err = new Error('GOVERNANCE ERROR: BHW-recorded doses must remain pending validation until reviewed by a Midwife.');
+                err.code = 'BHW_VALIDATION_STATUS_FORBIDDEN';
                 throw err;
             }
 
@@ -217,11 +248,12 @@ class VaccinationService {
                     dose_number, batch_number, brand, site_of_injection, 
                     vaccinator_id, vaccinator_name, administered_date, 
                     notes, validation_status, is_early_override,
+                    is_external,
                     report_antigen_code, report_dose_code, report_age_bucket,
                     report_classification, report_period_month, report_period_year,
                     barangay_at_administration,
                     recorded_by, recorded_by_role, recorded_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             await connection.execute(insertQuery, [
@@ -238,8 +270,9 @@ class VaccinationService {
                 vaccinationData.vaccinator_name,
                 administeredDate,
                 vaccinationData.notes || null,
-                vaccinationData.validation_status || 'PENDING_VALIDATION',
+                normalizedValidationStatus,
                 false,
+                vaccinationData.is_external === true,
                 reportFields.report_antigen_code,
                 reportFields.report_dose_code,
                 reportFields.report_age_bucket,
@@ -259,12 +292,12 @@ class VaccinationService {
                 administeredDate,
                 connection,
                 scheduleId,
-                vaccinationData.validation_status === 'VALIDATED'
+                normalizedValidationStatus === 'VALIDATED'
             );
 
             if (
                 String(vaccinationData.vaccine_code || '').toUpperCase() === 'BCG' &&
-                (vaccinationData.validation_status || 'PENDING_VALIDATION') === 'VALIDATED'
+                normalizedValidationStatus === 'VALIDATED'
             ) {
                 const [infantRows] = await connection.execute(
                     'SELECT dob FROM infants WHERE id = ?',
@@ -277,7 +310,7 @@ class VaccinationService {
                 );
             }
 
-            if ((vaccinationData.validation_status || 'PENDING_VALIDATION') === 'VALIDATED') {
+            if (normalizedValidationStatus === 'VALIDATED') {
                 await this.updateInfantImmunizationStatus(vaccinationData.infant_id, connection);
             }
 
@@ -289,6 +322,7 @@ class VaccinationService {
             return {
                 success: true,
                 vaccination_id: vaccinationId,
+                is_external: vaccinationData.is_external === true,
                 message: 'Vaccination recorded successfully'
             };
 
@@ -400,6 +434,290 @@ class VaccinationService {
             throw error;
         } finally {
             if (connection) connection.release();
+        }
+    }
+
+    async correctVaccination(vaccinationId, updates = {}, actor = {}, req = null, externalConnection = null) {
+        const connection = externalConnection || await this.db.getConnection();
+        const shouldManageTransaction = !externalConnection;
+
+        try {
+            if (shouldManageTransaction) {
+                await connection.beginTransaction();
+            }
+
+            const reason = String(updates.reason || updates.justification || '').trim();
+            if (!reason) {
+                const err = new Error('A correction reason is required.');
+                err.code = 'MISSING_CORRECTION_REASON';
+                err.status = 400;
+                throw err;
+            }
+
+            const currentRow = await this.getVaccinationWithInfantContext(vaccinationId, connection);
+
+            if (!currentRow) {
+                const err = new Error('Vaccination record not found');
+                err.code = 'NOT_FOUND';
+                err.status = 404;
+                throw err;
+            }
+            const oldState = cloneSnapshot(currentRow);
+            const now = new Date();
+            const hasOwn = (key) => Object.prototype.hasOwnProperty.call(updates, key);
+
+            const nextValidationStatus = hasOwn('validation_status') || hasOwn('status')
+                ? normalizeValidationStatus(updates.validation_status ?? updates.status)
+                : currentRow.validation_status;
+
+            if ((hasOwn('validation_status') || hasOwn('status')) && !nextValidationStatus) {
+                const err = new Error('Invalid validation status for dose correction.');
+                err.code = 'INVALID_VALIDATION_STATUS';
+                err.status = 400;
+                throw err;
+            }
+
+            const patch = {};
+            const assignIfPresent = (field, { trim = false, emptyToNull = false } = {}) => {
+                if (!hasOwn(field)) return;
+                let value = updates[field];
+                if (typeof value === 'string' && trim) value = value.trim();
+                if (emptyToNull && typeof value === 'string' && value === '') value = null;
+                patch[field] = value;
+            };
+
+            assignIfPresent('batch_number', { trim: true });
+            assignIfPresent('brand', { trim: true, emptyToNull: true });
+            assignIfPresent('site_of_injection', { trim: true });
+            assignIfPresent('vaccinator_id', { trim: true, emptyToNull: true });
+            assignIfPresent('vaccinator_name', { trim: true });
+            assignIfPresent('notes', { trim: true, emptyToNull: true });
+            assignIfPresent('report_classification', { trim: true, emptyToNull: true });
+
+            if (hasOwn('administered_date')) {
+                patch.administered_date = updates.administered_date ? toDateOnlyString(updates.administered_date) : null;
+            }
+
+            if (hasOwn('validation_status') || hasOwn('status')) {
+                patch.validation_status = nextValidationStatus;
+            }
+
+            if (Object.keys(patch).length === 0) {
+                const err = new Error('No dose correction fields were provided.');
+                err.code = 'NO_CORRECTION_FIELDS';
+                err.status = 400;
+                throw err;
+            }
+
+            const mergedRow = {
+                ...currentRow,
+                ...patch,
+                validation_status: patch.validation_status || currentRow.validation_status
+            };
+
+            const correctedAdministeredDate = toDateOnlyString(mergedRow.administered_date);
+            const todayString = toDateOnlyString(new Date());
+            const dobString = toDateOnlyString(currentRow.dob);
+
+            if (!correctedAdministeredDate) {
+                const err = new Error('Missing required clinical fields.');
+                err.code = 'MISSING_REQUIRED_CLINICAL_FIELDS';
+                err.status = 400;
+                throw err;
+            }
+
+            if (correctedAdministeredDate > todayString) {
+                const err = new Error('TEMPORAL VIOLATION: Cannot record a vaccination in the future.');
+                err.code = 'TEMPORAL_VIOLATION';
+                err.status = 400;
+                throw err;
+            }
+
+            if (dobString && correctedAdministeredDate < dobString) {
+                const err = new Error('TEMPORAL VIOLATION: Vaccination dose cannot pre-date the infant birth date.');
+                err.code = 'TEMPORAL_VIOLATION';
+                err.status = 400;
+                throw err;
+            }
+
+            const ruleRows = await this.nipScheduleService.getActiveRules(connection);
+            const activeRule = ruleRows.find((rule) =>
+                String(rule.vaccine_code).toUpperCase() === String(currentRow.vaccine_code).toUpperCase()
+            );
+            const currentSeries = getDoseSeriesKey(currentRow.vaccine_code);
+            const minIntervalDays = Number(activeRule?.min_interval_days || 0);
+            const graceAdjustedIntervalDays = getGraceAdjustedIntervalDays(minIntervalDays);
+
+            if (currentSeries && currentSeries.dose > 1) {
+                const [previousRows] = await connection.execute(
+                    `SELECT vaccine_code, dose_number, actual_date
+                     FROM infant_schedules
+                     WHERE infant_id = ?
+                       AND status = 'COMPLETED'
+                       AND actual_date IS NOT NULL
+                     ORDER BY dose_number DESC, actual_date DESC`,
+                    [currentRow.infant_id]
+                );
+
+                const previousDose = previousRows.find((row) =>
+                    sameDoseSeries(row.vaccine_code, currentRow.vaccine_code) &&
+                    Number(row.dose_number) === Number(currentRow.dose_number) - 1
+                );
+
+                if (!previousDose) {
+                    const err = new Error(`CLINICAL VIOLATION: ${currentRow.vaccine_code} Dose ${currentRow.dose_number} requires the previous dose in the series before correction.`);
+                    err.code = 'PREVIOUS_DOSE_REQUIRED';
+                    err.status = 400;
+                    throw err;
+                }
+
+                const previousActualDateString = toDateOnlyString(previousDose.actual_date);
+                if (previousActualDateString && correctedAdministeredDate < previousActualDateString) {
+                    const err = new Error('Corrected date cannot be earlier than the previous dose in this series.');
+                    err.code = 'CORRECTION_SEQUENCE_VIOLATION';
+                    err.status = 400;
+                    throw err;
+                }
+
+                if (previousActualDateString && graceAdjustedIntervalDays > 0) {
+                    const earliestAllowedDate = addDaysToDateString(previousActualDateString, graceAdjustedIntervalDays);
+                    if (correctedAdministeredDate < earliestAllowedDate) {
+                        const err = new Error(`CLINICAL VIOLATION: ${currentRow.vaccine_code} Dose ${currentRow.dose_number} requires a minimum ${graceAdjustedIntervalDays}-day interval after the previous dose. Earliest allowed date is ${earliestAllowedDate}.`);
+                        err.code = 'MINIMUM_INTERVAL_NOT_MET';
+                        err.status = 400;
+                        throw err;
+                    }
+                }
+            }
+
+            const reportFields = buildVaccinationReportFields({
+                vaccine_code: currentRow.vaccine_code,
+                vaccine_name: currentRow.vaccine_name,
+                dose_number: currentRow.dose_number,
+                administered_date: correctedAdministeredDate,
+                dob: currentRow.dob,
+                barangay: currentRow.barangay,
+                report_classification: mergedRow.report_classification
+            });
+
+            const validatedState = normalizeValidationStatus(mergedRow.validation_status) || 'PENDING_VALIDATION';
+            const validatedByName = actor.full_name || actor.name || currentRow.validated_by_name || 'Authorized Staff';
+
+            await connection.execute(
+                `UPDATE vaccinations
+                 SET batch_number = ?,
+                     brand = ?,
+                     site_of_injection = ?,
+                     vaccinator_id = ?,
+                     vaccinator_name = ?,
+                     administered_date = ?,
+                     notes = ?,
+                     validation_status = ?,
+                     report_antigen_code = ?,
+                     report_dose_code = ?,
+                     report_age_bucket = ?,
+                     report_classification = ?,
+                     report_period_month = ?,
+                     report_period_year = ?,
+                     barangay_at_administration = ?,
+                     validated_by_id = ?,
+                     validated_by_name = ?,
+                     validated_at = ?
+                 WHERE id = ?`,
+                [
+                    mergedRow.batch_number,
+                    mergedRow.brand || null,
+                    mergedRow.site_of_injection,
+                    mergedRow.vaccinator_id || null,
+                    mergedRow.vaccinator_name,
+                    correctedAdministeredDate,
+                    mergedRow.notes || null,
+                    validatedState,
+                    reportFields.report_antigen_code,
+                    reportFields.report_dose_code,
+                    reportFields.report_age_bucket,
+                    reportFields.report_classification,
+                    reportFields.report_period_month,
+                    reportFields.report_period_year,
+                    reportFields.barangay_at_administration,
+                    validatedState === 'VALIDATED' ? (actor.id || currentRow.validated_by_id || null) : null,
+                    validatedState === 'VALIDATED' ? validatedByName : null,
+                    validatedState === 'VALIDATED' ? now : null,
+                    vaccinationId
+                ]
+            );
+
+            await this.nipScheduleService.synchronizeCorrectedVaccination({
+                infantId: currentRow.infant_id,
+                vaccineCode: currentRow.vaccine_code,
+                doseNumber: currentRow.dose_number,
+                actualDate: correctedAdministeredDate,
+                validationStatus: validatedState,
+                scheduleId: currentRow.schedule_id
+            }, connection);
+
+            if (String(currentRow.vaccine_code || '').toUpperCase() === 'BCG') {
+                const bcgStatus = validatedState === 'VALIDATED'
+                    ? classifyWithin24HoursStatus(correctedAdministeredDate, currentRow.dob)
+                    : null;
+
+                await connection.execute(
+                    'UPDATE infants SET bcg_status = ?, bcg_date = ? WHERE id = ?',
+                    [
+                        bcgStatus,
+                        validatedState === 'VALIDATED' ? correctedAdministeredDate : null,
+                        currentRow.infant_id
+                    ]
+                );
+            }
+
+            await this.updateInfantImmunizationStatus(currentRow.infant_id, connection);
+
+            const updatedRow = cloneSnapshot(await this.getVaccinationWithInfantContext(vaccinationId, connection));
+
+            await this.auditLogService.recordEvent({
+                actor,
+                action: 'DOSE_CORRECTION',
+                targetEntity: 'vaccinations',
+                targetRecordId: vaccinationId,
+                targetName: buildInfantFullName(currentRow),
+                barangay: currentRow.barangay,
+                oldValues: oldState,
+                newValues: updatedRow || cloneSnapshot(mergedRow),
+                metadata: {
+                    actor_id: actor.id || actor.user_id || null,
+                    target_id: vaccinationId,
+                    reason,
+                    correction_reason: reason,
+                    previous_state: oldState,
+                    new_state: updatedRow || cloneSnapshot(mergedRow),
+                    infant_id: currentRow.infant_id,
+                    vaccine_code: currentRow.vaccine_code,
+                    dose_number: currentRow.dose_number
+                },
+                req,
+                dbClient: connection
+            });
+
+            if (shouldManageTransaction) {
+                await connection.commit();
+                await this.computeNextDose(currentRow.infant_id);
+            }
+
+            return {
+                success: true,
+                message: 'Vaccination dose corrected successfully.',
+                vaccination: updatedRow || mergedRow
+            };
+        } catch (error) {
+            if (shouldManageTransaction) {
+                await connection.rollback();
+            }
+            throw error;
+        } finally {
+            if (shouldManageTransaction) {
+                connection.release();
+            }
         }
     }
 

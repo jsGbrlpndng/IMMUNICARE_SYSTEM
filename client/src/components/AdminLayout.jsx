@@ -40,7 +40,7 @@ const AdminLayout = ({ children }) => {
     }, [pageName]);
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] flex">
+        <div className="flex min-h-screen overflow-x-hidden bg-[#F8FAFC]">
             <SidebarNav
                 isCollapsed={isCollapsed}
                 setIsCollapsed={setIsCollapsed}
@@ -51,7 +51,7 @@ const AdminLayout = ({ children }) => {
                 logoutRedirectPath="/portal"
             />
 
-            <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
+            <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
                 <nav className="sticky top-0 z-40 w-full h-14 bg-white/95 backdrop-blur-lg border-b border-slate-100 px-5 flex items-center gap-4 shadow-sm">
                     <button
                         onClick={() => setIsMobileOpen(true)}
@@ -67,7 +67,7 @@ const AdminLayout = ({ children }) => {
                     </div>
                 </nav>
 
-                <main className="flex-1">
+                <main className="flex min-w-0 flex-1 overflow-x-hidden">
                     {children}
                 </main>
             </div>

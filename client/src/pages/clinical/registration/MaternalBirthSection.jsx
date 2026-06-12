@@ -126,6 +126,25 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isRe
                     </div>
                 </div>
             </div>
+
+            <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-6">
+                <div className="mb-3">
+                    <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em]">BHW Intake Notes</h3>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Historical context from the baby book, outside clinic records, or caregiver interview.
+                    </p>
+                </div>
+                <textarea
+                    name="bhw_intake_notes"
+                    value={formData.bhw_intake_notes || ''}
+                    onChange={handleChange}
+                    placeholder="Document external dose history, discrepancies in the baby book, or clinical context for Midwife review..."
+                    rows="4"
+                    className={`${inputClasses} min-h-[120px] resize-y`}
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
+                />
+            </div>
         </div>
     );
 };

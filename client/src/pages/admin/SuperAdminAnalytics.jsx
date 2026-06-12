@@ -4,9 +4,8 @@ import apiClient from '../../services/apiClient';
 import ReportFilters from '../../components/reports/ReportFilters';
 import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
 import MonitoringCharts from '../../components/reports/MonitoringCharts';
-import UtilizationWastagePanel from '../../components/reports/UtilizationWastagePanel';
 import { DataQualityBanner, ErrorState, LoadingState } from '../../components/reports/ReportStates';
-import { MONTHS } from '../../components/reports/reportConfig';
+import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
 
 const currentDate = new Date();
 
@@ -26,7 +25,7 @@ const readJson = async (response) => {
 
 const buildQuery = ({ month, year, barangay, includeMonth = true }) => {
     const params = new URLSearchParams();
-    if (includeMonth) params.set('month', String(month));
+    if (includeMonth && month !== undefined && month !== null) params.set('month', String(month));
     params.set('year', String(year));
     if (barangay && barangay !== 'all') params.set('barangay', barangay);
     return params.toString();
@@ -81,7 +80,7 @@ const SuperAdminAnalytics = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const periodLabel = useMemo(() => `${MONTHS[month - 1]} ${year}`, [month, year]);
+    const periodLabel = useMemo(() => formatReportingPeriodLabel(month, year), [month, year]);
 
     const fetchReports = useCallback(async () => {
         setLoading(true);
@@ -117,11 +116,11 @@ const SuperAdminAnalytics = () => {
     const missingCount = Number(monthlyReport?.data_quality?.missing_report_classification_count || 0);
 
     return (
-        <div className="space-y-5">
+        <div className="min-w-0 max-w-full space-y-5 overflow-x-hidden">
             <section className="border border-slate-300 bg-white px-5 py-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">Head Nurse Analytics</p>
                 <h1 className="mt-1 text-2xl font-black text-slate-950">Municipal NIP Reporting</h1>
-                <p className="mt-1 text-sm font-semibold text-slate-500">{periodLabel} · {barangay === 'all' ? 'RHU 2 - All Barangays' : barangay}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">{periodLabel} - {barangay === 'all' ? 'RHU 2 - All Barangays' : barangay}</p>
             </section>
 
             <ReportFilters
@@ -134,7 +133,7 @@ const SuperAdminAnalytics = () => {
                 showBarangay
             />
 
-            <div className="flex flex-wrap border border-slate-300 bg-white">
+            <div className="flex max-w-full flex-wrap border border-slate-300 bg-white">
                 {tabs.map((tab) => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.key;
@@ -161,11 +160,11 @@ const SuperAdminAnalytics = () => {
             ) : (
                 <>
                     {activeTab === 'master' ? (
-                        <div className="space-y-5">
+                        <div className="min-w-0 max-w-full space-y-5 overflow-hidden">
                             <MonthlyAccomplishmentTable
                                 report={monthlyReport}
                                 mode="master"
-                                title="Master Monthly Accomplishment Table"
+                                title={month === ALL_MONTH_VALUE ? 'Master Annual Accomplishment Table' : 'Master Monthly Accomplishment Table'}
                             />
                         </div>
                     ) : null}

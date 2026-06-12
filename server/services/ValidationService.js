@@ -85,7 +85,7 @@ class ValidationService {
         }
 
         // At-birth vaccinations validation - Updated to support natural language strings
-        const isBcgGiven = data.bcg_status === 'Given' || data.bcg_given;
+        const isBcgGiven = String(data.bcg_status || '').startsWith('Given') || data.bcg_given;
         const isHepBGiven = data.hepatitis_b_status?.startsWith('Given') || data.hepatitis_b_given;
 
         if (isBcgGiven && !data.bcg_date) {

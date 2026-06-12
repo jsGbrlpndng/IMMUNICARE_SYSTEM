@@ -430,6 +430,9 @@ const ValidationPage = () => {
     const hasSelectedRecord = Boolean(selectedId && selectedRecord);
     const duplicateAlert = selectedRecord?.duplicate_alert || selectedDetail?.registration?.duplicate_alert || null;
     const duplicateAlertStatus = normalizeWorkflowValue(duplicateAlert?.status);
+    const transferInquiryNotes = selectedDetail?.registration?.transfer_inquiry_notes
+        || selectedDetail?.duplicate_review_context?.transfer_inquiry_notes
+        || '';
     const duplicateAlertMessage = duplicateAlert?.message
         || (duplicateAlertStatus === 'TRANSFER_POSSIBLE'
             ? `ALERT: A record for this infant exists in ${duplicateAlert?.barangay}. Please verify if this is a transfer or a duplicate.`
@@ -603,6 +606,16 @@ const ValidationPage = () => {
                                                     ))}
                                                 </div>
                                             )}
+                                            {duplicateAlertStatus === 'TRANSFER_POSSIBLE' && (
+                                                <div className="mt-3 rounded border border-emerald-200 bg-white px-3 py-3">
+                                                    <div className="text-[9px] font-black uppercase tracking-[0.22em] text-[#006B3F]">
+                                                        Transfer Inquiry Notes
+                                                    </div>
+                                                    <div className="mt-2 text-[11px] font-bold leading-relaxed text-slate-900">
+                                                        {transferInquiryNotes || 'No transfer inquiry notes were attached by the BHW.'}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             {isMidwifeReviewer && duplicateAlertStatus === 'TRANSFER_POSSIBLE' && (
@@ -705,6 +718,15 @@ const ValidationPage = () => {
                                         <div className="chart-grid chart-grid-double border-t border-slate-300">
                                             <DataField label="CPAB Status" value={selectedRecord?.cpab_status || 'Pending'} />
                                             <DataField label="Initiated Breastfeeding" value={isBreastfed(selectedRecord?.initiated_breastfeeding || selectedRecord?.breastfed_immediately_after_birth) ? 'YES' : 'NO'} highlight />
+                                        </div>
+                                    </ClinicalSection>
+
+                                    <ClinicalSection icon={<Info size={12} className="text-[#006B3F]" />} title="BHW Intake Notes">
+                                        <div className="chart-grid chart-grid-single">
+                                            <DataField
+                                                label="Historical Context"
+                                                value={selectedRecord?.bhw_intake_notes || 'No intake notes recorded by the encoder.'}
+                                            />
                                         </div>
                                     </ClinicalSection>
 

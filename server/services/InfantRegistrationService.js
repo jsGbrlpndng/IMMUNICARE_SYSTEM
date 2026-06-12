@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const NIPScheduleService = require('./NIPScheduleService');
 const VaccinationService = require('./VaccinationService');
+const NotificationService = require('./NotificationService');
 const { ROLES, REGISTRATION_STATUS } = require('../constants/domain');
 const { buildVaccinationReportFields } = require('../utils/vaccinationReporting');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
@@ -10,6 +11,7 @@ class InfantRegistrationService {
         this.db = db;
         this.nipScheduleService = new NIPScheduleService(db);
         this.vaccinationService = new VaccinationService(db);
+        this.notificationService = new NotificationService(db);
     }
 
     /**
@@ -71,8 +73,34 @@ class InfantRegistrationService {
             throw this._duplicateConflictError(reviewAlert);
         }
         payload.duplicate_alert = reviewAlert;
-        if (!payload.duplicate_alert) {
+        if (reviewAlert?.status === 'TRANSFER_POSSIBLE') {
+            const transferInquiryNotes = String(
+                payload.transfer_inquiry_notes
+                || payload.override_reason
+                || payload.duplicate_resolution?.notes
+                || ''
+            ).trim();
+
+            if (status === REGISTRATION_STATUS.PENDING_VALIDATION && !transferInquiryNotes) {
+                throw this._httpError('Transfer inquiry notes are required before submitting a cross-barangay match for Midwife review.', 400);
+            }
+
+            payload.transfer_inquiry_notes = transferInquiryNotes || null;
+            payload.override_reason = transferInquiryNotes || null;
+            payload.duplicate_resolution = {
+                ...(payload.duplicate_resolution && typeof payload.duplicate_resolution === 'object' ? payload.duplicate_resolution : {}),
+                disposition: 'TRANSFER_INQUIRY_SUBMITTED',
+                resolved: false,
+                signature: reviewAlert.signature || null,
+                inquiry_barangay: reviewAlert.barangay || null,
+                submitted_by: actor.id,
+                submitted_at: new Date().toISOString(),
+                notes: transferInquiryNotes || null
+            };
+        } else if (!payload.duplicate_alert) {
             payload.duplicate_resolution = null;
+            payload.transfer_inquiry_notes = null;
+            payload.override_reason = null;
         }
         payload.is_duplicate = duplicateResult.strictMatches.length > 0 || duplicateResult.probableMatches.length > 0;
 
@@ -124,7 +152,14 @@ class InfantRegistrationService {
                     registration_data: payload,
                     status,
                     barangay: trimmedBarangay
-                }
+                },
+                metadata: status === REGISTRATION_STATUS.PENDING_VALIDATION
+                    ? {
+                        duplicate_alert_status: payload.duplicate_alert?.status || null,
+                        transfer_inquiry_notes: payload.transfer_inquiry_notes || payload.override_reason || null,
+                        duplicate_resolution: payload.duplicate_resolution || null
+                    }
+                    : {}
             });
 
         return {
@@ -356,9 +391,61 @@ class InfantRegistrationService {
             LIMIT 10
         `;
 
+        const crossBarangayRegistrationSql = `
+            SELECT
+                ir.id,
+                ir.reference_id,
+                ir.status,
+                ir.barangay,
+                ir.created_at,
+                ir.registration_data->>'first_name' AS first_name,
+                COALESCE(ir.has_no_middle_name, FALSE) AS has_no_middle_name,
+                ir.registration_data->>'middle_name' AS middle_name,
+                ir.registration_data->>'last_name' AS last_name,
+                ir.registration_data->>'dob' AS dob,
+                ir.registration_data->>'sex' AS sex,
+                ir.promoted_infant_id,
+                'REGISTRATION' AS source_table
+            FROM infant_registrations ir
+            WHERE LOWER(TRIM(COALESCE(ir.registration_data->>'first_name', ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND LOWER(TRIM(COALESCE(ir.registration_data->>'last_name', ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND TRIM(COALESCE(ir.registration_data->>'dob', '')) = TRIM(COALESCE(?, ''))
+              AND LOWER(TRIM(COALESCE(ir.barangay, ''))) <> LOWER(TRIM(COALESCE(?, '')))
+              AND UPPER(TRIM(COALESCE(ir.status, ''))) <> 'REJECTED'
+              ${registrationExcludeClause}
+            ORDER BY ir.created_at DESC
+            LIMIT 10
+        `;
+
+        const crossBarangayInfantSql = `
+            SELECT
+                i.id,
+                i.reference_id,
+                i.status,
+                i.barangay,
+                i.created_at,
+                i.first_name,
+                COALESCE(i.has_no_middle_name, FALSE) AS has_no_middle_name,
+                i.middle_name,
+                i.last_name,
+                i.dob,
+                i.sex,
+                'INFANT' AS source_table
+            FROM infants i
+            WHERE LOWER(TRIM(COALESCE(i.first_name, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND LOWER(TRIM(COALESCE(i.last_name, ''))) = LOWER(TRIM(COALESCE(?, '')))
+              AND TRIM(COALESCE(i.dob::text, '')) = TRIM(COALESCE(?, ''))
+              AND LOWER(TRIM(COALESCE(i.barangay, ''))) <> LOWER(TRIM(COALESCE(?, '')))
+            ORDER BY i.created_at DESC
+            LIMIT 10
+        `;
+
         const probableRegistrationParams = [firstName, lastName, actor?.assigned_barangay || data?.barangay || '', dob, hasNoMiddleName, hasNoMiddleName, middleName];
         if (excludeRegistrationId) probableRegistrationParams.push(excludeRegistrationId);
         const probableInfantParams = [firstName, lastName, actor?.assigned_barangay || data?.barangay || '', dob, hasNoMiddleName, hasNoMiddleName, middleName];
+        const crossBarangayRegistrationParams = [firstName, lastName, dob, actor?.assigned_barangay || data?.barangay || ''];
+        if (excludeRegistrationId) crossBarangayRegistrationParams.push(excludeRegistrationId);
+        const crossBarangayInfantParams = [firstName, lastName, dob, actor?.assigned_barangay || data?.barangay || ''];
 
         console.log('[DUPLICATE_IDENTITY_CHECK]', {
             query_scope: 'INFANT_REGISTRATION',
@@ -377,13 +464,19 @@ class InfantRegistrationService {
             registration_probable_sql: registrationProbableSql,
             registration_probable_params: probableRegistrationParams,
             infant_probable_sql: infantProbableSql,
-            infant_probable_params: probableInfantParams
+            infant_probable_params: probableInfantParams,
+            cross_barangay_registration_sql: crossBarangayRegistrationSql,
+            cross_barangay_registration_params: crossBarangayRegistrationParams,
+            cross_barangay_infant_sql: crossBarangayInfantSql,
+            cross_barangay_infant_params: crossBarangayInfantParams
         });
 
         const [registrationRows] = await this.db.execute(registrationDuplicateSql, registrationParams);
         const [infantRows] = await this.db.execute(infantDuplicateSql, [firstName, lastName, hasNoMiddleName, hasNoMiddleName, middleName, dob]);
         const [probableRegistrationRows] = await this.db.execute(registrationProbableSql, probableRegistrationParams);
         const [probableInfantRows] = await this.db.execute(infantProbableSql, probableInfantParams);
+        const [crossBarangayRegistrationRows] = await this.db.execute(crossBarangayRegistrationSql, crossBarangayRegistrationParams);
+        const [crossBarangayInfantRows] = await this.db.execute(crossBarangayInfantSql, crossBarangayInfantParams);
 
         const matches = [...(Array.isArray(registrationRows) ? registrationRows : []), ...(Array.isArray(infantRows) ? infantRows : [])]
             .filter(Boolean)
@@ -405,7 +498,26 @@ class InfantRegistrationService {
             }));
 
         const strictMatches = matches.filter((row) => this._normalizeDuplicateText(row.barangay) === barangay);
-        const crossBarangayMatch = matches.find((row) => this._normalizeDuplicateText(row.barangay) !== barangay);
+        const crossBarangayMatches = [...(Array.isArray(crossBarangayRegistrationRows) ? crossBarangayRegistrationRows : []), ...(Array.isArray(crossBarangayInfantRows) ? crossBarangayInfantRows : [])]
+            .filter(Boolean)
+            .map((row) => ({
+                id: row.id,
+                reference_id: row.reference_id || null,
+                status: row.status || null,
+                barangay: row.barangay || null,
+                created_at: row.created_at || null,
+                first_name: row.first_name || null,
+                has_no_middle_name: this._normalizeNoMiddleName(row.has_no_middle_name),
+                middle_name: row.middle_name || null,
+                last_name: row.last_name || null,
+                dob: row.dob || null,
+                sex: row.sex || null,
+                promoted_infant_id: row.promoted_infant_id || null,
+                source_table: row.source_table || 'REGISTRATION',
+                match_type: 'TRANSFER_INQUIRY'
+            }))
+            .filter((row, index, source) => source.findIndex((candidate) => `${candidate.source_table}:${candidate.id}` === `${row.source_table}:${row.id}`) === index);
+        const crossBarangayMatch = crossBarangayMatches[0] || matches.find((row) => this._normalizeDuplicateText(row.barangay) !== barangay) || null;
         const probableMatches = [...(Array.isArray(probableRegistrationRows) ? probableRegistrationRows : []), ...(Array.isArray(probableInfantRows) ? probableInfantRows : [])]
             .filter(Boolean)
             .map((row) => ({
@@ -439,7 +551,7 @@ class InfantRegistrationService {
                     full_name: this._fullIdentityName(crossBarangayMatch)
                 }
                 : null,
-            allMatches: [...matches, ...probableMatches]
+            allMatches: [...matches, ...probableMatches, ...crossBarangayMatches]
         };
     }
 
@@ -598,7 +710,8 @@ class InfantRegistrationService {
             promoted_infant_id: row.promoted_infant_id,
             created_at: row.created_at,
             updated_at: row.updated_at,
-            reviewed_at: row.reviewed_at
+            reviewed_at: row.reviewed_at,
+            transfer_inquiry_notes: this._normalizeTransferInquiryNotes(data)
         };
 
         return {
@@ -645,6 +758,11 @@ class InfantRegistrationService {
                 initiated_breastfeeding: data.initiated_breastfeeding || data.breastfed_immediately_after_birth,
                 at_birth_doses: Array.isArray(data.at_birth_doses) ? data.at_birth_doses : []
             },
+            duplicate_review_context: {
+                transfer_inquiry_notes: this._normalizeTransferInquiryNotes(data),
+                duplicate_alert: data.duplicate_alert || null,
+                duplicate_resolution: data.duplicate_resolution || null
+            },
             correction_history: correctionHistory,
             review_history: legacyHistory
         };
@@ -654,29 +772,30 @@ class InfantRegistrationService {
      * Duplicate Check: Multi-factor detection
      */
     async checkDuplicates(data, actor = null) {
-        const result = await this._findDuplicateIdentitySignals(data || {}, actor || {}, data?.id || null);
+        const actorContext = this._actor(actor);
+        const result = await this._findDuplicateIdentitySignals(data || {}, actorContext || {}, data?.id || null);
         if (result.strictMatches.length > 0) {
-            return {
+            return this._shapeDuplicateCheckResponseForActor({
                 type: 'STRICT_DUPLICATE',
                 matches: result.strictMatches,
                 duplicate_alert: this._buildDuplicateReviewAlert(result)
-            };
+            }, actorContext);
         }
 
         if (result.probableMatches.length > 0) {
-            return {
+            return this._shapeDuplicateCheckResponseForActor({
                 type: 'PROBABLE_DUPLICATE',
                 matches: result.probableMatches,
                 duplicate_alert: this._buildDuplicateReviewAlert(result)
-            };
+            }, actorContext);
         }
 
         if (result.crossBarangayAlert) {
-            return {
+            return this._shapeDuplicateCheckResponseForActor({
                 type: 'TRANSFER_POSSIBLE',
                 matches: result.allMatches,
                 duplicate_alert: result.crossBarangayAlert
-            };
+            }, actorContext);
         }
 
         return {
@@ -1495,6 +1614,37 @@ class InfantRegistrationService {
         return value || null;
     }
 
+    _shapeDuplicateCheckResponseForActor(result = {}, actor = {}) {
+        if (actor?.role !== ROLES.BHW) {
+            return result;
+        }
+
+        const shapeMatch = (match = {}) => ({
+            id: match.id || null,
+            first_name: match.first_name || null,
+            middle_name: match.middle_name || null,
+            last_name: match.last_name || null,
+            dob: match.dob || null,
+            barangay: match.barangay || null,
+            status: match.status || null,
+            match_type: match.match_type || null
+        });
+
+        return {
+            ...result,
+            matches: Array.isArray(result.matches) ? result.matches.map(shapeMatch) : [],
+            duplicate_alert: result.duplicate_alert
+                ? {
+                    status: result.duplicate_alert.status || null,
+                    barangay: result.duplicate_alert.barangay || null,
+                    full_name: result.duplicate_alert.full_name || null,
+                    message: result.duplicate_alert.message || null,
+                    signature: result.duplicate_alert.signature || null
+                }
+                : null
+        };
+    }
+
     _validateSaveRegistrationPayload(data) {
         this._requireNonEmptyString(data.first_name, 'first_name is required.');
         const hasNoMiddleName = this._normalizeNoMiddleName(data.has_no_middle_name);
@@ -1624,7 +1774,34 @@ class InfantRegistrationService {
         }));
     }
 
+    _normalizeValidationEventType(eventType, metadata = {}) {
+        const normalized = String(eventType || '').trim().toUpperCase().replace(/\s+/g, '_');
+        const aliasMap = {
+            APPROVED: 'APPROVED',
+            REJECTED: 'REJECTED',
+            RETURNED_FOR_CORRECTION: 'RETURNED_FOR_CORRECTION',
+            DIRECT_CORRECTION: 'DIRECT_CORRECTION',
+            TRANSFER_CONFIRMED: 'APPROVED',
+            MERGE_TRANSFER: 'APPROVED'
+        };
+
+        const mapped = aliasMap[normalized];
+        if (!mapped) {
+            throw this._httpError(`Unsupported validation event type: ${eventType || '(empty)'}`, 500);
+        }
+
+        return {
+            eventType: mapped,
+            metadata: {
+                ...(metadata && typeof metadata === 'object' ? metadata : {}),
+                requested_event_type: normalized || null,
+                recorded_event_type: mapped
+            }
+        };
+    }
+
     async _insertValidationEvent(connection, { registrationId, eventType, reviewerUserId = null, reason = null, notes = null, metadata = {} }) {
+        const normalizedEvent = this._normalizeValidationEventType(eventType, metadata);
         await connection.execute(`
             INSERT INTO registration_validation_events (
                 id,
@@ -1640,11 +1817,11 @@ class InfantRegistrationService {
         `, [
             uuidv4(),
             registrationId,
-            eventType,
+            normalizedEvent.eventType,
             reviewerUserId,
             reason,
             notes,
-            JSON.stringify(metadata || {})
+            JSON.stringify(normalizedEvent.metadata)
         ]);
     }
 
@@ -1663,11 +1840,21 @@ class InfantRegistrationService {
             .join(' ') || data.infant_name || data.name || null;
     }
 
+    _normalizeTransferInquiryNotes(data = {}) {
+        return String(
+            data?.transfer_inquiry_notes
+            || data?.override_reason
+            || data?.duplicate_resolution?.notes
+            || ''
+        ).trim() || null;
+    }
+
     async mergeTransferRegistration(registrationId, actorOrReviewerId, notes = 'Transfer confirmed during validation.') {
         const actor = this._actor(actorOrReviewerId);
         this._requireRole(actor, [ROLES.MIDWIFE], 'Clinical validation actions are restricted to Midwife roles.');
 
         const connection = await this.db.getConnection();
+        let notificationPayload = null;
         try {
             await connection.beginTransaction();
             const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
@@ -1702,6 +1889,33 @@ class InfantRegistrationService {
                 throw this._httpError('The matched record is not yet transferable into the current barangay.', 409);
             }
 
+            const [beforeInfantRows] = await connection.execute(`
+                SELECT
+                    id,
+                    reference_id,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    suffix,
+                    dob,
+                    sex,
+                    barangay,
+                    current_address,
+                    exact_address,
+                    landmark,
+                    status,
+                    updated_at
+                FROM infants
+                WHERE id = ?
+                FOR UPDATE
+            `, [targetInfantId]);
+
+            const targetInfantBefore = beforeInfantRows[0] || null;
+
+            if (!targetInfantBefore) {
+                throw this._httpError('The matched infant record could not be loaded for transfer.', 404);
+            }
+
             await connection.execute(`
                 UPDATE infants
                 SET barangay = ?,
@@ -1716,6 +1930,35 @@ class InfantRegistrationService {
                 data.landmark || null,
                 targetInfantId
             ]);
+
+            const [afterInfantRows] = await connection.execute(`
+                SELECT
+                    id,
+                    reference_id,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    suffix,
+                    dob,
+                    sex,
+                    barangay,
+                    current_address,
+                    exact_address,
+                    landmark,
+                    status,
+                    updated_at
+                FROM infants
+                WHERE id = ?
+                LIMIT 1
+            `, [targetInfantId]);
+
+            const targetInfantAfter = afterInfantRows[0] || {
+                ...targetInfantBefore,
+                barangay: this._normalizeBarangay(reg.barangay),
+                current_address: data.current_address || data.exact_address || targetInfantBefore.current_address || null,
+                exact_address: data.exact_address || targetInfantBefore.exact_address || null,
+                landmark: data.landmark || targetInfantBefore.landmark || null
+            };
 
             const history = this._parseHistory(reg.review_history);
             history.push({
@@ -1759,17 +2002,64 @@ class InfantRegistrationService {
 
             await this._insertValidationEvent(connection, {
                 registrationId,
-                eventType: 'TRANSFER_CONFIRMED',
+                eventType: 'APPROVED',
                 reviewerUserId: actor.id,
                 notes,
                 metadata: {
+                    review_outcome: 'TRANSFER_CONFIRMED',
                     target_infant_id: targetInfantId,
+                    transfer_inquiry_notes: this._normalizeTransferInquiryNotes(data),
                     previous_barangay: transferAlert.barangay,
                     current_barangay: reg.barangay
                 }
             });
 
             await connection.commit();
+
+            notificationPayload = {
+                originatingBarangay: transferAlert.barangay,
+                newBarangay: reg.barangay,
+                infantIdentity: {
+                    first_name: data.first_name,
+                    middle_name: data.middle_name,
+                    last_name: data.last_name,
+                    has_no_middle_name: data.has_no_middle_name,
+                    dob: data.dob
+                },
+                transferDate: new Date().toISOString(),
+                sourceRegistrationId: registrationId,
+                targetInfantId: targetInfantId,
+                triggeredByUserId: actor.id
+            };
+
+            try {
+                await this.notificationService.createTransferNotification(notificationPayload);
+            } catch (notificationError) {
+                console.warn('[Transfer Notification] Failed to create handoff notice:', notificationError.message);
+            }
+
+            await safeRecordAuditEvent({
+                actor,
+                action: 'TRANSFER_MERGE',
+                targetEntity: 'infants',
+                targetRecordId: targetInfantId,
+                targetName: this._registrationTargetName(data),
+                barangay: reg.barangay,
+                oldValues: targetInfantBefore,
+                newValues: targetInfantAfter,
+                metadata: {
+                    source_registration_id: registrationId,
+                    target_infant_id: targetInfantId,
+                    from_barangay: transferAlert.barangay,
+                    to_barangay: reg.barangay,
+                    previous_barangay: transferAlert.barangay,
+                    new_barangay: reg.barangay,
+                    review_outcome: 'TRANSFER_CONFIRMED',
+                    transfer_inquiry_notes: this._normalizeTransferInquiryNotes(data),
+                    notes
+                }
+            });
+
             return {
                 success: true,
                 infantId: targetInfantId,

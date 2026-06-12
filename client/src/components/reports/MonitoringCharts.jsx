@@ -12,31 +12,138 @@ import {
 } from 'recharts';
 import { formatCount, formatPercent } from './reportConfig';
 
-const normalizeRows = (rows = []) => rows.map((row) => ({
-    month: row?.month_label || row?.report_month || '',
-    target: Number(row?.cumulative_target_population || 0),
-    monthlyTarget: Number(row?.monthly_target || 0),
-    eligiblePopulation011: Number(row?.eligible_population_0_11_months || row?.eligible_population || 0),
-    eligiblePopulation012: Number(row?.eligible_population_0_12_months || 0),
-    penta1: Number(row?.penta1_cumulative || 0),
-    penta3: Number(row?.penta3_cumulative || 0),
-    pentaDropoutRate: Number(row?.dropout_rate || 0),
-    mcv1: Number(row?.mcv1_cumulative || 0),
-    mcv2: Number(row?.mcv2_cumulative || 0),
-    mcvDropoutRate: Number(row?.mcv_dropout_rate || 0),
-    
-    // Additional fields for FHSIS Data Cards
-    penta1_count: Number(row?.penta1_count || 0),
-    penta3_count: Number(row?.penta3_count || 0),
-    pentaDropoutCount: Number(row?.dropout_count || 0),
-    
-    mcv1_count: Number(row?.mcv1_count || 0),
-    mcv2_count: Number(row?.mcv2_count || 0),
-    mcvDropoutCount: Number(row?.mcv_dropout_count || 0),
+const safeNumber = (value) => {
+    if (value === null || value === undefined || value === '') return 0;
+    const parsed = Number(String(value).replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
-    utilizationDropoutCount: Number(row?.utilization_cumulative_dropout_count || 0),
-    utilizationDropoutRate: Number(row?.utilization_cumulative_dropout_rate || 0)
-}));
+const monthIndexFromRow = (row) => {
+    const numericMonth = safeNumber(row?.report_month);
+    if (numericMonth >= 1 && numericMonth <= 12) return numericMonth;
+
+    const monthLabel = String(row?.month_label || row?.month || '').trim().slice(0, 3).toUpperCase();
+    const monthMap = {
+        JAN: 1,
+        FEB: 2,
+        MAR: 3,
+        APR: 4,
+        MAY: 5,
+        JUN: 6,
+        JUL: 7,
+        AUG: 8,
+        SEP: 9,
+        OCT: 10,
+        NOV: 11,
+        DEC: 12
+    };
+    return monthMap[monthLabel] || 0;
+};
+
+const directValue = (row, keys = []) => {
+    for (const key of keys) {
+        if (row?.[key] !== null && row?.[key] !== undefined && row?.[key] !== '') {
+            return safeNumber(row[key]);
+        }
+    }
+    return 0;
+};
+
+export const normalizeRows = (rows = []) => rows.map((row) => {
+    const monthIndex = monthIndexFromRow(row);
+    const pentaTargetConfig = directValue(row, [
+        'penta_target_config',
+        'penta_cumulative_target_population',
+        'eligible_population_0_11_months',
+        'eligible_population'
+    ]);
+    const mcvTargetConfig = directValue(row, [
+        'mcv_target_config',
+        'mcv_cumulative_target_population',
+        'eligible_population_0_12_months'
+    ]);
+    const utilizationTargetConfig = directValue(row, [
+        'utilization_target_config',
+        'utilization_cumulative_target_population',
+        'eligible_population_0_12_months'
+    ]);
+    const pentaCummulativeTargetPopulation = pentaTargetConfig * monthIndex;
+    const mcvCummulativeTargetPopulation = mcvTargetConfig * monthIndex;
+    const utilizationCummulativeTargetPopulation = utilizationTargetConfig * monthIndex;
+    const penta1Cummulative = directValue(row, [
+        'penta1_cumulative'
+    ]);
+    const penta3Cummulative = directValue(row, [
+        'penta3_cumulative'
+    ]);
+    const mcv1Cummulative = directValue(row, [
+        'mcv1_cumulative'
+    ]);
+    const mcv2Cummulative = directValue(row, [
+        'mcv2_cumulative'
+    ]);
+    const utilizationPenta1Cummulative = directValue(row, [
+        'penta1_cumulative'
+    ]);
+    const utilizationMcv2Cummulative = directValue(row, [
+        'mcv2_cumulative'
+    ]);
+    const penta1_count = directValue(row, ['penta1_count']);
+    const penta3_count = directValue(row, ['penta3_count']);
+    const mcv1_count = directValue(row, ['mcv1_count']);
+    const mcv2_count = directValue(row, ['mcv2_count']);
+    const utilizationPenta1Count = directValue(row, ['utilization_penta1_count', 'penta1_count']);
+    const utilizationMcv2Count = directValue(row, ['utilization_mcv2_count', 'mcv2_count']);
+
+    return {
+        month: row?.month_label || row?.report_month || '',
+        monthIndex,
+        cumulativeTargetPopulation: pentaCummulativeTargetPopulation,
+        target: safeNumber(row?.eligible_population_0_11_months || row?.eligible_population),
+        pentaTarget: pentaCummulativeTargetPopulation,
+        mcvTarget: mcvCummulativeTargetPopulation,
+        utilizationTarget: utilizationCummulativeTargetPopulation,
+        pentaTargetConfig,
+        mcvTargetConfig,
+        utilizationTargetConfig,
+        pentaCummulativeTargetPopulation,
+        mcvCummulativeTargetPopulation,
+        utilizationCummulativeTargetPopulation,
+        penta1Cummulative,
+        penta3Cummulative,
+        mcv1Cummulative,
+        mcv2Cummulative,
+        utilizationPenta1Cummulative,
+        utilizationMcv2Cummulative,
+        cicTarget: safeNumber(row?.cumulative_target_population_13_23_months),
+        eligiblePopulation011: safeNumber(row?.eligible_population_0_11_months || row?.eligible_population),
+        eligiblePopulation012: safeNumber(row?.eligible_population_0_12_months),
+        eligiblePopulation1323: safeNumber(row?.eligible_population_13_23_months),
+        penta1: penta1Cummulative,
+        penta3: penta3Cummulative,
+        pentaDropoutRate: directValue(row, ['dropout_rate']),
+        mcv1: mcv1Cummulative,
+        mcv2: mcv2Cummulative,
+        mcvDropoutRate: directValue(row, ['mcv_dropout_rate']),
+
+        // Additional fields for FHSIS Data Cards
+        penta1_count,
+        penta3_count,
+        pentaDropoutCount: safeNumber(row?.dropout_count),
+
+        mcv1_count,
+        mcv2_count,
+        mcvDropoutCount: safeNumber(row?.mcv_dropout_count),
+
+        utilization_penta1_count: utilizationPenta1Count,
+        utilization_mcv2_count: utilizationMcv2Count,
+        utilizationDropoutCount: safeNumber(row?.utilization_cumulative_dropout_count || row?.utilization_dropout_count),
+        utilizationDropoutRate: directValue(row, ['utilization_cumulative_dropout_rate', 'utilization_dropout_rate'])
+    };
+});
+
+const targetOnlyText = (target) => formatCount(target);
+const CUMMULATIVE_TARGET_LABEL = 'CUMMULATIVE TARGET POPULATION';
 
 const ChartShell = ({ title, subtitle, children }) => (
     <section className="border border-slate-300 bg-white">
@@ -129,33 +236,33 @@ const MonitoringCharts = ({ report }) => {
 
     const pentaColumns = [
         { header: 'Month', accessor: 'month' },
-        { header: 'Cumulative Target Population', render: (row) => formatCount(row.target) },
+        { header: CUMMULATIVE_TARGET_LABEL, render: (row) => targetOnlyText(row.pentaCummulativeTargetPopulation) },
         { header: 'PENTA 1', render: (row) => formatCount(row.penta1_count) },
         { header: 'PENTA 3', render: (row) => formatCount(row.penta3_count) },
-        { header: 'PENTA 1 Cumulative', render: (row) => formatCount(row.penta1) },
-        { header: 'PENTA 3 Cumulative', render: (row) => formatCount(row.penta3) },
+        { header: 'PENTA 1 COMMULATIVE', render: (row) => formatCount(row.penta1Cummulative) },
+        { header: 'PENTA 3 COMMULATIVE', render: (row) => formatCount(row.penta3Cummulative) },
         { header: 'No. of Dropouts', render: (row) => formatCount(row.pentaDropoutCount) },
         { header: 'Dropout Rate (%)', render: (row) => formatPercent(row.pentaDropoutRate, 2) }
     ];
 
     const mcvColumns = [
         { header: 'Month', accessor: 'month' },
-        { header: 'Cumulative Target Population', render: (row) => formatCount(row.target) },
+        { header: CUMMULATIVE_TARGET_LABEL, render: (row) => targetOnlyText(row.mcvCummulativeTargetPopulation) },
         { header: 'MCV1', render: (row) => formatCount(row.mcv1_count) },
         { header: 'MCV2', render: (row) => formatCount(row.mcv2_count) },
-        { header: 'MCV1 Cumulative', render: (row) => formatCount(row.mcv1) },
-        { header: 'MCV2 Cumulative', render: (row) => formatCount(row.mcv2) },
+        { header: 'MCV1 COMMULATIVE', render: (row) => formatCount(row.mcv1Cummulative) },
+        { header: 'MCV2 COMMULATIVE', render: (row) => formatCount(row.mcv2Cummulative) },
         { header: 'No. of Dropouts', render: (row) => formatCount(row.mcvDropoutCount) },
         { header: 'Dropout Rate (%)', render: (row) => formatPercent(row.mcvDropoutRate, 2) }
     ];
 
     const utilizationColumns = [
         { header: 'Month', accessor: 'month' },
-        { header: 'Cumulative Target Population', render: (row) => formatCount(row.target) },
-        { header: 'PENTA 1', render: (row) => formatCount(row.penta1_count) },
-        { header: 'MCV2', render: (row) => formatCount(row.mcv2_count) },
-        { header: 'PENTA 1 Cumulative', render: (row) => formatCount(row.penta1) },
-        { header: 'MCV2 Cumulative', render: (row) => formatCount(row.mcv2) },
+        { header: CUMMULATIVE_TARGET_LABEL, render: (row) => targetOnlyText(row.utilizationCummulativeTargetPopulation) },
+        { header: 'PENTA 1', render: (row) => formatCount(row.utilization_penta1_count) },
+        { header: 'MCV2', render: (row) => formatCount(row.utilization_mcv2_count) },
+        { header: 'PENTA 1 COMMULATIVE', render: (row) => formatCount(row.utilizationPenta1Cummulative) },
+        { header: 'MCV2 COMMULATIVE', render: (row) => formatCount(row.utilizationMcv2Cummulative) },
         { header: 'No. of Dropouts', render: (row) => formatCount(row.utilizationDropoutCount) },
         { header: 'Dropout Rate (%)', render: (row) => formatPercent(row.utilizationDropoutRate, 2) }
     ];
@@ -176,12 +283,12 @@ const MonitoringCharts = ({ report }) => {
 
             <ChartShell
                 title="PENTA 1 to PENTA 3 Drop-out Rate"
-                subtitle="Cumulative target population, cumulative PENTA doses, and drop-out rate."
+                subtitle="Direct DOH row mapping for target population and PENTA commulative values."
             >
                 <MonitoringLineChart data={rows}>
-                    <Line yAxisId="count" type="linear" name="Cumulative Target" dataKey="target" stroke="#64748B" strokeWidth={2} dot={false} />
-                    <Line yAxisId="count" type="linear" name="PENTA 1 Cumulative" dataKey="penta1" stroke="#047857" strokeWidth={3} dot={{ r: 2 }} />
-                    <Line yAxisId="count" type="linear" name="PENTA 3 Cumulative" dataKey="penta3" stroke="#0F766E" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="count" type="linear" name={CUMMULATIVE_TARGET_LABEL} dataKey="pentaCummulativeTargetPopulation" stroke="#64748B" strokeWidth={2} dot={false} />
+                    <Line yAxisId="count" type="linear" name="PENTA 1 COMMULATIVE" dataKey="penta1Cummulative" stroke="#047857" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="count" type="linear" name="PENTA 3 COMMULATIVE" dataKey="penta3Cummulative" stroke="#0F766E" strokeWidth={3} dot={{ r: 2 }} />
                     <Line yAxisId="rate" type="linear" name="PENTA Drop-out Rate" dataKey="pentaDropoutRate" stroke="#B91C1C" strokeWidth={2.5} dot={{ r: 2 }} />
                 </MonitoringLineChart>
             </ChartShell>
@@ -190,12 +297,12 @@ const MonitoringCharts = ({ report }) => {
 
             <ChartShell
                 title="MCV 1 to MCV 2 Drop-out Rate"
-                subtitle="Cumulative target population, cumulative MCV doses, and drop-out rate."
+                subtitle="Direct DOH row mapping for target population and MCV commulative values."
             >
                 <MonitoringLineChart data={rows}>
-                    <Line yAxisId="count" type="linear" name="Cumulative Target" dataKey="target" stroke="#64748B" strokeWidth={2} dot={false} />
-                    <Line yAxisId="count" type="linear" name="MCV 1 Cumulative" dataKey="mcv1" stroke="#047857" strokeWidth={3} dot={{ r: 2 }} />
-                    <Line yAxisId="count" type="linear" name="MCV 2 Cumulative" dataKey="mcv2" stroke="#0F766E" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="count" type="linear" name={CUMMULATIVE_TARGET_LABEL} dataKey="mcvCummulativeTargetPopulation" stroke="#64748B" strokeWidth={2} dot={false} />
+                    <Line yAxisId="count" type="linear" name="MCV1 COMMULATIVE" dataKey="mcv1Cummulative" stroke="#047857" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="count" type="linear" name="MCV2 COMMULATIVE" dataKey="mcv2Cummulative" stroke="#0F766E" strokeWidth={3} dot={{ r: 2 }} />
                     <Line yAxisId="rate" type="linear" name="MCV Drop-out Rate" dataKey="mcvDropoutRate" stroke="#B91C1C" strokeWidth={2.5} dot={{ r: 2 }} />
                 </MonitoringLineChart>
             </ChartShell>
@@ -203,6 +310,18 @@ const MonitoringCharts = ({ report }) => {
             <DataCard title="MCV MONITORING" columns={mcvColumns} data={tableData} />
 
             <DataCard title="UTILIZATION" columns={utilizationColumns} data={tableData} />
+
+            <ChartShell
+                title="Utilization Monitoring"
+                subtitle="Direct DOH row mapping for target population and utilization commulative values."
+            >
+                <MonitoringLineChart data={rows}>
+                    <Line yAxisId="count" type="linear" name={CUMMULATIVE_TARGET_LABEL} dataKey="utilizationCummulativeTargetPopulation" stroke="#64748B" strokeWidth={2} dot={false} />
+                    <Line yAxisId="count" type="linear" name="PENTA 1 COMMULATIVE" dataKey="utilizationPenta1Cummulative" stroke="#047857" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="count" type="linear" name="MCV2 COMMULATIVE" dataKey="utilizationMcv2Cummulative" stroke="#0F766E" strokeWidth={3} dot={{ r: 2 }} />
+                    <Line yAxisId="rate" type="linear" name="Utilization Drop-out Rate" dataKey="utilizationDropoutRate" stroke="#B91C1C" strokeWidth={2.5} dot={{ r: 2 }} />
+                </MonitoringLineChart>
+            </ChartShell>
         </div>
     );
 };

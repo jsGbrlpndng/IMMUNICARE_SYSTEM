@@ -45,6 +45,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
   );
   const [batchNumber, setBatchNumber] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [isExternal, setIsExternal] = useState(false);
   
   // Selection state
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,6 +67,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
       setVaccinationDate(new Date().toISOString().slice(0, 10));
       setBatchNumber('');
       setRemarks('');
+      setIsExternal(false);
       setSearchTerm('');
       setBarangayFilter('All');
       setAgeRangeFilter('All');
@@ -204,7 +206,8 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
           vaccinator_id: currentUser.id,
           vaccinator_name: currentUser.name,
           administered_date: new Date(vaccinationDate).toISOString(),
-          notes: remarks || `Batch vaccination: ${vaccineName}`
+          notes: remarks || `Batch vaccination: ${vaccineName}`,
+          is_external: isExternal
         });
 
         if (response.ok) {
@@ -509,6 +512,23 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
                   placeholder="Optional notes that will apply to all selected infants..."
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none transition-all resize-none"
                 />
+              </div>
+
+              <div className="rounded-sm border border-amber-200 bg-amber-50/60 p-4">
+                <label className="flex items-start gap-3 text-sm font-semibold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={isExternal}
+                    onChange={(e) => setIsExternal(e.target.checked)}
+                    className="mt-0.5 h-5 w-5 rounded-sm border-slate-300 text-amber-700 focus:ring-amber-700"
+                  />
+                  <span>
+                    <span className="block text-[10px] font-black uppercase tracking-widest text-amber-800">Administered Elsewhere</span>
+                    <span className="mt-1 block text-xs font-bold leading-relaxed text-amber-900">
+                      Use this for historical doses given at another clinic. It updates the child's schedule but is excluded from M1 accomplishment reporting.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Selected Count */}

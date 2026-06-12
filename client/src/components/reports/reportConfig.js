@@ -1,4 +1,5 @@
 export const SAN_PEDRO_GREEN = '#064E3B';
+export const ALL_MONTH_VALUE = 'ALL';
 
 export const MONTHS = [
     'January',
@@ -14,6 +15,14 @@ export const MONTHS = [
     'November',
     'December'
 ];
+
+export const formatReportingPeriodLabel = (month, year) => {
+    if (month === ALL_MONTH_VALUE || month === null || month === undefined) {
+        return `Whole Year ${year}`;
+    }
+    const monthIndex = Number(month) - 1;
+    return `${MONTHS[monthIndex] || 'Selected Month'} ${year}`;
+};
 
 export const RHU2_BARANGAYS = [
     'BAGONG SILANG',
@@ -118,6 +127,14 @@ export const MONTHLY_GROUPS = [
             { key: 'cic', label: 'CIC' }
         ]
     }
+];
+
+export const DOH_TARGET_COLUMNS = [
+    { key: 'total_population', label: 'Population' },
+    { key: 'eligible_population_0_11_months', label: 'EP 0-11 months' },
+    { key: 'eligible_population_0_12_months', label: 'EP 0-12 months' },
+    { key: 'eligible_population_13_23_months', label: 'EP 13-23 months' },
+    { key: 'actual_population', label: 'Actual Population' }
 ];
 
 export const MONTHLY_COLUMNS = MONTHLY_GROUPS.flatMap((group) => group.columns);

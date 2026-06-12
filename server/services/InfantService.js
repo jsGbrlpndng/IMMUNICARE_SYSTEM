@@ -7,6 +7,9 @@ const NIPScheduleService = require('./NIPScheduleService');
 const DuplicateDetectionService = require('./DuplicateDetectionService');
 const localityHelper = require('../utils/localityHelper');
 const DBSCANService = require('./DBSCANService');
+const { ROLES } = require('../constants/domain');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
+const { normalizeClinicalStatus } = require('../utils/clinicalStatus');
 
 class InfantService {
     constructor(db) {
@@ -56,26 +59,323 @@ class InfantService {
         });
     }
 
-    async getInfantsRegistry({ search, page = 1, limit = 20, status, registration_status, urgency, barangay }) {
+    async getInfantsRegistry({
+        search,
+        page = 1,
+        limit = 20,
+        status,
+        registration_status,
+        urgency,
+        barangay,
+        ageGroup,
+        vaccineType,
+        assignedBhw,
+        sortBy
+    }) {
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const lifecycleStatus = status || 'Active';
         const filterStatus = registration_status || 'APPROVED';
         const statusArray = filterStatus.split(',');
 
         const result = await this.nipEngine.getApprovedInfantsWithSchedule(
-            { search, registration_statuses: statusArray, urgency, barangay, lifecycle_status: lifecycleStatus },
+            {
+                search,
+                registration_statuses: statusArray,
+                urgency,
+                barangay,
+                lifecycle_status: lifecycleStatus,
+                ageGroup,
+                vaccineType,
+                assignedBhw,
+                sortBy
+            },
             parseInt(limit),
             offset
         );
 
         return {
             infants: result.infants || [],
+            filter_options: result.filter_options || {},
             pagination: {
                 totalRecords: result.total_count,
                 totalPages: Math.ceil(result.total_count / parseInt(limit)),
                 currentPage: parseInt(page),
                 limit: parseInt(limit)
             }
+        };
+    }
+
+    async getMunicipalSpatialOverview({
+        barangay = null,
+        ageGroup = null,
+        vaccineType = null,
+        assignedBhw = null
+    } = {}) {
+        const normalizedBarangay = this._normalizeBarangay(barangay);
+        const normalizedAssignedBhw = assignedBhw && assignedBhw !== 'All' ? String(assignedBhw).trim() : null;
+        const normalizedVaccineType = vaccineType && vaccineType !== 'All' ? String(vaccineType).trim().toUpperCase() : null;
+        const ageGroupFilters = {
+            '0-5m': `((DATE_PART('year', AGE(CURRENT_DATE, i.dob)) * 12) + DATE_PART('month', AGE(CURRENT_DATE, i.dob))) BETWEEN 0 AND 5`,
+            '6-11m': `((DATE_PART('year', AGE(CURRENT_DATE, i.dob)) * 12) + DATE_PART('month', AGE(CURRENT_DATE, i.dob))) BETWEEN 6 AND 11`,
+            '12-23m': `((DATE_PART('year', AGE(CURRENT_DATE, i.dob)) * 12) + DATE_PART('month', AGE(CURRENT_DATE, i.dob))) BETWEEN 12 AND 23`,
+            '24m+': `((DATE_PART('year', AGE(CURRENT_DATE, i.dob)) * 12) + DATE_PART('month', AGE(CURRENT_DATE, i.dob))) >= 24`
+        };
+
+        const whereConditions = [`i.status = 'Active'`];
+        const params = [];
+
+        if (normalizedBarangay && normalizedBarangay.toLowerCase() !== 'all') {
+            whereConditions.push(`UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))`);
+            params.push(normalizedBarangay);
+        }
+
+        if (ageGroup && ageGroupFilters[ageGroup]) {
+            whereConditions.push(ageGroupFilters[ageGroup]);
+        }
+
+        if (normalizedVaccineType) {
+            whereConditions.push(`
+                EXISTS (
+                    SELECT 1
+                    FROM infant_schedules s
+                    WHERE s.infant_id = i.id
+                      AND s.status::text IN ('DEFAULTER', 'DEFAULTED')
+                      AND UPPER(TRIM(COALESCE(s.vaccine_code, ''))) = ?
+                )
+            `);
+            params.push(normalizedVaccineType);
+        } else {
+            whereConditions.push(`
+                EXISTS (
+                    SELECT 1
+                    FROM infant_schedules s
+                    WHERE s.infant_id = i.id
+                      AND s.status::text IN ('DEFAULTER', 'DEFAULTED')
+                )
+            `);
+        }
+
+        if (normalizedAssignedBhw) {
+            whereConditions.push(`
+                COALESCE(
+                    latest_bhw.assigned_bhw_id,
+                    CASE WHEN UPPER(COALESCE(creator.role, '')) = 'BHW' THEN creator.id ELSE NULL END
+                ) = ?
+            `);
+            params.push(normalizedAssignedBhw);
+        }
+
+        const [rows] = await this.db.query(
+            `
+            SELECT
+                i.barangay,
+                COUNT(DISTINCT i.id)::int AS defaulter_count
+            FROM infants i
+            LEFT JOIN users creator ON creator.id = i.created_by
+            LEFT JOIN LATERAL (
+                SELECT
+                    fut.assigned_to_bhw_id AS assigned_bhw_id
+                FROM follow_up_tasks fut
+                WHERE fut.infant_id = i.id
+                  AND fut.assigned_to_bhw_id IS NOT NULL
+                  AND fut.status <> 'CANCELLED'
+                ORDER BY fut.updated_at DESC, fut.created_at DESC
+                LIMIT 1
+            ) latest_bhw ON TRUE
+            WHERE ${whereConditions.join(' AND ')}
+            GROUP BY i.barangay
+            ORDER BY i.barangay ASC
+            `,
+            params
+        );
+
+        return {
+            rows,
+            total_defaulters: rows.reduce((sum, row) => sum + Number(row.defaulter_count || 0), 0),
+            filter_options: await this.nipEngine.getRegistryFilterOptions({
+                barangay: normalizedBarangay && normalizedBarangay.toLowerCase() !== 'all' ? normalizedBarangay : null,
+                lifecycleStatus: 'Active'
+            })
+        };
+    }
+
+    _normalizeBarangay(value) {
+        if (value === undefined || value === null) return null;
+        const normalized = String(value).trim();
+        return normalized || null;
+    }
+
+    _requireGlobalSearchRole(actor = {}) {
+        const allowed = [ROLES.BHW, ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+
+        if (!allowed.includes(actor.role)) {
+            const error = new Error('Forbidden: global infant search is limited to BHWs, Midwives, Admins, and Super Admins.');
+            error.status = 403;
+            throw error;
+        }
+    }
+
+    _requireTransferRole(actor = {}) {
+        if (actor.role !== ROLES.MIDWIFE) {
+            const error = new Error('Forbidden: infant transfers are limited to Midwives.');
+            error.status = 403;
+            throw error;
+        }
+
+        const assignedBarangay = this._normalizeBarangay(actor.assigned_barangay);
+        if (!assignedBarangay) {
+            const error = new Error('Midwife must have an assigned barangay before transferring an infant.');
+            error.status = 400;
+            throw error;
+        }
+
+        return assignedBarangay;
+    }
+
+    _maskPhone(phone) {
+        const raw = String(phone || '').trim();
+        if (raw.length <= 4) return raw || null;
+        return `${'*'.repeat(Math.max(raw.length - 4, 0))}${raw.slice(-4)}`;
+    }
+
+    async globalSearchInfants(criteria = {}, actor = {}) {
+        this._requireGlobalSearchRole(actor);
+
+        const referenceId = String(criteria.reference_id || '').trim();
+        const firstName = String(criteria.first_name || '').trim();
+        const middleName = String(criteria.middle_name || '').trim();
+        const lastName = String(criteria.last_name || '').trim();
+        const dob = String(criteria.dob || '').trim();
+
+        const hasReferenceSearch = referenceId.length >= 3;
+        const hasNameDobSearch = firstName.length >= 2 && lastName.length >= 2 && dob.length >= 8;
+
+        if (!hasReferenceSearch && !hasNameDobSearch) {
+            const error = new Error('Search requires Reference ID, or First Name + Last Name + DOB.');
+            error.status = 400;
+            error.code = 'INSUFFICIENT_SEARCH_SPECIFICITY';
+            throw error;
+        }
+
+        const where = [];
+        const params = [];
+
+        if (hasReferenceSearch) {
+            where.push('UPPER(TRIM(i.reference_id)) = UPPER(TRIM(?))');
+            params.push(referenceId);
+        } else {
+            where.push('LOWER(TRIM(i.first_name)) = LOWER(TRIM(?))');
+            params.push(firstName);
+
+            where.push('LOWER(TRIM(i.last_name)) = LOWER(TRIM(?))');
+            params.push(lastName);
+
+            where.push('i.dob::date = ?::date');
+            params.push(dob);
+
+            if (middleName) {
+                where.push("LOWER(TRIM(COALESCE(i.middle_name, ''))) = LOWER(TRIM(?))");
+                params.push(middleName);
+            }
+        }
+
+        const [rows] = await this.db.execute(
+            `
+            SELECT
+                i.id,
+                i.reference_id,
+                i.first_name,
+                i.middle_name,
+                i.last_name,
+                i.suffix,
+                i.dob,
+                i.sex,
+                i.mothers_maiden_name,
+                i.caregiver_phone,
+                i.barangay AS current_barangay,
+                i.purok AS locality,
+                i.current_address,
+                i.exact_address,
+                i.status,
+                i.registration_status,
+                i.next_due_date,
+                i.next_due_vaccine,
+                MAX(v.administered_date)::date AS last_vaccination_date
+            FROM infants i
+            LEFT JOIN vaccinations v
+              ON v.infant_id = i.id
+             AND UPPER(COALESCE(v.validation_status::text, 'VALIDATED')) = 'VALIDATED'
+            WHERE ${where.join(' AND ')}
+              AND COALESCE(i.registration_status, 'APPROVED') <> 'REJECTED'
+            GROUP BY
+                i.id,
+                i.reference_id,
+                i.first_name,
+                i.middle_name,
+                i.last_name,
+                i.suffix,
+                i.dob,
+                i.sex,
+                i.mothers_maiden_name,
+                i.caregiver_phone,
+                i.barangay,
+                i.purok,
+                i.current_address,
+                i.exact_address,
+                i.status,
+                i.registration_status,
+                i.next_due_date,
+                i.next_due_vaccine
+            ORDER BY i.last_name ASC, i.first_name ASC, i.dob ASC
+            LIMIT 20
+            `,
+            params
+        );
+
+        const actorBarangay = this._normalizeBarangay(actor.assigned_barangay);
+        const isBhw = actor.role === ROLES.BHW;
+
+        return {
+            query_strength: hasReferenceSearch ? 'REFERENCE_ID' : 'NAME_DOB',
+            current_user_barangay: actorBarangay,
+            matches: rows.map((row) => {
+                const currentBarangay = this._normalizeBarangay(row.current_barangay);
+                const alreadyInCatchment = actorBarangay
+                    && currentBarangay
+                    && actorBarangay.toUpperCase() === currentBarangay.toUpperCase();
+
+                const baseMatch = {
+                    id: row.id,
+                    first_name: row.first_name,
+                    middle_name: row.middle_name,
+                    last_name: row.last_name,
+                    suffix: row.suffix,
+                    dob: row.dob,
+                    current_barangay: row.current_barangay,
+                    already_in_catchment: Boolean(alreadyInCatchment),
+                    can_transfer: actor.role === ROLES.MIDWIFE && !alreadyInCatchment
+                };
+
+                if (isBhw) {
+                    return baseMatch;
+                }
+
+                return {
+                    ...baseMatch,
+                    reference_id: row.reference_id,
+                    sex: row.sex,
+                    mothers_maiden_name: row.mothers_maiden_name,
+                    caregiver_phone_masked: this._maskPhone(row.caregiver_phone),
+                    locality: row.locality,
+                    current_address: row.current_address,
+                    exact_address: row.exact_address,
+                    status: row.status,
+                    registration_status: row.registration_status,
+                    last_vaccination_date: row.last_vaccination_date,
+                    next_due_date: row.next_due_date,
+                    next_due_vaccine: row.next_due_vaccine
+                };
+            })
         };
     }
 
@@ -332,7 +632,7 @@ class InfantService {
             const mappedBirthSetting = (infantData.birth_setting || '').toUpperCase().includes('FACILITY') ? 'FACILITY' : 
                                        (infantData.birth_setting || '').toUpperCase().includes('HOME') ? 'HOME' : null;
 
-            const isBcgGiven = infantData.bcg_status === 'Given';
+            const isBcgGiven = String(infantData.bcg_status || '').startsWith('Given');
             const isHepBGiven = infantData.hepatitis_b_status?.startsWith('Given');
 
             let finalLocality = localityHelper.normalizeLocality(infantData.locality, infantData.exact_address || infantData.current_address);
@@ -395,7 +695,7 @@ class InfantService {
                 const atBirthDoses = [];
                 const deferredDoses = [];
 
-                if (infantData.bcg_status === 'Given' && infantData.bcg_date) {
+                if (String(infantData.bcg_status || '').startsWith('Given') && infantData.bcg_date) {
                     atBirthDoses.push({ vaccine_name: 'BCG', vaccine_code: 'BCG', administered_date: infantData.bcg_date, site: 'Right Arm' });
                 } else if (infantData.bcg_status === 'Not Given' || infantData.bcg_status === 'Unknown') {
                     deferredDoses.push('BCG');
@@ -534,7 +834,8 @@ class InfantService {
                 s.dose_number, s.recommended_date, s.earliest_allowed_date, s.actual_date AS schedule_actual_date,
                 s.status AS schedule_status, v.id AS vaccination_id, v.administered_date AS vax_actual_date,
                 v.validation_status, v.recorded_by_role, v.batch_number, v.site_of_injection,
-                v.vaccinator_name, v.recorded_by, v.notes, v.validated_by_name, v.validated_at, v.recorded_at
+                v.vaccinator_name, v.recorded_by, v.notes, v.is_external,
+                v.validated_by_name, v.validated_at, v.recorded_at
             FROM infant_schedules s
             JOIN infants i ON s.infant_id = i.id
             LEFT JOIN doh_compliance_rules r ON s.vaccine_code = r.vaccine_code
@@ -564,6 +865,7 @@ class InfantService {
         const formattedRecord = rows.map(row => ({
             ...row,
             actual_date: row.vax_actual_date || row.schedule_actual_date || null,
+            is_external: row.is_external === true,
             target_age: this.nipScheduleService.getTargetAgeLabel(row.vaccine_code),
             // COMPLETED and COMPLETED_VALIDATED both mean the dose is administered & confirmed.
             // At-birth doses auto-logged by approveAndPromote have schedule_status = 'COMPLETED'.
@@ -608,6 +910,260 @@ class InfantService {
         return result.affectedRows > 0;
     }
 
+    async transferInfant({
+        infantId,
+        actor,
+        reason,
+        notes = null,
+        current_address = null,
+        exact_address = null,
+        locality = null,
+        landmark = null,
+        latitude = null,
+        longitude = null,
+        req = null
+    } = {}) {
+        const destinationBarangay = this._requireTransferRole(actor);
+
+        const transferReason = String(reason || '').trim();
+        if (!transferReason) {
+            const error = new Error('Transfer reason is required.');
+            error.status = 400;
+            throw error;
+        }
+
+        const connection = await this.db.getConnection();
+
+        try {
+            await connection.beginTransaction();
+
+            const [lockedRows] = await connection.execute(
+                `
+                SELECT
+                    id,
+                    reference_id,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    suffix,
+                    barangay,
+                    status,
+                    registration_status,
+                    current_address,
+                    exact_address,
+                    purok,
+                    landmark
+                FROM infants
+                WHERE id = ? OR reference_id = ?
+                FOR UPDATE
+                `,
+                [infantId, infantId]
+            );
+
+            const infant = lockedRows[0];
+            if (!infant) {
+                const error = new Error('Infant not found.');
+                error.status = 404;
+                throw error;
+            }
+
+            if (String(infant.status || '').toUpperCase() === 'ARCHIVED') {
+                const error = new Error('Archived infant records cannot be transferred.');
+                error.status = 423;
+                throw error;
+            }
+
+            const previousBarangay = this._normalizeBarangay(infant.barangay);
+            if (!previousBarangay) {
+                const error = new Error('Infant has no current barangay assignment.');
+                error.status = 409;
+                throw error;
+            }
+
+            if (previousBarangay.toUpperCase() === destinationBarangay.toUpperCase()) {
+                const error = new Error('Infant is already assigned to your barangay.');
+                error.status = 409;
+                throw error;
+            }
+
+            const nextCurrentAddress = current_address || exact_address || infant.current_address;
+            const nextExactAddress = exact_address || infant.exact_address;
+            const nextLocality = locality || infant.purok;
+            const nextLandmark = landmark || infant.landmark;
+
+            const shouldUpdateCoordinates = latitude !== null
+                && latitude !== undefined
+                && longitude !== null
+                && longitude !== undefined;
+
+            const updateSql = shouldUpdateCoordinates
+                ? `
+                    UPDATE infants
+                    SET barangay = ?,
+                        current_address = COALESCE(?, current_address),
+                        exact_address = COALESCE(?, exact_address),
+                        purok = COALESCE(?, purok),
+                        landmark = COALESCE(?, landmark),
+                        latitude = ?,
+                        longitude = ?,
+                        location = ST_SetSRID(ST_MakePoint(?, ?), 4326),
+                        is_location_verified = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                  `
+                : `
+                    UPDATE infants
+                    SET barangay = ?,
+                        current_address = COALESCE(?, current_address),
+                        exact_address = COALESCE(?, exact_address),
+                        purok = COALESCE(?, purok),
+                        landmark = COALESCE(?, landmark),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                  `;
+
+            const updateParams = shouldUpdateCoordinates
+                ? [
+                    destinationBarangay,
+                    nextCurrentAddress,
+                    nextExactAddress,
+                    nextLocality,
+                    nextLandmark,
+                    latitude,
+                    longitude,
+                    longitude,
+                    latitude,
+                    infant.id
+                ]
+                : [
+                    destinationBarangay,
+                    nextCurrentAddress,
+                    nextExactAddress,
+                    nextLocality,
+                    nextLandmark,
+                    infant.id
+                ];
+
+            const [updateResult] = await connection.execute(updateSql, updateParams);
+            if (updateResult.affectedRows === 0) {
+                const error = new Error('Transfer failed: infant record was not updated.');
+                error.status = 409;
+                throw error;
+            }
+
+            const transferEventId = uuidv4();
+            await connection.execute(
+                `
+                INSERT INTO infant_transfer_events (
+                    id,
+                    infant_id,
+                    from_barangay,
+                    to_barangay,
+                    transferred_by,
+                    reason,
+                    notes,
+                    previous_address,
+                    new_address,
+                    previous_locality,
+                    new_locality,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                `,
+                [
+                    transferEventId,
+                    infant.id,
+                    previousBarangay,
+                    destinationBarangay,
+                    actor.id,
+                    transferReason,
+                    notes || null,
+                    infant.exact_address || infant.current_address || null,
+                    nextExactAddress || nextCurrentAddress || null,
+                    infant.purok || null,
+                    nextLocality || null
+                ]
+            );
+
+            const [updatedRows] = await connection.execute(
+                `
+                SELECT
+                    id,
+                    reference_id,
+                    first_name,
+                    middle_name,
+                    last_name,
+                    suffix,
+                    barangay,
+                    status,
+                    registration_status,
+                    current_address,
+                    exact_address,
+                    purok,
+                    landmark
+                FROM infants
+                WHERE id = ?
+                LIMIT 1
+                `,
+                [infant.id]
+            );
+
+            const updatedInfant = updatedRows[0];
+            const targetName = [infant.first_name, infant.middle_name, infant.last_name]
+                .map((part) => String(part || '').trim())
+                .filter(Boolean)
+                .join(' ');
+
+            await safeRecordAuditEvent({
+                actor,
+                action: 'INFANT_TRANSFER',
+                targetEntity: 'infants',
+                targetRecordId: infant.id,
+                targetName,
+                barangay: destinationBarangay,
+                oldValues: {
+                    barangay: previousBarangay,
+                    current_address: infant.current_address,
+                    exact_address: infant.exact_address,
+                    purok: infant.purok,
+                    landmark: infant.landmark
+                },
+                newValues: {
+                    barangay: destinationBarangay,
+                    current_address: updatedInfant.current_address,
+                    exact_address: updatedInfant.exact_address,
+                    purok: updatedInfant.purok,
+                    landmark: updatedInfant.landmark
+                },
+                metadata: {
+                    transfer_event_id: transferEventId,
+                    from_barangay: previousBarangay,
+                    to_barangay: destinationBarangay,
+                    reason: transferReason
+                },
+                req,
+                dbClient: connection
+            });
+
+            await connection.commit();
+
+            return {
+                success: true,
+                infant_id: infant.id,
+                reference_id: infant.reference_id,
+                transfer_event_id: transferEventId,
+                previous_barangay: previousBarangay,
+                current_barangay: destinationBarangay,
+                infant: updatedInfant
+            };
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }
+
     _generateReferenceId() {
         const year = new Date().getFullYear();
         const random = Math.floor(1000 + Math.random() * 9000);
@@ -619,7 +1175,16 @@ class InfantService {
      * Unified logic for spatial risk analysis used by Dashboard and Heatmap.
      */
     async getSpatialTriage(params = {}) {
-        let { eps = 300, minPts = 3, barangay = null, scope = 'defaulter' } = params;
+        let {
+            eps = 300,
+            minPts = 3,
+            barangay = null,
+            scope = 'defaulter',
+            ageGroup = null,
+            vaccineType = null,
+            assignedBhw = null,
+            sortBy = 'urgency'
+        } = params;
         const epsilonMeters = parseInt(eps, 10) || 300;
         const safeMinPts = Math.max(parseInt(minPts, 10) || 3, 2);
         // Normalize to uppercase to match the rhu2_barangay PostgreSQL enum
@@ -628,7 +1193,11 @@ class InfantService {
         // 1. Fetch infants using the clinical engine for consistent urgency/schedule data
         const scheduleData = await this.nipEngine.getApprovedInfantsWithSchedule({ 
             barangay,
-            urgency: 'all' 
+            urgency: 'all',
+            ageGroup,
+            vaccineType,
+            assignedBhw,
+            sortBy
         }, 10000, 0);
 
         const infants = scheduleData.infants || [];
@@ -747,6 +1316,12 @@ class InfantService {
                 computed_map_status === 'ON_TRACK'                              ? 'on_track'  :
                 'completed';
 
+            const clinical_status = normalizeClinicalStatus({
+                computedStatus: computed_map_status,
+                urgency,
+                registrationStatus: inf.registration_status
+            });
+
             return {
                 ...inf,
                 patient_name: `${inf.first_name} ${inf.last_name}`.trim(),
@@ -756,7 +1331,8 @@ class InfantService {
                 clinical_directive,
                 marker_color,
                 computed_map_status,
-                urgency
+                urgency,
+                clinical_status
             };
         });
 

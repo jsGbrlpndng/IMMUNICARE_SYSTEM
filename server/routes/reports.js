@@ -41,6 +41,25 @@ const parseMonthYear = (req, res) => {
     return { month, year };
 };
 
+const parseFlexibleM1Period = (req, res) => {
+    const rawMonth = req.query.month;
+    const month = rawMonth === undefined || rawMonth === null || rawMonth === ''
+        ? undefined
+        : (String(rawMonth).trim().toUpperCase() === 'ALL' ? 'ALL' : parseInt(rawMonth, 10));
+    const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
+
+    if (month !== undefined && month !== 'ALL' && (Number.isNaN(month) || month < 1 || month > 12)) {
+        res.status(400).json({ error: 'Invalid month. Must be 1-12 or ALL.' });
+        return null;
+    }
+    if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
+        res.status(400).json({ error: 'Invalid year.' });
+        return null;
+    }
+
+    return { month, year };
+};
+
 const exportReportAuth = (req, res, next) => {
     if (![ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.MIDWIFE, ROLES.NURSE].includes(req.user.role)) {
         return res.status(403).json({
@@ -403,19 +422,13 @@ router.get('/fhsis', reportAuth, async (req, res) => {
 // DOH M1 Immunization Report.
 router.get('/m1', m1ReportAuth, async (req, res) => {
     try {
-        const month = req.query.month ? parseInt(req.query.month, 10) : undefined;
-        const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
-        if (month !== undefined && (Number.isNaN(month) || month < 1 || month > 12)) {
-            return res.status(400).json({ error: 'Invalid month. Must be 1-12.' });
-        }
-        if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
-            return res.status(400).json({ error: 'Invalid year.' });
-        }
+        const parsed = parseFlexibleM1Period(req, res);
+        if (!parsed) return;
 
         const service = new M1ReportService(db);
         const report = await service.getM1ReportForUser({
-            month,
-            year,
+            month: parsed.month,
+            year: parsed.year,
             requestedBarangay: req.query.barangay || undefined,
             user: req.user
         });
@@ -482,19 +495,13 @@ router.get('/coverage-dashboard', m1ReportAuth, async (req, res) => {
 // DOH San Pedro NIP macro grid by barangay with RHU grand total.
 router.get('/nip-macro', m1ReportAuth, async (req, res) => {
     try {
-        const month = req.query.month ? parseInt(req.query.month, 10) : undefined;
-        const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
-        if (month !== undefined && (Number.isNaN(month) || month < 1 || month > 12)) {
-            return res.status(400).json({ error: 'Invalid month. Must be 1-12.' });
-        }
-        if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
-            return res.status(400).json({ error: 'Invalid year.' });
-        }
+        const parsed = parseFlexibleM1Period(req, res);
+        if (!parsed) return;
 
         const service = new M1ReportService(db);
         const report = await service.getNipMacroReportForUser({
-            month,
-            year,
+            month: parsed.month,
+            year: parsed.year,
             requestedBarangay: req.query.barangay || undefined,
             user: req.user
         });
@@ -513,7 +520,7 @@ router.get('/nip-monthly-master', m1ReportAuth, async (req, res) => {
         if (req.user.role !== ROLES.SUPER_ADMIN) {
             return res.status(403).json({ error: 'Forbidden: master monthly reports require Super Admin access.' });
         }
-        const parsed = parseMonthYear(req, res);
+        const parsed = parseFlexibleM1Period(req, res);
         if (!parsed) return;
 
         const service = new M1ReportService(db);
@@ -535,19 +542,13 @@ router.get('/nip-monthly-master', m1ReportAuth, async (req, res) => {
 // DOH detailed monthly barangay sheet. Barangay Admin scope is enforced by service.
 router.get('/nip-micro', m1ReportAuth, async (req, res) => {
     try {
-        const month = req.query.month ? parseInt(req.query.month, 10) : undefined;
-        const year = req.query.year ? parseInt(req.query.year, 10) : undefined;
-        if (month !== undefined && (Number.isNaN(month) || month < 1 || month > 12)) {
-            return res.status(400).json({ error: 'Invalid month. Must be 1-12.' });
-        }
-        if (year !== undefined && (Number.isNaN(year) || year < 2000 || year > 2100)) {
-            return res.status(400).json({ error: 'Invalid year.' });
-        }
+        const parsed = parseFlexibleM1Period(req, res);
+        if (!parsed) return;
 
         const service = new M1ReportService(db);
         const report = await service.getNipMicroReportForUser({
-            month,
-            year,
+            month: parsed.month,
+            year: parsed.year,
             requestedBarangay: req.query.barangay || undefined,
             user: req.user
         });
@@ -566,7 +567,7 @@ router.get('/nip-monthly-barangay', m1ReportAuth, async (req, res) => {
         if (req.user.role !== ROLES.ADMIN) {
             return res.status(403).json({ error: 'Forbidden: barangay monthly reports require Barangay Admin access.' });
         }
-        const parsed = parseMonthYear(req, res);
+        const parsed = parseFlexibleM1Period(req, res);
         if (!parsed) return;
 
         const service = new M1ReportService(db);
@@ -588,7 +589,7 @@ router.get('/nip-monthly-barangay', m1ReportAuth, async (req, res) => {
 // Barangay decision-support metrics for defaulters, drop-out warning, and upcoming critical doses.
 router.get('/barangay-dss', m1ReportAuth, async (req, res) => {
     try {
-        const parsed = parseMonthYear(req, res);
+        const parsed = parseFlexibleM1Period(req, res);
         if (!parsed) return;
 
         const service = new M1ReportService(db);

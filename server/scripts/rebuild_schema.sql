@@ -77,7 +77,10 @@ CREATE TABLE m1_immunization_targets (
     total_population INTEGER NOT NULL DEFAULT 0 CHECK (total_population >= 0),
     eligible_population_0_11_months INTEGER NOT NULL DEFAULT 0 CHECK (eligible_population_0_11_months >= 0),
     eligible_population_0_12_months INTEGER NOT NULL DEFAULT 0 CHECK (eligible_population_0_12_months >= 0),
+    eligible_population_13_23_months INTEGER NOT NULL DEFAULT 0 CHECK (eligible_population_13_23_months >= 0),
     monthly_target NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (monthly_target >= 0),
+    monthly_target_0_11_months NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (monthly_target_0_11_months >= 0),
+    monthly_target_13_23_months NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (monthly_target_13_23_months >= 0),
     monthly_target_is_manual BOOLEAN NOT NULL DEFAULT FALSE,
     ep_percent NUMERIC(8,5) NOT NULL DEFAULT 0.027 CHECK (ep_percent >= 0),
     created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
@@ -276,6 +279,7 @@ CREATE TABLE vaccinations (
     correction_reason TEXT,
     validation_status VARCHAR(50) NOT NULL DEFAULT 'VALIDATED' CHECK (validation_status IN ('PENDING_VALIDATION', 'VALIDATED')),
     is_early_override BOOLEAN NOT NULL DEFAULT FALSE,
+    is_external BOOLEAN NOT NULL DEFAULT FALSE,
     report_antigen_code VARCHAR(20),
     report_dose_code VARCHAR(20),
     report_age_bucket VARCHAR(30) CHECK (
@@ -333,6 +337,20 @@ CREATE TABLE follow_up_logs (
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipient_user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_role VARCHAR(50) NOT NULL CHECK (recipient_role IN ('Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW', 'Caregiver')),
+    recipient_barangay VARCHAR(100),
+    notification_type VARCHAR(100) NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE sms_logs (
@@ -557,6 +575,8 @@ CREATE INDEX idx_registration_validation_events_reviewer_user_id ON registration
 CREATE INDEX idx_infant_schedules_infant_status ON infant_schedules(infant_id, status);
 CREATE INDEX idx_vaccinations_infant ON vaccinations(infant_id);
 CREATE INDEX idx_follow_up_tasks_barangay_status ON follow_up_tasks(barangay, status);
+CREATE INDEX idx_notifications_recipient_user_created ON notifications(recipient_user_id, created_at DESC);
+CREATE INDEX idx_notifications_recipient_barangay_unread ON notifications(recipient_barangay, is_read, created_at DESC);
 CREATE INDEX idx_sms_logs_mobile_status ON sms_logs(mobile_number, delivery_status);
 CREATE INDEX idx_otp_records_mobile_active ON otp_records(mobile_number, expires_at) WHERE consumed_at IS NULL;
 CREATE INDEX idx_dbscan_cluster_scope ON dbscan_cluster_results(run_scope, barangay, generated_at);

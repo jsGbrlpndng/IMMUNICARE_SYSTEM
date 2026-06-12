@@ -18,6 +18,13 @@ const REPORT_AGE_BUCKETS = Object.freeze({
   OVER_59M: 'OVER_59M'
 });
 
+const ROUTINE_BUCKETS = new Set([
+  REPORT_AGE_BUCKETS.AGE_0_12M,
+  REPORT_AGE_BUCKETS.AGE_9_12M,
+  REPORT_AGE_BUCKETS.AGE_12M,
+  REPORT_AGE_BUCKETS.AGE_13_23M
+]);
+
 const normalizeToken = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const normalizeReportClassification = (value) => {
@@ -103,6 +110,29 @@ const resolveReportAgeBucket = ({ antigen, dose, dob, administeredDate }) => {
   return REPORT_AGE_BUCKETS.OVER_59M;
 };
 
+const deriveReportClassification = ({ antigen, reportAgeBucket, reportClassification }) => {
+  const normalized = normalizeReportClassification(reportClassification);
+  if (!antigen) return normalized;
+
+  if (antigen === 'BCG' || antigen === 'HEPB') {
+    return normalized;
+  }
+
+  if (normalized === REPORT_CLASSIFICATIONS.ORI || normalized === REPORT_CLASSIFICATIONS.CATCH_UP) {
+    return REPORT_CLASSIFICATIONS.CATCH_UP;
+  }
+
+  if (reportAgeBucket === REPORT_AGE_BUCKETS.AGE_24_59M) {
+    return REPORT_CLASSIFICATIONS.CATCH_UP;
+  }
+
+  if (ROUTINE_BUCKETS.has(reportAgeBucket)) {
+    return REPORT_CLASSIFICATIONS.ROUTINE;
+  }
+
+  return normalized;
+};
+
 const buildVaccinationReportFields = ({
   vaccine_code,
   vaccine_name,
@@ -114,17 +144,22 @@ const buildVaccinationReportFields = ({
 }) => {
   const canonical = canonicalReportDose(vaccine_code, vaccine_name, dose_number);
   const administered = toDate(administered_date);
+  const reportAgeBucket = resolveReportAgeBucket({
+    antigen: canonical.antigen,
+    dose: canonical.dose,
+    dob,
+    administeredDate: administered_date
+  });
 
   return {
     report_antigen_code: canonical.antigen,
     report_dose_code: canonical.dose,
-    report_age_bucket: resolveReportAgeBucket({
+    report_age_bucket: reportAgeBucket,
+    report_classification: deriveReportClassification({
       antigen: canonical.antigen,
-      dose: canonical.dose,
-      dob,
-      administeredDate: administered_date
+      reportAgeBucket,
+      reportClassification: report_classification
     }),
-    report_classification: normalizeReportClassification(report_classification),
     report_period_month: administered ? administered.getUTCMonth() + 1 : null,
     report_period_year: administered ? administered.getUTCFullYear() : null,
     barangay_at_administration: barangay || null
@@ -135,6 +170,7 @@ module.exports = {
   REPORT_AGE_BUCKETS,
   REPORT_CLASSIFICATIONS,
   buildVaccinationReportFields,
+  deriveReportClassification,
   calendarAgeMonths,
   canonicalReportDose,
   isWithin24Hours,

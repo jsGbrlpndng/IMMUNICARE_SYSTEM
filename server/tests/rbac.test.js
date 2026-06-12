@@ -17,7 +17,10 @@ describe('BHW backend RBAC enforcement', () => {
     let currentUser;
     let mockDb;
     let mockRecordVaccination;
+    let mockCorrectVaccination;
     let mockLogVaccination;
+    let mockGlobalSearchInfants;
+    let mockTransferInfant;
 
     const installClinicalAuth = () => {
         jest.doMock('../middleware/clinicalAuth', () => (req, res, next) => {
@@ -38,12 +41,17 @@ describe('BHW backend RBAC enforcement', () => {
             vaccination_id: 'vaccination-1',
             message: 'Vaccination recorded successfully'
         });
+        mockCorrectVaccination = jest.fn().mockResolvedValue({
+            message: 'Vaccination dose corrected successfully.',
+            vaccination: { id: 'vaccination-1' }
+        });
         mockLogVaccination = jest.fn().mockResolvedValue();
 
         installClinicalAuth();
         jest.doMock('../db', () => mockDb);
         jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({
             recordVaccination: mockRecordVaccination,
+            correctVaccination: mockCorrectVaccination,
             validateDose: jest.fn()
         })));
         jest.doMock('../services/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
@@ -106,11 +114,22 @@ describe('BHW backend RBAC enforcement', () => {
             execute: jest.fn(),
             query: jest.fn()
         }));
+        mockGlobalSearchInfants = jest.fn().mockResolvedValue({
+            query_strength: 'NAME_DOB',
+            current_user_barangay: currentUser?.assigned_barangay || null,
+            matches: []
+        });
+        mockTransferInfant = jest.fn().mockResolvedValue({
+            success: true,
+            infant_id: 'infant-123'
+        });
         jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({
             duplicateService: { findPotentialDuplicates: jest.fn() },
             getRecentlyApproved: jest.fn(),
             getInfantsRegistry: jest.fn(),
             getDrafts: jest.fn(),
+            globalSearchInfants: mockGlobalSearchInfants,
+            transferInfant: mockTransferInfant,
             resolveInternalId: jest.fn(),
             getScheduleById: jest.fn(),
             getInfantById: jest.fn(),
@@ -136,7 +155,7 @@ describe('BHW backend RBAC enforcement', () => {
         jest.clearAllMocks();
     });
 
-    test('returns 403 Forbidden when a BHW attempts to record a dose', async () => {
+    test('returns 201 Created when a BHW records a dose and forces it into pending validation', async () => {
         currentUser = {
             id: 'bhw-1',
             role: 'BHW',
@@ -148,9 +167,14 @@ describe('BHW backend RBAC enforcement', () => {
             .post('/api/vaccinations')
             .send(vaccinationPayload);
 
-        expect(response.status).toBe(403);
-        expect(response.body.message).toContain('BHW users are not authorized');
-        expect(mockRecordVaccination).not.toHaveBeenCalled();
+        expect(response.status).toBe(201);
+        expect(response.body.success).toBe(true);
+        expect(response.body.status).toBe('PENDING_VALIDATION');
+        expect(mockRecordVaccination).toHaveBeenCalledTimes(1);
+        expect(mockRecordVaccination.mock.calls[0][0]).toMatchObject({
+            recorded_by_role: 'BHW',
+            validation_status: 'PENDING_VALIDATION'
+        });
     });
 
     test.each([
@@ -172,6 +196,89 @@ describe('BHW backend RBAC enforcement', () => {
         expect(response.body.success).toBe(true);
         expect(mockRecordVaccination).toHaveBeenCalledTimes(1);
         expect(mockLogVaccination).toHaveBeenCalledTimes(1);
+    });
+
+    test('returns 400 Bad Request when dose correction reason is missing', async () => {
+        currentUser = {
+            id: 'midwife-1',
+            role: 'Midwife',
+            assigned_barangay: 'Langgam'
+        };
+
+        const app = buildVaccinationsApp();
+        mockDb.execute = jest.fn().mockResolvedValueOnce([[
+            {
+                id: 'vaccination-1',
+                infant_id: 'infant-123',
+                first_name: 'Jamie',
+                middle_name: '',
+                last_name: 'Arthur',
+                barangay: 'Langgam'
+            }
+        ]]);
+
+        const response = await request(app)
+            .put('/api/vaccinations/vaccination-1')
+            .send({ administered_date: '2026-01-30', reason: '   ' });
+
+        expect(response.status).toBe(400);
+        expect(response.body.details).toContain('correction reason');
+        expect(mockCorrectVaccination).not.toHaveBeenCalled();
+    });
+
+    test('returns 403 Forbidden when a BHW attempts to validate a pending dose', async () => {
+        currentUser = {
+            id: 'bhw-1',
+            role: 'BHW',
+            assigned_barangay: 'Langgam'
+        };
+
+        const app = buildVaccinationsApp();
+        const response = await request(app).patch('/api/vaccinations/vaccination-1/validate');
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toContain('Only Midwives can validate vaccination records.');
+    });
+
+    test('returns 200 OK when a Midwife validates a pending dose', async () => {
+        currentUser = {
+            id: 'midwife-1',
+            role: 'Midwife',
+            assigned_barangay: 'Langgam',
+            full_name: 'Midwife Joy'
+        };
+
+        const mockValidateDose = jest.fn().mockResolvedValue({ success: true, alreadyValidated: false });
+        jest.resetModules();
+        mockDb = {
+            execute: jest.fn()
+                .mockResolvedValueOnce([[{ id: 'vaccination-1', first_name: 'Jamie', middle_name: '', last_name: 'Arthur', barangay: 'Langgam' }]])
+                .mockResolvedValueOnce([[{ id: 'vaccination-1', infant_id: 'infant-123', validation_status: 'PENDING_VALIDATION' }]])
+                .mockResolvedValueOnce([[{ id: 'vaccination-1', infant_id: 'infant-123', validation_status: 'VALIDATED' }]])
+        };
+        mockLogVaccination = jest.fn().mockResolvedValue();
+        installClinicalAuth();
+        jest.doMock('../db', () => mockDb);
+        jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({
+            recordVaccination: mockRecordVaccination,
+            correctVaccination: mockCorrectVaccination,
+            validateDose: mockValidateDose
+        })));
+        jest.doMock('../services/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
+            logVaccination: mockLogVaccination,
+            logValidation: jest.fn().mockResolvedValue()
+        })));
+
+        const router = require('../routes/vaccinations');
+        const app = express();
+        app.use(express.json());
+        app.use('/api/vaccinations', router);
+
+        const response = await request(app).patch('/api/vaccinations/vaccination-1/validate');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(mockValidateDose).toHaveBeenCalledWith('vaccination-1', 'midwife-1', 'Midwife Joy');
     });
 
     test('returns 403 Forbidden when a BHW accesses dashboard KPIs', async () => {
@@ -216,5 +323,47 @@ describe('BHW backend RBAC enforcement', () => {
 
         expect(response.status).toBe(403);
         expect(response.body.message).toContain('Only Midwives, Admins, and Super Admins can access infant clinical endpoints.');
+    });
+
+    test('returns 200 OK when a BHW performs a targeted global infant search', async () => {
+        currentUser = {
+            id: 'bhw-1',
+            role: 'BHW',
+            assigned_barangay: 'Langgam'
+        };
+
+        const app = buildInfantsApp();
+        const response = await request(app)
+            .get('/api/infants/global-search?first_name=Ana&last_name=Santos&dob=2026-01-15');
+
+        expect(response.status).toBe(200);
+        expect(mockGlobalSearchInfants).toHaveBeenCalledWith(
+            expect.objectContaining({
+                first_name: 'Ana',
+                last_name: 'Santos',
+                dob: '2026-01-15'
+            }),
+            expect.objectContaining({
+                role: 'BHW',
+                assigned_barangay: 'Langgam'
+            })
+        );
+    });
+
+    test('returns 403 Forbidden when a BHW attempts to transfer an infant', async () => {
+        currentUser = {
+            id: 'bhw-1',
+            role: 'BHW',
+            assigned_barangay: 'Langgam'
+        };
+
+        const app = buildInfantsApp();
+        const response = await request(app)
+            .post('/api/infants/infant-123/transfer')
+            .send({ reason: 'Family relocated' });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toContain('Only Midwives can transfer infants into their assigned barangay.');
+        expect(mockTransferInfant).not.toHaveBeenCalled();
     });
 });

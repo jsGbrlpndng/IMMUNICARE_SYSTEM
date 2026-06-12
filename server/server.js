@@ -25,6 +25,8 @@ const caregiverRouter = require('./routes/caregiver');
 const followupsRouter = require('./routes/followups');
 const geoRouter = require('./routes/geo');
 const spatialRouter = require('./routes/spatial');
+const spatialDssRouter = require('./routes/spatialDss');
+const notificationsRouter = require('./routes/notifications');
 const { adminSpatialDeploymentRouter, adminDeploymentRouter, bhwDeploymentRouter, clinicalDeploymentRouter } = require('./routes/deployments');
 const clinicalAuth = require('./middleware/clinicalAuth');
 
@@ -50,8 +52,8 @@ app.use(cors({
         return callback(new Error(`CORS blocked origin: ${origin}`));
     }
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Global request logger - CRITICAL FOR DEBUGGING
 app.use((req, res, next) => {
@@ -90,7 +92,9 @@ app.use('/api/caregiver', caregiverRouter);
 app.use('/api/followups', followupsRouter);
 app.use('/api/follow-ups', followupsRouter);
 app.use('/api/geo', geoRouter);
+app.use('/api/spatial', spatialDssRouter);
 app.use('/api/spatial', spatialRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Health check
 app.get('/', (req, res) => {
@@ -100,8 +104,10 @@ app.get('/', (req, res) => {
 // Start Server with Integrity Sentinel
 const db = require('./db');
 const IntegritySentinel = require('./services/IntegritySentinel');
+const DefaulterSweepService = require('./services/DefaulterSweepService');
 
 const sentinel = new IntegritySentinel(db);
+const defaulterSweepService = new DefaulterSweepService(db);
 
 const { applyHardening } = require('./migrations/apply_governance_hardening');
 
@@ -133,8 +139,19 @@ async function boot() {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
         console.log('Governance Sentinel: ACTIVE');
+        defaulterSweepService.start();
     });
 }
+
+const shutdown = async (signal) => {
+    console.log(`[BOOT] Received ${signal}. Shutting down scheduled services...`);
+    defaulterSweepService.stop();
+    await db.end().catch(() => {});
+    process.exit(0);
+};
+
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 if (require.main === module) {
     boot();

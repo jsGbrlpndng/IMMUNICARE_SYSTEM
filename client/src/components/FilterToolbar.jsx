@@ -16,6 +16,28 @@ const FilterToolbar = ({
   sortBy,
   onSortChange,
   barangayOptions = [],
+  ageGroupOptions = [
+    { value: '0-5m', label: '0-5 months' },
+    { value: '6-11m', label: '6-11 months' },
+    { value: '12-23m', label: '12-23 months' },
+    { value: '24m+', label: '24+ months' }
+  ],
+  vaccineOptions = [],
+  assignedBhwOptions = [],
+  sortOptions = [
+    { value: 'name_asc', label: 'Name (A-Z)' },
+    { value: 'name_desc', label: 'Name (Z-A)' },
+    { value: 'date_newest', label: 'Date Registered (Newest)' },
+    { value: 'date_oldest', label: 'Date Registered (Oldest)' },
+    { value: 'age_youngest', label: 'Age (Youngest)' },
+    { value: 'age_oldest', label: 'Age (Oldest)' }
+  ],
+  showBarangayFilter = true,
+  showSexFilter = true,
+  showAgeGroupFilter = true,
+  showVaccineTypeFilter = false,
+  showAssignedBhwFilter = false,
+  searchPlaceholder = 'Search by name, ID, barangay, or phone...',
   className = ''
 }) => {
   const [localSearch, setLocalSearch] = useState(searchTerm || '');
@@ -62,6 +84,49 @@ const FilterToolbar = ({
     });
   };
 
+  const effectiveAgeGroupOptions = ageGroupOptions.length ? ageGroupOptions : [
+    { value: '0-5m', label: '0-5 months' },
+    { value: '6-11m', label: '6-11 months' },
+    { value: '12-23m', label: '12-23 months' },
+    { value: '24m+', label: '24+ months' }
+  ];
+  const effectiveSortOptions = sortOptions.length ? sortOptions : [
+    { value: 'name_asc', label: 'Name (A-Z)' },
+    { value: 'name_desc', label: 'Name (Z-A)' },
+    { value: 'date_newest', label: 'Date Registered (Newest)' },
+    { value: 'date_oldest', label: 'Date Registered (Oldest)' },
+    { value: 'age_youngest', label: 'Age (Youngest)' },
+    { value: 'age_oldest', label: 'Age (Oldest)' }
+  ];
+
+  const normalizedBarangayOptions = barangayOptions.map((option) => (
+    typeof option === 'string'
+      ? { value: option, label: option }
+      : option
+  ));
+  const normalizedAgeGroupOptions = effectiveAgeGroupOptions.map((option) => (
+    typeof option === 'string'
+      ? { value: option, label: option }
+      : option
+  ));
+  const normalizedVaccineOptions = vaccineOptions.map((option) => (
+    typeof option === 'string'
+      ? { value: option, label: option }
+      : option
+  ));
+  const normalizedBhwOptions = assignedBhwOptions.map((option) => (
+    typeof option === 'string'
+      ? { value: option, label: option }
+      : option
+  ));
+  const normalizedSortOptions = effectiveSortOptions.map((option) => (
+    typeof option === 'string'
+      ? { value: option, label: option }
+      : option
+  ));
+
+  const ageGroupValue = filters.ageGroup ?? filters.ageRange ?? 'All';
+
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Search Bar */}
@@ -71,7 +136,7 @@ const FilterToolbar = ({
           type="search"
           value={localSearch}
           onChange={handleSearchChange}
-          placeholder="Search by name, ID, barangay, or phone..."
+          placeholder={searchPlaceholder}
           className="w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           aria-label="Search infants by name, ID, barangay, or phone"
         />
@@ -87,60 +152,95 @@ const FilterToolbar = ({
       </div>
 
       {/* Filters Row */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Barangay Filter */}
-        <select
-          value={filters.barangay || 'All'}
-          onChange={(e) => handleFilterChange('barangay', e.target.value)}
-          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-          aria-label="Filter by barangay"
-        >
-          <option value="All">All Barangays</option>
-          {barangayOptions.map((barangay) => (
-            <option key={barangay} value={barangay}>
-              {barangay}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {showBarangayFilter && (
+          <select
+            value={filters.barangay || 'All'}
+            onChange={(e) => handleFilterChange('barangay', e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            aria-label="Filter by barangay"
+          >
+            <option value="All">All Barangays</option>
+            {normalizedBarangayOptions.map((barangay) => (
+              <option key={barangay.value} value={barangay.value}>
+                {barangay.label}
+              </option>
+            ))}
+          </select>
+        )}
 
-        {/* Sex Filter */}
-        <select
-          value={filters.sex || 'All'}
-          onChange={(e) => handleFilterChange('sex', e.target.value)}
-          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-          aria-label="Filter by sex"
-        >
-          <option value="All">All Sexes</option>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-        </select>
+        {showSexFilter && (
+          <select
+            value={filters.sex || 'All'}
+            onChange={(e) => handleFilterChange('sex', e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            aria-label="Filter by sex"
+          >
+            <option value="All">All Sexes</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+        )}
 
-        {/* Age Range Filter */}
-        <select
-          value={filters.ageRange || 'All'}
-          onChange={(e) => handleFilterChange('ageRange', e.target.value)}
-          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-          aria-label="Filter by age range"
-        >
-          <option value="All">All Ages</option>
-          <option value="0-6">0-6 months</option>
-          <option value="6-12">6-12 months</option>
-          <option value="12-24">12-24 months</option>
-        </select>
+        {showAgeGroupFilter && (
+          <select
+            value={ageGroupValue}
+            onChange={(e) => handleFilterChange(filters.ageGroup !== undefined ? 'ageGroup' : 'ageRange', e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            aria-label="Filter by age group"
+          >
+            <option value="All">All Age Groups</option>
+            {normalizedAgeGroupOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
 
-        {/* Sort Dropdown */}
+        {showVaccineTypeFilter && (
+          <select
+            value={filters.vaccineType || 'All'}
+            onChange={(e) => handleFilterChange('vaccineType', e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            aria-label="Filter by vaccine type"
+          >
+            <option value="All">All Vaccine Types</option>
+            {normalizedVaccineOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {showAssignedBhwFilter && (
+          <select
+            value={filters.assignedBhw || 'All'}
+            onChange={(e) => handleFilterChange('assignedBhw', e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            aria-label="Filter by assigned BHW"
+          >
+            <option value="All">All Assigned BHWs</option>
+            {normalizedBhwOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+
         <select
-          value={sortBy || 'name_asc'}
+          value={sortBy || normalizedSortOptions[0]?.value || 'name_asc'}
           onChange={(e) => onSortChange(e.target.value)}
-          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+          className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
           aria-label="Sort by"
         >
-          <option value="name_asc">Name (A-Z)</option>
-          <option value="name_desc">Name (Z-A)</option>
-          <option value="date_newest">Date Registered (Newest)</option>
-          <option value="date_oldest">Date Registered (Oldest)</option>
-          <option value="age_youngest">Age (Youngest)</option>
-          <option value="age_oldest">Age (Oldest)</option>
+          {normalizedSortOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </div>
     </div>

@@ -39,6 +39,8 @@ import { MapContainer, TileLayer, Circle, Popup, LayerGroup, Marker, useMap } fr
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { formatFullName } from '../../utils/formatFullName';
+import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
+import StatusBadge from '../../components/StatusBadge';
 
 // Fix Leaflet default marker icons
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -79,9 +81,7 @@ const AutoBounds = ({ points }) => {
 };
 
 const createStatusIcon = (status) => {
-    let color = '#10B981'; // Default green (Up-to-date)
-    if (status === 'overdue' || status === 'DEFAULTED') color = '#EF4444'; // Red
-    else if (status === 'due_today' || status === 'due_soon') color = '#F59E0B'; // Yellow
+    const color = getClinicalStatusMeta(status).colorHex;
 
     return L.divIcon({
         className: 'bg-transparent',
@@ -450,8 +450,6 @@ export default function MidwifeDashboard() {
                                     ) : (
                                         sortedWorklist.map((inf, i) => {
                                             const rec = getRecommendation(inf);
-                                            const rawLabel = inf.rankingStatus || inf.urgency || 'Scheduled';
-                                            const urgencyLabel = rawLabel.replace(/_/g, ' ');
                                             const isDEFAULTED = inf.urgency === 'DEFAULTED' || inf.rankingStatus === 'DEFAULTED';
                                             return (
                                                 <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_1.5fr] hover:bg-slate-50/80 transition-colors group border-b border-slate-50">
@@ -465,14 +463,14 @@ export default function MidwifeDashboard() {
                                                     </div>
                                                     <div className="py-4 px-5 flex items-center">
                                                         <div className="flex flex-col gap-1">
-                                                            <span className={`text-[9px] font-bold px-2 py-1 rounded-sm w-fit uppercase tracking-widest whitespace-nowrap bg-white ${inf.urgency === 'overdue' || inf.rankingStatus === 'DEFAULTED' || isDEFAULTED
-                                                                    ? 'text-rose-700 border border-rose-600'
-                                                                    : (inf.urgency === 'due_today' || inf.urgency === 'due_soon')
-                                                                        ? 'text-amber-600 border border-amber-500'
-                                                                        : 'text-emerald-700 border border-emerald-600'
-                                                                }`}>
-                                                                {urgencyLabel}
-                                                            </span>
+                                                            <StatusBadge
+                                                                record={{
+                                                                    ...inf,
+                                                                    clinical_status: isDEFAULTED ? 'DEFAULTED' : inf.clinical_status
+                                                                }}
+                                                                emphasize={isDEFAULTED}
+                                                                className="rounded-sm"
+                                                            />
                                                             {inf.next_due_vaccine && (
                                                                 <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter leading-tight max-w-[120px]">
                                                                     {inf.next_due_vaccine.replace('Pending: ', '')}

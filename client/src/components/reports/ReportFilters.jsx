@@ -1,6 +1,6 @@
 import React from 'react';
 import { CalendarDays, MapPin } from 'lucide-react';
-import { MONTHS, SAN_PEDRO_BARANGAYS } from './reportConfig';
+import { ALL_MONTH_VALUE, MONTHS, SAN_PEDRO_BARANGAYS, formatReportingPeriodLabel } from './reportConfig';
 
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 7 }, (_, index) => currentYear - index);
@@ -40,8 +40,9 @@ const ReportFilters = ({
                 <SelectField
                     label="Month"
                     value={month}
-                    onChange={(event) => onMonthChange?.(Number(event.target.value))}
+                    onChange={(event) => onMonthChange?.(event.target.value === ALL_MONTH_VALUE ? ALL_MONTH_VALUE : Number(event.target.value))}
                 >
+                    <option value={ALL_MONTH_VALUE}>Whole Year</option>
                     {MONTHS.map((label, index) => (
                         <option key={label} value={index + 1}>{label}</option>
                     ))}
@@ -81,7 +82,7 @@ const ReportFilters = ({
                 ) : null}
                 <div className="flex h-10 items-center gap-2 border border-emerald-200 bg-emerald-50 px-3 text-xs font-black uppercase tracking-wider text-[#064E3B]">
                     <CalendarDays className="h-4 w-4" />
-                    {MONTHS[Number(month || 1) - 1]} {year}
+                    {formatReportingPeriodLabel(month, year)}
                 </div>
             </div>
         </div>

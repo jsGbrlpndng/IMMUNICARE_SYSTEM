@@ -13,23 +13,28 @@ router.use(clinicalAuth);
 // Initialize services
 const vaccinationService = new VaccinationService(db);
 const auditLogger = new NIPAuditLogger(db);
-const DOSE_MUTATION_ROLES = [ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+const DOSE_RECORDING_ROLES = [ROLES.BHW, ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+const DOSE_CORRECTION_ROLES = [ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
 
-const requireDoseMutationRole = (req, res) => {
-    if (req.user?.role === ROLES.BHW) {
+const requireDoseRecordingRole = (req, res) => {
+    if (!DOSE_RECORDING_ROLES.includes(req.user?.role)) {
         res.status(403).json({
             success: false,
             error: 'Forbidden',
-            message: 'BHW users are not authorized to record or edit vaccination doses.'
+            message: 'Only BHWs, Midwives, Nurses, Admins, and Super Admins can record vaccination doses.'
         });
         return false;
     }
 
-    if (!DOSE_MUTATION_ROLES.includes(req.user?.role)) {
+    return true;
+};
+
+const requireDoseCorrectionRole = (req, res) => {
+    if (!DOSE_CORRECTION_ROLES.includes(req.user?.role)) {
         res.status(403).json({
             success: false,
             error: 'Forbidden',
-            message: 'Only Midwives, Nurses, Admins, and Super Admins can record or edit vaccination doses.'
+            message: 'Only Midwives, Nurses, Admins, and Super Admins can edit vaccination doses.'
         });
         return false;
     }
@@ -41,6 +46,8 @@ const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name
     .map((part) => String(part || '').trim())
     .filter(Boolean)
     .join(' ') || null;
+
+const toBooleanFlag = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
 /**
  * POST /api/vaccinations - Record a new vaccination
@@ -59,13 +66,14 @@ const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name
  */
 router.post('/', async (req, res) => {
     try {
-        if (!requireDoseMutationRole(req, res)) return;
+        if (!requireDoseRecordingRole(req, res)) return;
 
         // --- TYPE SANITIZATION: Enforce correct types before any DB operation ---
         // dose_number must be an integer — JSON body may deliver it as a string.
         const sanitizedBody = {
             ...req.body,
-            dose_number: req.body.dose_number !== undefined ? parseInt(req.body.dose_number, 10) : undefined
+            dose_number: req.body.dose_number !== undefined ? parseInt(req.body.dose_number, 10) : undefined,
+            is_external: toBooleanFlag(req.body.is_external)
         };
         if (!Number.isInteger(sanitizedBody.dose_number)) {
             return res.status(400).json({
@@ -81,7 +89,7 @@ router.post('/', async (req, res) => {
             vaccinator_name: sanitizedBody.vaccinator_name,
             recorded_by: req.user?.id || sanitizedBody.vaccinator_id,
             recorded_by_role: req.user?.role || 'BHW',
-            validation_status: 'VALIDATED'
+            validation_status: req.user?.role === ROLES.BHW ? 'PENDING_VALIDATION' : 'VALIDATED'
         };
 
         const [infantScopeRows] = await db.execute(
@@ -131,7 +139,8 @@ router.post('/', async (req, res) => {
             metadata: {
                 infant_id: vaccinationData.infant_id,
                 vaccine_code: vaccinationData.vaccine_code,
-                dose_number: vaccinationData.dose_number
+                dose_number: vaccinationData.dose_number,
+                is_external: vaccinationData.is_external
             },
             req
         });
@@ -140,6 +149,7 @@ router.post('/', async (req, res) => {
             success: true,
             vaccination_id: result.vaccination_id,
             status: vaccinationData.validation_status,
+            is_external: vaccinationData.is_external,
             message: result.message
         });
 
@@ -198,13 +208,90 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-    if (!requireDoseMutationRole(req, res)) return;
+    try {
+        if (!requireDoseCorrectionRole(req, res)) return;
 
-    res.status(501).json({
-        success: false,
-        error: 'Not Implemented',
-        message: 'Vaccination dose editing is not implemented in this phase.'
-    });
+        const { id } = req.params;
+        const reason = String(req.body?.reason || req.body?.justification || '').trim();
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                details: 'A correction reason is required.'
+            });
+        }
+
+        const [scopeRows] = await db.execute(
+            `SELECT v.id, v.infant_id, i.first_name, i.middle_name, i.last_name, i.barangay
+             FROM vaccinations v
+             JOIN infants i ON i.id = v.infant_id
+             WHERE v.id = ?`,
+            [id]
+        );
+
+        if (scopeRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                details: 'Vaccination record not found. Please refresh the page.'
+            });
+        }
+
+        if (req.user.role !== ROLES.SUPER_ADMIN && scopeRows[0].barangay !== req.user.assigned_barangay) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                details: 'Vaccination record not found. Please refresh the page.'
+            });
+        }
+
+        const result = await vaccinationService.correctVaccination(
+            id,
+            req.body,
+            req.user,
+            req
+        );
+
+        res.json({
+            success: true,
+            message: result.message,
+            vaccination: result.vaccination
+        });
+    } catch (error) {
+        console.error('Error correcting vaccination:', error);
+
+        if (error.code === 'NOT_FOUND') {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                details: 'Vaccination record not found. Please refresh the page.'
+            });
+        }
+
+        if (
+            error.code === 'MISSING_CORRECTION_REASON' ||
+            error.code === 'NO_CORRECTION_FIELDS' ||
+            error.code === 'INVALID_VALIDATION_STATUS' ||
+            error.code === 'MISSING_REQUIRED_CLINICAL_FIELDS' ||
+            error.code === 'TEMPORAL_VIOLATION' ||
+            error.code === 'PREVIOUS_DOSE_REQUIRED' ||
+            error.code === 'CORRECTION_SEQUENCE_VIOLATION' ||
+            error.code === 'MINIMUM_INTERVAL_NOT_MET'
+        ) {
+            return res.status(error.status || 400).json({
+                success: false,
+                error: 'Validation Error',
+                details: error.message
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: 'Failed to correct vaccination',
+            details: error.message
+        });
+    }
 });
 
 /**
@@ -216,11 +303,11 @@ router.patch('/:id/validate', async (req, res) => {
         const { id } = req.params;
         const { role, id: userId, full_name, name } = req.user || {};
 
-        if (![ROLES.MIDWIFE, ROLES.NURSE].includes(role)) {
+        if (role !== ROLES.MIDWIFE) {
             return res.status(403).json({
                 success: false,
                 error: 'Forbidden',
-                message: 'Only Midwives and Nurses can validate vaccination records.'
+                message: 'Only Midwives can validate vaccination records.'
             });
         }
 
@@ -337,7 +424,8 @@ router.get('/:infantId', async (req, res) => {
             `SELECT id, vaccine_name, vaccine_code, dose_number, batch_number, brand, site_of_injection,
                     vaccinator_id, vaccinator_name, administered_date, notes,
                     validation_status, recorded_by, recorded_by_role, recorded_at,
-                    validated_by_id, validated_by_name, validated_at
+                    validated_by_id, validated_by_name, validated_at,
+                    COALESCE(is_external, FALSE) AS is_external
              FROM vaccinations
              WHERE infant_id = ?
              ORDER BY administered_date ASC`,

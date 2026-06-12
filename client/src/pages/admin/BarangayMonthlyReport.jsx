@@ -7,7 +7,7 @@ import ReportFilters from '../../components/reports/ReportFilters';
 import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
 import BarangayDssWidgets from '../../components/reports/BarangayDssWidgets';
 import { DataQualityBanner, ErrorState, LoadingState } from '../../components/reports/ReportStates';
-import { MONTHS } from '../../components/reports/reportConfig';
+import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
 
 const currentDate = new Date();
 
@@ -54,6 +54,30 @@ const ETCL_COLUMNS = [
     { key: 'mcv2_date', label: 'MCV 2', type: 'date' },
     { key: 'remarks', label: 'Remarks' }
 ];
+
+const ETCL_EXTERNAL_FLAG_BY_DATE = {
+    bcg_date: 'bcg_external',
+    hepb_date: 'hepb_external',
+    penta1_date: 'penta1_external',
+    penta2_date: 'penta2_external',
+    penta3_date: 'penta3_external',
+    opv1_date: 'opv1_external',
+    opv2_date: 'opv2_external',
+    opv3_date: 'opv3_external',
+    pcv1_date: 'pcv1_external',
+    pcv2_date: 'pcv2_external',
+    pcv3_date: 'pcv3_external',
+    ipv1_date: 'ipv1_external',
+    ipv2_date: 'ipv2_external',
+    mcv1_date: 'mcv1_external',
+    mcv2_date: 'mcv2_external'
+};
+
+const ExternalBadge = () => (
+    <span className="mt-1 inline-flex border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-amber-800">
+        [External]
+    </span>
+);
 
 const formatDate = (value) => {
     if (!value) return 'Not recorded';
@@ -179,6 +203,8 @@ const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
                             {ETCL_COLUMNS.map((column) => {
                                 const rawValue = row[column.key];
                                 const value = column.type === 'date' ? formatDate(rawValue) : (rawValue || '-');
+                                const externalFlag = ETCL_EXTERNAL_FLAG_BY_DATE[column.key];
+                                const isExternalDose = !!externalFlag && row[externalFlag] === true;
                                 return (
                                     <td
                                         key={`${row.infant_id || index}-${column.key}`}
@@ -189,6 +215,11 @@ const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
                                                 <p>{value}</p>
                                                 <p className="mt-0.5 font-mono text-[10px] font-bold text-slate-500">{row.reference_id || row.infant_id || 'No ref'}</p>
                                             </>
+                                        ) : column.type === 'date' ? (
+                                            <div className="flex flex-col items-center">
+                                                <span>{value}</span>
+                                                {isExternalDose && <ExternalBadge />}
+                                            </div>
                                         ) : value}
                                     </td>
                                 );
@@ -248,16 +279,16 @@ const BarangayMonthlyReport = () => {
     const missingCount = Number(report?.data_quality?.missing_report_classification_count || 0);
     const cohortRows = Array.isArray(dss?.cohorts?.[activeCohort]) ? dss.cohorts[activeCohort] : [];
     const etclRows = Array.isArray(dss?.etcl_rows) ? dss.etcl_rows : [];
-    const periodLabel = `${MONTHS[month - 1]} ${year}`;
+    const periodLabel = formatReportingPeriodLabel(month, year);
 
     return (
         <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 p-5 lg:p-7">
             <div className="mx-auto max-w-[1500px] min-w-0 space-y-5">
                 <section className="border border-slate-300 bg-white px-5 py-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">Barangay Nurse Report</p>
-                    <h1 className="mt-1 text-2xl font-black text-slate-950">Monthly DSS Workspace</h1>
+                    <h1 className="mt-1 text-2xl font-black text-slate-950">{month === ALL_MONTH_VALUE ? 'Annual DSS Workspace' : 'Monthly DSS Workspace'}</h1>
                     <p className="mt-1 text-sm font-semibold text-slate-500">
-                        {assignedBarangay} · {MONTHS[month - 1]} {year}
+                        {assignedBarangay} - {periodLabel}
                     </p>
                 </section>
 
@@ -301,7 +332,7 @@ const BarangayMonthlyReport = () => {
                             <MonthlyAccomplishmentTable
                                 report={report}
                                 mode="barangay"
-                                title="Barangay Monthly Accomplishment"
+                                title={month === ALL_MONTH_VALUE ? 'Barangay Annual Accomplishment' : 'Barangay Monthly Accomplishment'}
                             />
                         ) : null}
 

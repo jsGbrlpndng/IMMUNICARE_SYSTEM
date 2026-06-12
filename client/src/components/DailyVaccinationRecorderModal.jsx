@@ -41,6 +41,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
   const [vaccinationDate, setVaccinationDate] = useState(new Date().toISOString().split('T')[0]);
   const [batchNumber, setBatchNumber] = useState('');
   const [notes, setNotes] = useState('');
+  const [isExternal, setIsExternal] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -172,6 +173,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
           vaccinator_name: user.name || `${user.first_name} ${user.last_name}`,
           administered_date: new Date(vaccinationDate).toISOString(),
           notes: notes.trim() || null,
+          is_external: isExternal,
           recorded_by: user.id
         };
 
@@ -252,6 +254,7 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
     setVaccinationDate(new Date().toISOString().split('T')[0]);
     setBatchNumber('');
     setNotes('');
+    setIsExternal(false);
     setErrors({});
     setSubmitting(false);
     onClose();
@@ -558,6 +561,23 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                   <p className="text-sm text-red-600 font-medium mt-1">{errors.notes}</p>
                 )}
               </div>
+
+              <div className="rounded-sm border border-amber-200 bg-amber-50/60 p-4">
+                <label className="flex items-start gap-3 text-sm font-semibold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={isExternal}
+                    onChange={(e) => setIsExternal(e.target.checked)}
+                    className="mt-0.5 h-5 w-5 rounded-sm border-slate-300 text-amber-700 focus:ring-amber-700"
+                  />
+                  <span>
+                    <span className="block text-[10px] font-black uppercase tracking-widest text-amber-800">Administered Elsewhere</span>
+                    <span className="mt-1 block text-xs font-bold leading-relaxed text-amber-900">
+                      Use this for historical doses given at another clinic. It updates the child's schedule but is excluded from M1 accomplishment reporting.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 
@@ -589,6 +609,12 @@ const DailyVaccinationRecorderModal = ({ isOpen, onClose, onSuccess }) => {
                     <span className="text-blue-700 font-medium">Batch Number:</span>
                     <span className="text-blue-900 font-bold">{batchNumber.trim().toUpperCase()}</span>
                   </div>
+                  {isExternal && (
+                    <div className="flex justify-between">
+                      <span className="text-blue-700 font-medium">Reporting:</span>
+                      <span className="text-amber-800 font-bold">External dose - excluded from M1</span>
+                    </div>
+                  )}
                   {notes && (
                     <div className="pt-2 border-t border-blue-200">
                       <span className="text-blue-700 font-medium">Notes:</span>

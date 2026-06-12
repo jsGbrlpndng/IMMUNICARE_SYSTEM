@@ -15,6 +15,7 @@ import {
     ShieldCheck,
     Syringe,
     PlusCircle,
+    PencilLine,
     X,
     Clipboard,
     History
@@ -22,6 +23,7 @@ import {
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import RecordVaccinationModal from '../../components/RecordVaccinationModal';
+import DoseCorrectionModal from '../../components/DoseCorrectionModal';
 
 /**
  * InfantRecord - High-density clinical patient profile.
@@ -36,6 +38,9 @@ export default function InfantRecord() {
     const [data, setData] = useState(null);
     const [showRecordModal, setShowRecordModal] = useState(false);
     const [selectedDose, setSelectedDose] = useState(null);
+    const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+    const [selectedCorrectionDose, setSelectedCorrectionDose] = useState(null);
+    const [validatingDoseId, setValidatingDoseId] = useState(null);
 
     const fetchRecord = useCallback(async () => {
         setLoading(true);
@@ -57,7 +62,7 @@ export default function InfantRecord() {
     }, [fetchRecord]);
 
     const handleRecordDose = (dose) => {
-        if (user?.role === 'BHW' || data?.infant?.status === 'Archived') return;
+        if (data?.infant?.status === 'Archived') return;
         setSelectedDose(dose);
         setShowRecordModal(true);
     };
@@ -65,6 +70,38 @@ export default function InfantRecord() {
     const handleDoseRecorded = () => {
         setShowRecordModal(false);
         fetchRecord();
+    };
+
+    const handleCorrectDose = (dose) => {
+        const normalizedRole = String(user?.role || '').trim().toUpperCase().replace(/\s+/g, '_');
+        const canCorrect = ['MIDWIFE', 'ADMIN', 'NURSE'].includes(normalizedRole);
+        if (!canCorrect || !dose?.vaccination_id || data?.infant?.status === 'Archived') return;
+        setSelectedCorrectionDose(dose);
+        setShowCorrectionModal(true);
+    };
+
+    const handleDoseCorrectionSaved = async () => {
+        setShowCorrectionModal(false);
+        setSelectedCorrectionDose(null);
+        await fetchRecord();
+    };
+
+    const handleValidatePendingDose = async (dose) => {
+        if (!dose?.vaccination_id) return;
+        setValidatingDoseId(dose.vaccination_id);
+        try {
+            const res = await apiClient.patch(`/vaccinations/${dose.vaccination_id}/validate`);
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok || payload.success === false) {
+                throw new Error(payload.details || payload.message || payload.error || 'Failed to validate pending dose.');
+            }
+            await fetchRecord();
+        } catch (error) {
+            console.error('Error validating pending dose:', error);
+            window.alert(error.message || 'Failed to validate pending dose.');
+        } finally {
+            setValidatingDoseId(null);
+        }
     };
 
     if (loading) return (
@@ -89,6 +126,15 @@ export default function InfantRecord() {
     const isFullyImmunized = summary.completed === summary.total_doses;
     const isArchived = infant?.status === 'Archived';
     const isBhw = user?.role === 'BHW';
+    const normalizedRole = String(user?.role || '').trim().toUpperCase().replace(/\s+/g, '_');
+    const canCorrectDose = ['MIDWIFE', 'ADMIN', 'NURSE'].includes(normalizedRole);
+    const canValidatePendingDose = normalizedRole === 'MIDWIFE';
+
+    const ExternalDoseBadge = () => (
+        <span className="inline-flex border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-amber-800">
+            [External]
+        </span>
+    );
 
     const getClinicalStatusLabel = (vax) => {
         if (vax.status === 'COMPLETED_VALIDATED') return 'Administered';
@@ -368,7 +414,34 @@ export default function InfantRecord() {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-slate-500">
-                                            {vax.actual_date ? new Date(vax.actual_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+                                            {vax.actual_date ? (
+                                                <div className="flex flex-col items-start gap-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span>{new Date(vax.actual_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                                        {vax.is_external && <ExternalDoseBadge />}
+                                                    </div>
+                                                    {isPendingRow && (
+                                                        <span className="max-w-[220px] text-[9px] font-bold uppercase tracking-wider text-amber-700">
+                                                            Pending Midwife validation
+                                                        </span>
+                                                    )}
+                                                    {isPendingRow && vax.recorded_by_role && (
+                                                        <span className="max-w-[220px] text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                                            Encoder Role: {vax.recorded_by_role}
+                                                        </span>
+                                                    )}
+                                                    {vax.notes && !vax.is_external && (
+                                                        <span className="max-w-[220px] text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                                            {vax.notes}
+                                                        </span>
+                                                    )}
+                                                    {vax.is_external && vax.notes && (
+                                                        <span className="max-w-[220px] text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                                            {vax.notes}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             {isIneligibleRow ? (
@@ -376,18 +449,65 @@ export default function InfantRecord() {
                                                     <span className="text-[9px] font-black uppercase tracking-widest italic">Not Clinically Eligible</span>
                                                     <AlertCircle size={14} className="text-slate-400" />
                                                 </div>
-                                            ) : isCompletedRow || isPendingRow ? (
-                                                <div className="flex items-center justify-end gap-2 text-slate-400">
-                                                    <span className="text-[9px] font-black uppercase tracking-widest italic">Record Finalized</span>
-                                                    <ShieldCheck size={14} className="text-emerald-600/50" />
-                                                </div>
+                                            ) : isPendingRow ? (
+                                                canValidatePendingDose && vax.vaccination_id ? (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleValidatePendingDose(vax)}
+                                                            disabled={validatingDoseId === vax.vaccination_id}
+                                                            className="inline-flex items-center gap-1.5 rounded-md bg-[#064E3B] px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#053b2e] disabled:opacity-50"
+                                                        >
+                                                            <ShieldCheck size={12} />
+                                                            {validatingDoseId === vax.vaccination_id ? 'Approving...' : 'Approve Dose'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCorrectDose(vax)}
+                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                        >
+                                                            <PencilLine size={12} />
+                                                            Correct Dose
+                                                        </button>
+                                                    </div>
+                                                ) : canCorrectDose && vax.vaccination_id ? (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCorrectDose(vax)}
+                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                        >
+                                                            <PencilLine size={12} />
+                                                            Correct Dose
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-end gap-2 text-slate-400">
+                                                        <span className="text-[9px] font-black uppercase tracking-widest italic">Pending Midwife Review</span>
+                                                        <Clock size={14} className="text-amber-600/70" />
+                                                    </div>
+                                                )
+                                            ) : isCompletedRow ? (
+                                                canCorrectDose && vax.vaccination_id ? (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCorrectDose(vax)}
+                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                        >
+                                                            <PencilLine size={12} />
+                                                            Correct Dose
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-end gap-2 text-slate-400">
+                                                        <span className="text-[9px] font-black uppercase tracking-widest italic">Record Finalized</span>
+                                                        <ShieldCheck size={14} className="text-emerald-600/50" />
+                                                    </div>
+                                                )
                                             ) : isArchived ? (
                                                 <div className="flex items-center justify-end text-slate-400 pr-2">
                                                     <span className="text-[9px] font-black uppercase tracking-widest italic">Archived Read-Only</span>
-                                                </div>
-                                            ) : isBhw ? (
-                                                <div className="flex items-center justify-end text-slate-400 pr-2">
-                                                    <span className="text-[9px] font-black uppercase tracking-widest italic">Read-Only</span>
                                                 </div>
                                             ) : (
                                                 <button 
@@ -411,7 +531,7 @@ export default function InfantRecord() {
             </div>
 
             {/* RECORD DOSE MODAL */}
-            {!isBhw && !isArchived && showRecordModal && selectedDose && (
+            {!isArchived && showRecordModal && selectedDose && (
                 <RecordVaccinationModal
                     isOpen={showRecordModal}
                     onClose={() => {
@@ -433,6 +553,23 @@ export default function InfantRecord() {
                     }}
                     user={user}
                     onRecordSuccess={handleDoseRecorded}
+                />
+            )}
+
+            {!isArchived && showCorrectionModal && selectedCorrectionDose && (
+                <DoseCorrectionModal
+                    isOpen={showCorrectionModal}
+                    onClose={() => {
+                        setShowCorrectionModal(false);
+                        setSelectedCorrectionDose(null);
+                    }}
+                    onSuccess={handleDoseCorrectionSaved}
+                    infant={{
+                        id,
+                        name: infant.name,
+                        reference_id: infant.reference_id
+                    }}
+                    dose={selectedCorrectionDose}
                 />
             )}
         </div>

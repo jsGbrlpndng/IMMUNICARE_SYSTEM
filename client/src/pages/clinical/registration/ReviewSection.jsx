@@ -44,6 +44,9 @@ const ReviewSection = ({
                 )}
                 <SummaryItem label="BCG Status" value={formData.bcg_status || 'Pending Selection'} />
                 <SummaryItem label="HepaB Status" value={formData.hepatitis_b_status || formData.hepa_b_status || 'Pending Selection'} />
+                <div className="col-span-full">
+                    <SummaryItem label="BHW Intake Notes" value={formData.bhw_intake_notes || 'No intake notes recorded.'} />
+                </div>
             </div>
 
             {duplicateMatches.length > 0 && (

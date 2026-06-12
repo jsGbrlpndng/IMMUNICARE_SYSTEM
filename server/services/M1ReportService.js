@@ -26,6 +26,17 @@ const MICRO_COLUMNS = [
 ];
 
 const MACRO_COLUMNS = MICRO_COLUMNS;
+const TARGET_PREFIX_COLUMNS = [
+    'population',
+    'total_population',
+    'eligible_population_0_11_months',
+    'eligible_population_0_12_months',
+    'eligible_population_13_23_months',
+    'actual_population',
+    'penta_cumulative_target_population',
+    'mcv_cumulative_target_population',
+    'utilization_cumulative_target_population'
+];
 
 const toNumber = (value) => {
     const parsed = Number(value || 0);
@@ -67,6 +78,32 @@ class M1ReportService {
             throw error;
         }
         return month;
+    }
+
+    _resolveReportingPeriod({ year, month, allowAnnual = false } = {}) {
+        const reportYear = this._parseYear(year);
+        const rawMonth = month === undefined || month === null ? null : String(month).trim().toUpperCase();
+
+        if (allowAnnual && (!rawMonth || rawMonth === 'ALL')) {
+            const range = this._yearRange(reportYear);
+            return {
+                reportYear,
+                reportMonth: null,
+                periodMode: 'ANNUAL',
+                monthLabel: 'Whole Year',
+                ...range
+            };
+        }
+
+        const reportMonth = this._parseMonth(month);
+        const range = this._monthRange(reportYear, reportMonth);
+        return {
+            reportYear,
+            reportMonth,
+            periodMode: 'MONTHLY',
+            monthLabel: MONTH_LABELS[reportMonth - 1],
+            ...range
+        };
     }
 
     _monthRange(year, month) {
@@ -201,34 +238,24 @@ class M1ReportService {
         `;
     }
 
+    _administrationBarangayExpr(vAlias = 'v', infantAlias = 'i') {
+        return `COALESCE(NULLIF(TRIM(${vAlias}.barangay_at_administration), ''), ${infantAlias}.barangay)`;
+    }
+
     _validatedDosesCte({ startDate, endDate, barangayClause = '' }) {
+        const administrationBarangay = this._administrationBarangayExpr('v', 'i');
+
         return `
             canonical_vaccinations AS (
                 SELECT DISTINCT
                     v.id AS vaccination_id,
                     v.infant_id,
-                    COALESCE(v.barangay_at_administration, i.barangay) AS barangay,
+                    ${administrationBarangay} AS barangay,
                     i.dob,
                     v.administered_date,
                     COALESCE(v.report_dose_code, ${this._canonicalDoseCase('v')}) AS canonical_code,
-                    v.report_classification,
-                    COALESCE(
-                        v.report_age_bucket,
-                        CASE
-                            WHEN ${this._canonicalDoseCase('v')} IN ('BCG', 'HEPB')
-                                 AND v.administered_date <= (i.dob::timestamptz + INTERVAL '24 hours')
-                                THEN 'BIRTH_0_24H'
-                            WHEN ${this._canonicalDoseCase('v')} IN ('BCG', 'HEPB')
-                                THEN 'AFTER_24H'
-                            WHEN EXTRACT(EPOCH FROM (v.administered_date - i.dob::timestamptz)) / 86400.0 < 396
-                                THEN 'AGE_0_12M'
-                            WHEN EXTRACT(EPOCH FROM (v.administered_date - i.dob::timestamptz)) / 86400.0 < 731
-                                THEN 'AGE_13_23M'
-                            WHEN EXTRACT(EPOCH FROM (v.administered_date - i.dob::timestamptz)) / 86400.0 < 1827
-                                THEN 'AGE_24_59M'
-                            ELSE 'OVER_59M'
-                        END
-                    ) AS report_age_bucket,
+                    v.report_classification AS raw_report_classification,
+                    v.report_age_bucket AS raw_report_age_bucket,
                     COALESCE(v.report_period_month, EXTRACT(MONTH FROM v.administered_date)::int) AS report_month,
                     COALESCE(v.report_period_year, EXTRACT(YEAR FROM v.administered_date)::int) AS report_year,
                     EXTRACT(EPOCH FROM (v.administered_date - i.dob::timestamptz)) / 86400.0 AS age_days,
@@ -237,14 +264,69 @@ class M1ReportService {
                 JOIN infants i ON i.id = v.infant_id
                 WHERE i.status = 'Active'
                   AND UPPER(COALESCE(v.validation_status::text, 'VALIDATED')) = 'VALIDATED'
+                  AND COALESCE(v.is_external, FALSE) = FALSE
                   AND v.administered_date >= ?::timestamptz
                   AND v.administered_date < ?::timestamptz
                   ${barangayClause}
             ),
             validated_doses AS (
-                SELECT *
-                FROM canonical_vaccinations
-                WHERE canonical_code IS NOT NULL
+                SELECT
+                    cv.*,
+                    COALESCE(
+                        CASE
+                            WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                            ELSE cv.raw_report_age_bucket
+                        END,
+                        CASE
+                            WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                            WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                            WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                            WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                            WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                            ELSE 'OVER_59M'
+                        END
+                    ) AS report_age_bucket,
+                    CASE
+                        WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN
+                            CASE
+                                WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) IN ('CATCH_UP', 'CATCHUP', 'ORI') THEN 'CATCH_UP'
+                                WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) = 'ROUTINE' THEN 'ROUTINE'
+                                ELSE NULL
+                            END
+                        WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) IN ('CATCH_UP', 'CATCHUP', 'ORI') THEN 'CATCH_UP'
+                        WHEN COALESCE(
+                            CASE
+                                WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                                ELSE cv.raw_report_age_bucket
+                            END,
+                            CASE
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                                WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                                WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                                WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                                ELSE 'OVER_59M'
+                            END
+                        ) = 'AGE_24_59M' THEN 'CATCH_UP'
+                        WHEN COALESCE(
+                            CASE
+                                WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                                ELSE cv.raw_report_age_bucket
+                            END,
+                            CASE
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                                WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                                WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                                WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                                ELSE 'OVER_59M'
+                            END
+                        ) IN ('AGE_0_12M', 'AGE_13_23M') THEN 'ROUTINE'
+                        WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) = 'ROUTINE' THEN 'ROUTINE'
+                        ELSE NULL
+                    END AS report_classification
+                FROM canonical_vaccinations cv
+                WHERE cv.canonical_code IS NOT NULL
             )
         `;
     }
@@ -265,12 +347,18 @@ class M1ReportService {
             hasEligiblePopulation: columns.has('eligible_population'),
             hasEligiblePopulation011: columns.has('eligible_population_0_11_months'),
             hasEligiblePopulation012: columns.has('eligible_population_0_12_months'),
+            hasEligiblePopulation1323: columns.has('eligible_population_13_23_months'),
             hasEpPercent: columns.has('ep_percent'),
             hasAnnualTarget: columns.has('annual_target'),
             hasAntigenCode: columns.has('antigen_code'),
             hasMonthlyTargets: columns.has('monthly_targets'),
             hasMonthlyTarget: columns.has('monthly_target'),
+            hasMonthlyTarget011: columns.has('monthly_target_0_11_months'),
+            hasMonthlyTarget1323: columns.has('monthly_target_13_23_months'),
             hasMonthlyTargetIsManual: columns.has('monthly_target_is_manual'),
+            hasPentaCumulativeTarget: columns.has('penta_cumulative_target_population'),
+            hasMcvCumulativeTarget: columns.has('mcv_cumulative_target_population'),
+            hasUtilizationCumulativeTarget: columns.has('utilization_cumulative_target_population'),
             hasUpdatedBy: columns.has('updated_by')
         };
         return this._targetSchema;
@@ -286,25 +374,32 @@ class M1ReportService {
         }
 
         const legacyEligibleExpression = targetSchema.hasEligiblePopulation
-            ? 'COALESCE(eligible_population, 0)'
+            ? 'COALESCE(NULLIF(eligible_population, 0), 0)'
             : targetSchema.hasAnnualTarget
-                ? 'COALESCE(annual_target, 0)'
+                ? 'COALESCE(NULLIF(annual_target, 0), 0)'
                 : '0';
         const ep011Expression = targetSchema.hasEligiblePopulation011
-            ? 'COALESCE(eligible_population_0_11_months, 0)'
-            : legacyEligibleExpression;
+            ? `COALESCE(NULLIF(eligible_population_0_11_months, 0), NULLIF(${legacyEligibleExpression}, 0), 0)`
+            : `COALESCE(NULLIF(${legacyEligibleExpression}, 0), 0)`;
         const ep012Expression = targetSchema.hasEligiblePopulation012
-            ? 'COALESCE(eligible_population_0_12_months, 0)'
-            : ep011Expression;
+            ? `COALESCE(NULLIF(eligible_population_0_12_months, 0), NULLIF(${legacyEligibleExpression}, 0), ${ep011Expression})`
+            : `COALESCE(NULLIF(${legacyEligibleExpression}, 0), ${ep011Expression})`;
+        const ep1323Expression = targetSchema.hasEligiblePopulation1323
+            ? 'COALESCE(eligible_population_13_23_months, 0)'
+            : '0';
         const totalPopulationExpression = targetSchema.hasTotalPopulation
             ? 'COALESCE(total_population, 0)'
             : '0';
-        const monthlyTargetExpression = targetSchema.hasMonthlyTarget
-            ? 'COALESCE(monthly_target, 0)'
-            : `ROUND((${ep011Expression})::numeric / 12.0, 2)`;
-        const monthlyTargetManualExpression = targetSchema.hasMonthlyTargetIsManual
-            ? 'COALESCE(monthly_target_is_manual, FALSE)'
-            : 'FALSE';
+        const pentaTargetExpression = targetSchema.hasPentaCumulativeTarget
+            ? `COALESCE(NULLIF(penta_cumulative_target_population, 0), ${ep011Expression}, 0)`
+            : `${ep011Expression}`;
+        const mcvTargetExpression = targetSchema.hasMcvCumulativeTarget
+            ? `COALESCE(NULLIF(mcv_cumulative_target_population, 0), ${ep012Expression}, 0)`
+            : `${ep012Expression}`;
+        const utilizationTargetExpression = targetSchema.hasUtilizationCumulativeTarget
+            ? `COALESCE(NULLIF(utilization_cumulative_target_population, 0), ${ep012Expression}, 0)`
+            : `${ep012Expression}`;
+        const monthlyTargetManualExpression = 'FALSE';
         const epPercentExpression = targetSchema.hasEpPercent
             ? `COALESCE(ep_percent, ${EP_PERCENT})`
             : `${EP_PERCENT}`;
@@ -317,11 +412,14 @@ class M1ReportService {
                     MAX(${totalPopulationExpression})::int AS total_population,
                     MAX(${ep011Expression})::int AS eligible_population_0_11_months,
                     MAX(${ep012Expression})::int AS eligible_population_0_12_months,
-                    COALESCE(
-                        MAX(NULLIF(${monthlyTargetExpression}, 0)),
-                        ROUND((MAX(${ep011Expression})::numeric / 12.0), 2),
-                        0
-                    ) AS monthly_target,
+                    MAX(${ep1323Expression})::int AS eligible_population_13_23_months,
+                    0::numeric AS monthly_target,
+                    0::numeric AS monthly_target_0_11_months,
+                    0::numeric AS monthly_target_0_12_months,
+                    0::numeric AS monthly_target_13_23_months,
+                    MAX(${pentaTargetExpression})::int AS penta_cumulative_target_population,
+                    MAX(${mcvTargetExpression})::int AS mcv_cumulative_target_population,
+                    MAX(${utilizationTargetExpression})::int AS utilization_cumulative_target_population,
                     BOOL_OR(${monthlyTargetManualExpression}) AS monthly_target_is_manual,
                     MAX(${epPercentExpression})::numeric AS ep_percent,
                     MAX(updated_at) AS updated_at
@@ -336,8 +434,17 @@ class M1ReportService {
                 COALESCE(st.ep_percent, ${EP_PERCENT})::numeric AS ep_percent,
                 COALESCE(st.eligible_population_0_11_months, 0)::int AS eligible_population_0_11_months,
                 COALESCE(st.eligible_population_0_12_months, 0)::int AS eligible_population_0_12_months,
+                COALESCE(st.eligible_population_13_23_months, 0)::int AS eligible_population_13_23_months,
                 COALESCE(st.monthly_target, 0)::numeric AS monthly_target,
-                ROUND((COALESCE(st.eligible_population_0_11_months, 0)::numeric / 12.0), 2) AS calculated_monthly_target,
+                COALESCE(st.monthly_target_0_11_months, COALESCE(st.monthly_target, 0))::numeric AS monthly_target_0_11_months,
+                COALESCE(st.monthly_target_0_12_months, 0)::numeric AS monthly_target_0_12_months,
+                COALESCE(st.monthly_target_13_23_months, 0)::numeric AS monthly_target_13_23_months,
+                COALESCE(st.penta_cumulative_target_population, COALESCE(st.eligible_population_0_11_months, 0))::int AS penta_cumulative_target_population,
+                COALESCE(st.mcv_cumulative_target_population, COALESCE(st.eligible_population_0_12_months, 0))::int AS mcv_cumulative_target_population,
+                COALESCE(st.utilization_cumulative_target_population, COALESCE(st.eligible_population_0_12_months, 0))::int AS utilization_cumulative_target_population,
+                0::numeric AS calculated_monthly_target,
+                0::numeric AS calculated_monthly_target_0_12,
+                0::numeric AS calculated_monthly_target_13_23,
                 COALESCE(st.monthly_target_is_manual, FALSE) AS monthly_target_is_manual,
                 st.updated_at
             FROM barangays b
@@ -362,14 +469,26 @@ class M1ReportService {
             eligible_population: toNumber(row.eligible_population_0_11_months),
             eligible_population_0_11_months: toNumber(row.eligible_population_0_11_months),
             eligible_population_0_12_months: toNumber(row.eligible_population_0_12_months),
+            eligible_population_13_23_months: toNumber(row.eligible_population_13_23_months),
             monthly_ep: Number(row.monthly_target || 0),
             monthly_target: Number(row.monthly_target || 0),
+            monthly_target_0_11_months: Number(row.monthly_target_0_11_months || row.monthly_target || 0),
+            monthly_target_0_12_months: Number(row.monthly_target_0_12_months || 0),
+            monthly_target_13_23_months: Number(row.monthly_target_13_23_months || 0),
+            penta_cumulative_target_population: toNumber(row.penta_cumulative_target_population),
+            mcv_cumulative_target_population: toNumber(row.mcv_cumulative_target_population),
+            utilization_cumulative_target_population: toNumber(row.utilization_cumulative_target_population),
             calculated_monthly_target: Number(row.calculated_monthly_target || 0),
-            monthly_target_is_manual: !!row.monthly_target_is_manual,
-            target_status: toNumber(row.total_population) > 0
-                && toNumber(row.eligible_population_0_11_months) > 0
+            calculated_monthly_target_0_12: Number(row.calculated_monthly_target_0_12 || 0),
+            calculated_monthly_target_13_23: Number(row.calculated_monthly_target_13_23 || 0),
+            monthly_target_is_manual: false,
+            target_status: toNumber(row.eligible_population_0_11_months) > 0
                 && toNumber(row.eligible_population_0_12_months) > 0
-                && Number(row.monthly_target || 0) > 0
+                ? 'COMPLETE'
+                : 'MISSING_TARGET',
+            cohort_target_status: toNumber(row.eligible_population_0_11_months) > 0
+                && toNumber(row.eligible_population_0_12_months) > 0
+                && toNumber(row.eligible_population_13_23_months) > 0
                 ? 'COMPLETE'
                 : 'MISSING_TARGET',
             updated_at: row.updated_at || null
@@ -382,8 +501,16 @@ class M1ReportService {
             acc.eligible_population += row.eligible_population;
             acc.eligible_population_0_11_months += row.eligible_population_0_11_months;
             acc.eligible_population_0_12_months += row.eligible_population_0_12_months;
+            acc.eligible_population_13_23_months += row.eligible_population_13_23_months;
             acc.monthly_ep += row.monthly_ep;
             acc.monthly_target += row.monthly_target;
+            acc.monthly_target_0_11_months += row.monthly_target_0_11_months || row.monthly_target;
+            acc.monthly_target_0_12_months += row.monthly_target_0_12_months || 0;
+            acc.monthly_target_13_23_months += row.monthly_target_13_23_months || 0;
+            acc.penta_cumulative_target_population += row.penta_cumulative_target_population || row.eligible_population_0_11_months || 0;
+            acc.mcv_cumulative_target_population += row.mcv_cumulative_target_population || row.eligible_population_0_12_months || 0;
+            acc.utilization_cumulative_target_population += row.utilization_cumulative_target_population || row.eligible_population_0_12_months || 0;
+            acc.actual_population += row.actual_population || 0;
             if (row.target_status === 'COMPLETE') acc.complete += 1;
             else acc.incomplete += 1;
             return acc;
@@ -395,24 +522,280 @@ class M1ReportService {
             eligible_population: 0,
             eligible_population_0_11_months: 0,
             eligible_population_0_12_months: 0,
+            eligible_population_13_23_months: 0,
             monthly_ep: 0,
-            monthly_target: 0
+            monthly_target: 0,
+            monthly_target_0_11_months: 0,
+            monthly_target_0_12_months: 0,
+            monthly_target_13_23_months: 0,
+            penta_cumulative_target_population: 0,
+            mcv_cumulative_target_population: 0,
+            utilization_cumulative_target_population: 0,
+            actual_population: 0
         });
     }
 
-    async getTargetConfiguration({ year } = {}) {
-        const reportYear = this._parseYear(year);
-        const targets = await this._loadTargetRows({ year: reportYear });
+    _resolveMonthlyActualSummaryRow(rows = []) {
+        const safeRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+        return safeRows.find((row) => String(row?.barangay || '').toUpperCase().includes('GRAND TOTAL'))
+            || safeRows.find((row) => String(row?.barangay || '').toUpperCase().includes('TOTAL'))
+            || safeRows[0]
+            || {};
+    }
+
+    async _buildMonthlyAccomplishmentHeader({ year, barangay } = {}) {
+        const targetRows = await this._loadTargetRows({ year, barangay });
+        const targetSource = barangay
+            ? (targetRows[0] || {})
+            : this._targetSummary(targetRows);
+        const totalPopulation = toNumber(targetSource?.total_population);
+        const annualTarget011 = toNumber(
+            targetSource?.eligible_population_0_11_months
+            || targetSource?.eligible_population
+        );
+        const annualTarget012 = toNumber(targetSource?.eligible_population_0_12_months);
+        const annualTarget1323 = toNumber(targetSource?.eligible_population_13_23_months);
+        const pentaTarget = toNumber(targetSource?.penta_cumulative_target_population || annualTarget011);
+        const mcvTarget = toNumber(targetSource?.mcv_cumulative_target_population || annualTarget012);
+        const utilizationTarget = toNumber(targetSource?.utilization_cumulative_target_population || annualTarget012);
+
         return {
-            success: true,
-            report_year: reportYear,
-            ep_percent: EP_PERCENT,
-            targets,
-            summary: this._targetSummary(targets)
+            labels: {
+                population: 'Population',
+                cohort_0_11: 'EP 0-11 Months',
+                cohort_0_12: 'EP 0-12 Months',
+                cohort_13_23: 'EP 13-23 Months'
+            },
+            targetConfiguration: {
+                total_population: totalPopulation,
+                population: totalPopulation,
+                eligible_population_0_11_months: annualTarget011,
+                eligible_population_0_12_months: annualTarget012,
+                eligible_population_13_23_months: annualTarget1323,
+                penta_cumulative_target_population: pentaTarget,
+                mcv_cumulative_target_population: mcvTarget,
+                utilization_cumulative_target_population: utilizationTarget
+            },
+            denominatorRows: [
+                {
+                    row_type: 'DENOMINATOR',
+                    denominator_key: 'population',
+                    label: 'Population',
+                    barangay: 'Population',
+                    basis: 'Total population',
+                    assigned_personnel: 'Total population',
+                    value: totalPopulation
+                },
+                {
+                    row_type: 'DENOMINATOR',
+                    denominator_key: 'ep_0_11',
+                    label: 'EP 0-11 Months',
+                    barangay: 'EP 0-11 Months',
+                    basis: 'Penta / FIC denominator',
+                    assigned_personnel: 'Penta / FIC denominator',
+                    value: annualTarget011
+                },
+                {
+                    row_type: 'DENOMINATOR',
+                    denominator_key: 'ep_0_12',
+                    label: 'EP 0-12 Months',
+                    barangay: 'EP 0-12 Months',
+                    basis: 'MCV denominator',
+                    assigned_personnel: 'MCV denominator',
+                    value: annualTarget012
+                },
+                {
+                    row_type: 'DENOMINATOR',
+                    denominator_key: 'ep_13_23',
+                    label: 'EP 13-23 Months',
+                    barangay: 'EP 13-23 Months',
+                    basis: '13-23 month denominator',
+                    assigned_personnel: '13-23 month denominator',
+                    value: annualTarget1323
+                }
+            ]
         };
     }
 
-    async saveTargetConfiguration({ year, targets = [], user, req } = {}) {
+    async _loadMunicipalTarget({ year } = {}) {
+        try {
+            const [rows] = await this.db.execute(
+                `
+                SELECT report_year, municipality_name, total_population
+                FROM m1_municipal_targets
+                WHERE report_year = ?
+                  AND municipality_name = 'San Pedro'
+                LIMIT 1
+                `,
+                [year]
+            );
+
+            return {
+                report_year: year,
+                municipality_name: 'San Pedro',
+                total_population: toNumber(rows[0]?.total_population)
+            };
+        } catch (error) {
+            if (error?.code === '42P01') {
+                return {
+                    report_year: year,
+                    municipality_name: 'San Pedro',
+                    total_population: 0
+                };
+            }
+            throw error;
+        }
+    }
+
+    async _loadActualPopulationMap({ year, month, barangay } = {}) {
+        const reportMonth = month === null || month === undefined || String(month).toUpperCase() === 'ALL'
+            ? null
+            : this._parseMonth(month);
+        const params = [year];
+        let monthClause = '';
+        let barangayClause = '';
+
+        if (reportMonth) {
+            monthClause = 'AND map.report_month = ?';
+            params.push(reportMonth);
+        }
+
+        if (barangay) {
+            barangayClause = 'AND UPPER(TRIM(b.name)) = UPPER(TRIM(?))';
+            params.push(barangay);
+        }
+
+        try {
+            const [rows] = await this.db.execute(
+                `
+                SELECT DISTINCT ON (b.name)
+                    b.name AS barangay,
+                    map.report_month,
+                    map.actual_population
+                FROM barangays b
+                LEFT JOIN m1_monthly_actual_populations map
+                  ON map.barangay_id = b.id
+                 AND map.report_year = ?
+                 ${monthClause}
+                WHERE COALESCE(b.is_active, TRUE) = TRUE
+                  ${barangayClause}
+                ORDER BY b.name, map.report_month DESC NULLS LAST
+                `,
+                params
+            );
+
+            return new Map(rows.map((row) => [
+                String(row.barangay || '').toUpperCase(),
+                toNumber(row.actual_population)
+            ]));
+        } catch (error) {
+            if (error?.code === '42P01') return new Map();
+            throw error;
+        }
+    }
+
+    async _loadActualPopulationRowsForConfig({ year, month } = {}) {
+        const reportMonth = this._parseMonth(month);
+        try {
+            const [rows] = await this.db.execute(
+                `
+                SELECT
+                    b.id AS barangay_id,
+                    COALESCE(map.actual_population, 0)::int AS actual_population
+                FROM barangays b
+                LEFT JOIN m1_monthly_actual_populations map
+                  ON map.barangay_id = b.id
+                 AND map.report_year = ?
+                 AND map.report_month = ?
+                WHERE COALESCE(b.is_active, TRUE) = TRUE
+                `,
+                [year, reportMonth]
+            );
+            return new Map(rows.map((row) => [String(row.barangay_id), toNumber(row.actual_population)]));
+        } catch (error) {
+            if (error?.code === '42P01') return new Map();
+            throw error;
+        }
+    }
+
+    _attachTargetColumns(row = {}, target = {}, actualPopulation = 0) {
+        return {
+            ...row,
+            population: toNumber(target.total_population),
+            total_population: toNumber(target.total_population),
+            eligible_population_0_11_months: toNumber(target.eligible_population_0_11_months),
+            eligible_population_0_12_months: toNumber(target.eligible_population_0_12_months),
+            eligible_population_13_23_months: toNumber(target.eligible_population_13_23_months),
+            actual_population: toNumber(actualPopulation),
+            penta_cumulative_target_population: toNumber(target.penta_cumulative_target_population || target.eligible_population_0_11_months),
+            mcv_cumulative_target_population: toNumber(target.mcv_cumulative_target_population || target.eligible_population_0_12_months),
+            utilization_cumulative_target_population: toNumber(target.utilization_cumulative_target_population || target.eligible_population_0_12_months)
+        };
+    }
+
+    _serializeTargetAuditSnapshot({
+        reportYear,
+        reportMonth,
+        municipalTarget = {},
+        targetRows = [],
+        actualPopulationByBarangayId = new Map()
+    } = {}) {
+        const targetsByBarangay = {};
+
+        for (const row of targetRows || []) {
+            const barangayKey = String(row.barangay || row.barangay_name || row.barangay_id || 'UNKNOWN').trim().toUpperCase();
+            const barangayId = String(row.barangay_id || '');
+            targetsByBarangay[barangayKey] = {
+                barangay_id: barangayId || null,
+                barangay: row.barangay || row.barangay_name || null,
+                population: toNumber(row.total_population),
+                ep_0_11_months: toNumber(row.eligible_population_0_11_months || row.eligible_population),
+                ep_0_12_months: toNumber(row.eligible_population_0_12_months),
+                ep_13_23_months: toNumber(row.eligible_population_13_23_months),
+                actual_population: toNumber(actualPopulationByBarangayId.get(barangayId)),
+                penta_cumulative_target_population: toNumber(row.penta_cumulative_target_population || row.eligible_population_0_11_months || row.eligible_population),
+                mcv_cumulative_target_population: toNumber(row.mcv_cumulative_target_population || row.eligible_population_0_12_months),
+                utilization_cumulative_target_population: toNumber(row.utilization_cumulative_target_population || row.eligible_population_0_12_months)
+            };
+        }
+
+        return {
+            report_year: toNumber(reportYear),
+            report_month: toNumber(reportMonth),
+            municipal_target: {
+                municipality_name: municipalTarget?.municipality_name || 'San Pedro',
+                total_population: toNumber(municipalTarget?.total_population)
+            },
+            targets_by_barangay: targetsByBarangay
+        };
+    }
+
+    async getTargetConfiguration({ year, month } = {}) {
+        const reportYear = this._parseYear(year);
+        const reportMonth = this._parseMonth(month);
+        const targets = await this._loadTargetRows({ year: reportYear });
+        const actualPopulationByBarangayId = await this._loadActualPopulationRowsForConfig({
+            year: reportYear,
+            month: reportMonth
+        });
+        const municipalTarget = await this._loadMunicipalTarget({ year: reportYear });
+        const targetsWithActualPopulation = targets.map((target) => ({
+            ...target,
+            actual_population: actualPopulationByBarangayId.get(String(target.barangay_id)) || 0
+        }));
+
+        return {
+            success: true,
+            report_year: reportYear,
+            report_month: reportMonth,
+            ep_percent: EP_PERCENT,
+            municipal_target: municipalTarget,
+            targets: targetsWithActualPopulation,
+            summary: this._targetSummary(targetsWithActualPopulation)
+        };
+    }
+
+    async saveTargetConfiguration({ year, month, municipalTarget = {}, targets = [], user, req } = {}) {
         if (!user || user.role !== ROLES.SUPER_ADMIN) {
             const error = new Error('Forbidden: Super Admin authority is required for target configuration.');
             error.status = 403;
@@ -420,6 +803,7 @@ class M1ReportService {
         }
 
         const reportYear = this._parseYear(year);
+        const reportMonth = this._parseMonth(month);
         if (!Array.isArray(targets)) {
             const error = new Error('targets must be an array.');
             error.status = 400;
@@ -441,29 +825,67 @@ class M1ReportService {
             `,
             [reportYear]
         );
+        const oldTargetsByBarangay = new Map(oldTargetRows.map((row) => [String(row.barangay_id), row]));
+        const oldActualPopulationByBarangayId = await this._loadActualPopulationRowsForConfig({
+            year: reportYear,
+            month: reportMonth
+        });
+        const oldMunicipalTarget = await this._loadMunicipalTarget({ year: reportYear });
 
         const normalizedTargets = targets.map((target) => {
             const barangayId = String(target.barangay_id || '').trim();
-            const totalPopulation = Number(target.total_population ?? target.population ?? 0);
+            const previous = oldTargetsByBarangay.get(barangayId) || {};
+            const totalPopulation = Number(
+                target.total_population
+                ?? target.population
+                ?? previous.total_population
+                ?? 0
+            );
             const eligiblePopulation011 = Number(
                 target.eligible_population_0_11_months
                 ?? target.eligiblePopulation011
                 ?? target.eligible_population
                 ?? target.eligiblePopulation
+                ?? previous.eligible_population_0_11_months
+                ?? previous.eligible_population
                 ?? 0
             );
             const eligiblePopulation012 = Number(
                 target.eligible_population_0_12_months
                 ?? target.eligiblePopulation012
+                ?? previous.eligible_population_0_12_months
+                ?? previous.eligible_population
                 ?? eligiblePopulation011
             );
-            const calculatedMonthlyTarget = Number((eligiblePopulation011 / 12).toFixed(2));
-            const hasManualMonthlyTarget = target.monthly_target !== undefined
-                || target.monthlyTarget !== undefined
-                || target.monthly_target_is_manual === true;
-            const monthlyTarget = hasManualMonthlyTarget
-                ? Number(target.monthly_target ?? target.monthlyTarget ?? calculatedMonthlyTarget)
-                : calculatedMonthlyTarget;
+            const eligiblePopulation1323 = Number(
+                target.eligible_population_13_23_months
+                ?? target.eligiblePopulation1323
+                ?? previous.eligible_population_13_23_months
+                ?? 0
+            );
+            const actualPopulation = Number(
+                target.actual_population
+                ?? target.actualPopulation
+                ?? 0
+            );
+            const pentaCumulativeTarget = Number(
+                target.penta_cumulative_target_population
+                ?? target.pentaCumulativeTargetPopulation
+                ?? previous.penta_cumulative_target_population
+                ?? eligiblePopulation011
+            );
+            const mcvCumulativeTarget = Number(
+                target.mcv_cumulative_target_population
+                ?? target.mcvCumulativeTargetPopulation
+                ?? previous.mcv_cumulative_target_population
+                ?? eligiblePopulation012
+            );
+            const utilizationCumulativeTarget = Number(
+                target.utilization_cumulative_target_population
+                ?? target.utilizationCumulativeTargetPopulation
+                ?? previous.utilization_cumulative_target_population
+                ?? eligiblePopulation012
+            );
             if (!activeBarangayIds.has(barangayId)) {
                 const error = new Error('Every target row must reference an active barangay.');
                 error.status = 400;
@@ -484,8 +906,28 @@ class M1ReportService {
                 error.status = 400;
                 throw error;
             }
-            if (!Number.isFinite(monthlyTarget) || monthlyTarget < 0) {
-                const error = new Error('monthly_target must be a non-negative number.');
+            if (!Number.isInteger(eligiblePopulation1323) || eligiblePopulation1323 < 0) {
+                const error = new Error('eligible_population_13_23_months must be a non-negative whole number.');
+                error.status = 400;
+                throw error;
+            }
+            if (!Number.isInteger(actualPopulation) || actualPopulation < 0) {
+                const error = new Error('actual_population must be a non-negative whole number.');
+                error.status = 400;
+                throw error;
+            }
+            if (!Number.isInteger(pentaCumulativeTarget) || pentaCumulativeTarget < 0) {
+                const error = new Error('penta_cumulative_target_population must be a non-negative whole number.');
+                error.status = 400;
+                throw error;
+            }
+            if (!Number.isInteger(mcvCumulativeTarget) || mcvCumulativeTarget < 0) {
+                const error = new Error('mcv_cumulative_target_population must be a non-negative whole number.');
+                error.status = 400;
+                throw error;
+            }
+            if (!Number.isInteger(utilizationCumulativeTarget) || utilizationCumulativeTarget < 0) {
+                const error = new Error('utilization_cumulative_target_population must be a non-negative whole number.');
                 error.status = 400;
                 throw error;
             }
@@ -495,8 +937,15 @@ class M1ReportService {
                 total_population: totalPopulation,
                 eligible_population_0_11_months: eligiblePopulation011,
                 eligible_population_0_12_months: eligiblePopulation012,
-                monthly_target: Number(monthlyTarget.toFixed(2)),
-                monthly_target_is_manual: hasManualMonthlyTarget && Number(monthlyTarget.toFixed(2)) !== calculatedMonthlyTarget
+                eligible_population_13_23_months: eligiblePopulation1323,
+                actual_population: actualPopulation,
+                penta_cumulative_target_population: pentaCumulativeTarget,
+                mcv_cumulative_target_population: mcvCumulativeTarget,
+                utilization_cumulative_target_population: utilizationCumulativeTarget,
+                monthly_target: 0,
+                monthly_target_0_11_months: 0,
+                monthly_target_13_23_months: 0,
+                monthly_target_is_manual: false
             };
         });
 
@@ -512,9 +961,47 @@ class M1ReportService {
                 error.status = 500;
                 throw error;
             }
+            if (!targetSchema.hasEligiblePopulation1323 || !targetSchema.hasMonthlyTarget011 || !targetSchema.hasMonthlyTarget1323) {
+                const error = new Error('13-23 month cohort target migration is required before saving target configuration.');
+                error.status = 500;
+                throw error;
+            }
+            if (!targetSchema.hasPentaCumulativeTarget || !targetSchema.hasMcvCumulativeTarget || !targetSchema.hasUtilizationCumulativeTarget) {
+                const error = new Error('DOH chart target migration is required before saving target configuration.');
+                error.status = 500;
+                throw error;
+            }
 
             connection = await this.db.getConnection();
             await connection.beginTransaction();
+
+            const municipalPopulation = Number(municipalTarget?.total_population ?? municipalTarget?.totalPopulation ?? 0);
+            if (!Number.isInteger(municipalPopulation) || municipalPopulation < 0) {
+                const error = new Error('municipal_target.total_population must be a non-negative whole number.');
+                error.status = 400;
+                throw error;
+            }
+
+            await connection.execute(
+                `
+                INSERT INTO m1_municipal_targets (
+                    report_year,
+                    municipality_name,
+                    total_population,
+                    created_by,
+                    updated_by,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, 'San Pedro', ?, ?, ?, NOW(), NOW())
+                ON CONFLICT (report_year, municipality_name)
+                DO UPDATE SET
+                    total_population = EXCLUDED.total_population,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = NOW()
+                `,
+                [reportYear, municipalPopulation, user.id, user.id]
+            );
 
             for (const row of normalizedTargets) {
                 await connection.execute(
@@ -525,22 +1012,34 @@ class M1ReportService {
                         total_population,
                         eligible_population_0_11_months,
                         eligible_population_0_12_months,
+                        eligible_population_13_23_months,
                         monthly_target,
+                        monthly_target_0_11_months,
+                        monthly_target_13_23_months,
                         monthly_target_is_manual,
+                        penta_cumulative_target_population,
+                        mcv_cumulative_target_population,
+                        utilization_cumulative_target_population,
                         ep_percent,
                         created_by,
                         updated_by,
                         created_at,
                         updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                     ON CONFLICT (barangay_id, report_year)
                     DO UPDATE SET
                         total_population = EXCLUDED.total_population,
                         eligible_population_0_11_months = EXCLUDED.eligible_population_0_11_months,
                         eligible_population_0_12_months = EXCLUDED.eligible_population_0_12_months,
+                        eligible_population_13_23_months = EXCLUDED.eligible_population_13_23_months,
                         monthly_target = EXCLUDED.monthly_target,
+                        monthly_target_0_11_months = EXCLUDED.monthly_target_0_11_months,
+                        monthly_target_13_23_months = EXCLUDED.monthly_target_13_23_months,
                         monthly_target_is_manual = EXCLUDED.monthly_target_is_manual,
+                        penta_cumulative_target_population = EXCLUDED.penta_cumulative_target_population,
+                        mcv_cumulative_target_population = EXCLUDED.mcv_cumulative_target_population,
+                        utilization_cumulative_target_population = EXCLUDED.utilization_cumulative_target_population,
                         ep_percent = EXCLUDED.ep_percent,
                         updated_by = EXCLUDED.updated_by,
                         updated_at = NOW()
@@ -551,9 +1050,44 @@ class M1ReportService {
                         row.total_population,
                         row.eligible_population_0_11_months,
                         row.eligible_population_0_12_months,
+                        row.eligible_population_13_23_months,
                         row.monthly_target,
+                        row.monthly_target_0_11_months,
+                        row.monthly_target_13_23_months,
                         row.monthly_target_is_manual,
+                        row.penta_cumulative_target_population,
+                        row.mcv_cumulative_target_population,
+                        row.utilization_cumulative_target_population,
                         EP_PERCENT,
+                        user.id,
+                        user.id
+                    ]
+                );
+
+                await connection.execute(
+                    `
+                    INSERT INTO m1_monthly_actual_populations (
+                        barangay_id,
+                        report_year,
+                        report_month,
+                        actual_population,
+                        created_by,
+                        updated_by,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+                    ON CONFLICT (barangay_id, report_year, report_month)
+                    DO UPDATE SET
+                        actual_population = EXCLUDED.actual_population,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+                    `,
+                    [
+                        row.barangay_id,
+                        reportYear,
+                        reportMonth,
+                        row.actual_population,
                         user.id,
                         user.id
                     ]
@@ -584,6 +1118,25 @@ class M1ReportService {
             `,
             [reportYear]
         );
+        const newActualPopulationByBarangayId = await this._loadActualPopulationRowsForConfig({
+            year: reportYear,
+            month: reportMonth
+        });
+        const newMunicipalTarget = await this._loadMunicipalTarget({ year: reportYear });
+        const oldAuditSnapshot = this._serializeTargetAuditSnapshot({
+            reportYear,
+            reportMonth,
+            municipalTarget: oldMunicipalTarget,
+            targetRows: oldTargetRows,
+            actualPopulationByBarangayId: oldActualPopulationByBarangayId
+        });
+        const newAuditSnapshot = this._serializeTargetAuditSnapshot({
+            reportYear,
+            reportMonth,
+            municipalTarget: newMunicipalTarget,
+            targetRows: newTargetRows,
+            actualPopulationByBarangayId: newActualPopulationByBarangayId
+        });
 
         await safeRecordAuditEvent({
             actor: user,
@@ -591,24 +1144,19 @@ class M1ReportService {
             targetEntity: 'm1_immunization_targets',
             targetRecordId: String(reportYear),
             targetName: `Annual Barangay Targets ${reportYear}`,
-            oldValues: {
-                report_year: reportYear,
-                targets: oldTargetRows || []
-            },
-            newValues: {
-                report_year: reportYear,
-                targets: newTargetRows || []
-            },
+            oldValues: oldAuditSnapshot,
+            newValues: newAuditSnapshot,
             metadata: {
                 report_year: reportYear,
+                report_month: reportMonth,
                 barangay_count: normalizedTargets.length,
-                target_model: 'ANNUAL_BARANGAY_MATRIX',
+                target_model: 'DOH_EXCEL_TARGET_MATRIX',
                 ep_percent: EP_PERCENT
             },
             req
         });
 
-        return this.getTargetConfiguration({ year: reportYear });
+        return this.getTargetConfiguration({ year: reportYear, month: reportMonth });
     }
 
     async _getBarangayPersonnelMap({ barangay } = {}) {
@@ -651,8 +1199,11 @@ class M1ReportService {
     }
 
     async getNipMacroReport({ year, month, barangay } = {}) {
-        const reportYear = this._parseYear(year);
-        const reportMonth = this._parseMonth(month);
+        const { reportYear, reportMonth, periodMode, startDate, endDate, monthLabel } = this._resolveReportingPeriod({
+            year,
+            month,
+            allowAnnual: true
+        });
         const params = [];
         let barangayClause = 'WHERE COALESCE(is_active, TRUE) = TRUE';
         if (barangay) {
@@ -677,7 +1228,7 @@ class M1ReportService {
         for (const row of barangayRows) {
             const microReport = await this.getNipMicroReport({
                 year: reportYear,
-                month: reportMonth,
+                month: periodMode === 'ANNUAL' ? 'ALL' : reportMonth,
                 barangay: row.barangay
             });
             const detail = microReport.rows[0] || { barangay: row.barangay };
@@ -690,21 +1241,31 @@ class M1ReportService {
 
         const totalRow = {
             report_month: reportMonth,
+            report_mode: periodMode,
             barangay: 'RHU 2 GRAND TOTAL',
             assigned_personnel: 'RHU 2 Aggregate',
             assigned_personnel_ids: []
         };
-        for (const column of MACRO_COLUMNS) {
+        for (const column of [...TARGET_PREFIX_COLUMNS, ...MACRO_COLUMNS]) {
             totalRow[column] = detailedRows.reduce((sum, row) => sum + toNumber(row[column]), 0);
         }
 
         const rows = barangay ? detailedRows : [...detailedRows, totalRow];
+        const normalizedRows = addNumericFields(rows, MACRO_COLUMNS);
+        const tableHeader = await this._buildMonthlyAccomplishmentHeader({
+            year: reportYear,
+            barangay,
+            rows: normalizedRows,
+            columns: MACRO_COLUMNS,
+            reportMonth,
+            periodMode
+        });
 
         return {
             success: true,
             report_type: 'NIP_MACRO',
             generated_at: new Date().toISOString(),
-            period: { year: reportYear, month: reportMonth, month_label: MONTH_LABELS[reportMonth - 1] },
+            period: { year: reportYear, month: reportMonth, month_label: monthLabel, mode: periodMode, start_date: startDate, end_date: endDate },
             scope: barangay ? { type: 'BARANGAY', barangay } : { type: 'MUNICIPAL', barangay: null, label: 'RHU 2 Aggregate' },
             columns: MACRO_COLUMNS,
             data_quality: {
@@ -713,7 +1274,8 @@ class M1ReportService {
                     ? 'Some validated doses are missing report_classification and were excluded from ORI/Catch-up/Routine age-bucket columns.'
                     : null
             },
-            rows: addNumericFields(rows, MACRO_COLUMNS)
+            tableHeader,
+            rows: normalizedRows
         };
     }
 
@@ -723,9 +1285,11 @@ class M1ReportService {
     }
 
     async getNipMicroReport({ year, month, barangay } = {}) {
-        const reportYear = this._parseYear(year);
-        const reportMonth = this._parseMonth(month);
-        const { startDate, endDate } = this._monthRange(reportYear, reportMonth);
+        const { reportYear, reportMonth, periodMode, startDate, endDate, monthLabel } = this._resolveReportingPeriod({
+            year,
+            month,
+            allowAnnual: true
+        });
         const params = [startDate, endDate, barangay];
 
         const [rows] = await this.db.execute(
@@ -733,7 +1297,7 @@ class M1ReportService {
             WITH ${this._validatedDosesCte({
                 startDate,
                 endDate,
-                barangayClause: 'AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))'
+                barangayClause: `AND UPPER(TRIM(${this._administrationBarangayExpr('v', 'i')})) = UPPER(TRIM(?))`
             })},
             bucketed AS (
                 SELECT
@@ -795,7 +1359,7 @@ class M1ReportService {
                 FROM infant_completion_flags
             )
             SELECT
-                ${reportMonth}::int AS report_month,
+                ${reportMonth === null ? 'NULL::int' : `${reportMonth}::int`} AS report_month,
                 ? AS barangay,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'BCG' AND within_24_hours THEN vaccination_id END)::int AS bcg_at_birth,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'BCG' AND NOT within_24_hours THEN vaccination_id END)::int AS bcg_after_24_hours,
@@ -834,10 +1398,10 @@ class M1ReportService {
                 COUNT(DISTINCT CASE WHEN canonical_code = 'PCV3' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_0_12M' THEN vaccination_id END)::int AS pcv3_0_12,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'PCV3' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_13_23M' THEN vaccination_id END)::int AS pcv3_13_23,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'PCV3' AND report_classification = 'CATCH_UP' THEN vaccination_id END)::int AS pcv3_catch_up,
-                COUNT(DISTINCT CASE WHEN canonical_code = 'MCV1' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_9_12M' THEN vaccination_id END)::int AS mcv1_0_12,
+                COUNT(DISTINCT CASE WHEN canonical_code = 'MCV1' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_0_12M' THEN vaccination_id END)::int AS mcv1_0_12,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'MCV1' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_13_23M' THEN vaccination_id END)::int AS mcv1_13_23,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'MCV1' AND report_classification = 'CATCH_UP' THEN vaccination_id END)::int AS mcv1_catch_up,
-                COUNT(DISTINCT CASE WHEN canonical_code = 'MCV2' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_12M' THEN vaccination_id END)::int AS mcv2_0_12,
+                COUNT(DISTINCT CASE WHEN canonical_code = 'MCV2' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_0_12M' THEN vaccination_id END)::int AS mcv2_0_12,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'MCV2' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_13_23M' THEN vaccination_id END)::int AS mcv2_13_23,
                 COUNT(DISTINCT CASE WHEN canonical_code = 'MCV2' AND report_classification = 'CATCH_UP' THEN vaccination_id END)::int AS mcv2_catch_up,
                 COALESCE((SELECT fic FROM completion_counts), 0)::int AS fic,
@@ -848,17 +1412,36 @@ class M1ReportService {
             [...params, barangay]
         );
 
-        const normalizedRows = addNumericFields(rows, MICRO_COLUMNS);
+        let normalizedRows = addNumericFields(rows, MICRO_COLUMNS);
         const missingReportClassificationCount = normalizedRows.reduce(
             (sum, row) => sum + toNumber(row.missing_report_classification_count),
             0
         );
+        const tableHeader = await this._buildMonthlyAccomplishmentHeader({
+            year: reportYear,
+            barangay,
+            rows: normalizedRows,
+            columns: MICRO_COLUMNS,
+            reportMonth,
+            periodMode
+        });
+        const actualPopulationMap = await this._loadActualPopulationMap({
+            year: reportYear,
+            month: periodMode === 'ANNUAL' ? null : reportMonth,
+            barangay
+        });
+        const targetConfig = tableHeader?.targetConfiguration || {};
+        normalizedRows = normalizedRows.map((row) => this._attachTargetColumns(
+            row,
+            targetConfig,
+            actualPopulationMap.get(String(row.barangay || barangay || '').toUpperCase()) || 0
+        ));
 
         return {
             success: true,
             report_type: 'NIP_MICRO',
             generated_at: new Date().toISOString(),
-            period: { year: reportYear, month: reportMonth, month_label: MONTH_LABELS[reportMonth - 1] },
+            period: { year: reportYear, month: reportMonth, month_label: monthLabel, mode: periodMode, start_date: startDate, end_date: endDate },
             scope: { type: 'BARANGAY', barangay },
             columns: MICRO_COLUMNS,
             data_quality: {
@@ -867,6 +1450,7 @@ class M1ReportService {
                     ? 'Some validated doses are missing report_classification and were excluded from ORI/Catch-up/Routine age-bucket columns.'
                     : null
             },
+            tableHeader,
             rows: normalizedRows
         };
     }
@@ -914,9 +1498,15 @@ class M1ReportService {
         const targetEligible012 = targetSchema.hasEligiblePopulation012
             ? 'COALESCE(mt.eligible_population_0_12_months, 0)'
             : targetEligible011;
-        const targetMonthly = targetSchema.hasMonthlyTarget
-            ? 'COALESCE(mt.monthly_target, 0)'
-            : `ROUND((${targetEligible011})::numeric / 12.0, 2)`;
+        const pentaTargetConfigExpr = targetSchema.hasPentaCumulativeTarget
+            ? `COALESCE(NULLIF(mt.penta_cumulative_target_population, 0), ${targetEligible011}, 0)`
+            : targetEligible011;
+        const mcvTargetConfigExpr = targetSchema.hasMcvCumulativeTarget
+            ? `COALESCE(NULLIF(mt.mcv_cumulative_target_population, 0), ${targetEligible012}, 0)`
+            : targetEligible012;
+        const utilizationTargetConfigExpr = targetSchema.hasUtilizationCumulativeTarget
+            ? `COALESCE(NULLIF(mt.utilization_cumulative_target_population, 0), ${targetEligible012}, 0)`
+            : targetEligible012;
 
         const targetCte = targetSchema.hasTotalPopulation || targetSchema.hasEligiblePopulation011 || targetSchema.hasEligiblePopulation || targetSchema.hasAnnualTarget
             ? `
@@ -926,7 +1516,9 @@ class M1ReportService {
                     COALESCE(SUM(${targetEligible011}), 0)::int AS eligible_population,
                     COALESCE(SUM(${targetEligible011}), 0)::int AS eligible_population_0_11_months,
                     COALESCE(SUM(${targetEligible012}), 0)::int AS eligible_population_0_12_months,
-                    COALESCE(SUM(${targetMonthly}), 0)::numeric AS monthly_ep,
+                    COALESCE(SUM(${pentaTargetConfigExpr}), 0)::int AS penta_target_config,
+                    COALESCE(SUM(${mcvTargetConfigExpr}), 0)::int AS mcv_target_config,
+                    COALESCE(SUM(${utilizationTargetConfigExpr}), 0)::int AS utilization_target_config,
                     COUNT(mt.id)::int AS target_rows_found
                 FROM barangays b
                 LEFT JOIN m1_immunization_targets mt
@@ -943,7 +1535,9 @@ class M1ReportService {
                     0::int AS eligible_population,
                     0::int AS eligible_population_0_11_months,
                     0::int AS eligible_population_0_12_months,
-                    0::numeric AS monthly_ep,
+                    0::int AS penta_target_config,
+                    0::int AS mcv_target_config,
+                    0::int AS utilization_target_config,
                     0::int AS target_rows_found
                 FROM barangays b
                 WHERE COALESCE(b.is_active, TRUE) = TRUE
@@ -976,7 +1570,9 @@ class M1ReportService {
                     COALESCE(t.eligible_population, 0)::int AS eligible_population,
                     COALESCE(t.eligible_population_0_11_months, 0)::int AS eligible_population_0_11_months,
                     COALESCE(t.eligible_population_0_12_months, 0)::int AS eligible_population_0_12_months,
-                    COALESCE(t.monthly_ep, 0) AS monthly_target,
+                    COALESCE(t.penta_target_config, 0)::int AS penta_target_config,
+                    COALESCE(t.mcv_target_config, 0)::int AS mcv_target_config,
+                    COALESCE(t.utilization_target_config, 0)::int AS utilization_target_config,
                     COALESCE(ma.penta1_count, 0)::int AS penta1_count,
                     COALESCE(ma.penta3_count, 0)::int AS penta3_count,
                     COALESCE(ma.mcv1_count, 0)::int AS mcv1_count,
@@ -993,12 +1589,10 @@ class M1ReportService {
                     COALESCE(eligible_population, 0)::int AS eligible_population,
                     COALESCE(eligible_population_0_11_months, 0)::int AS eligible_population_0_11_months,
                     COALESCE(eligible_population_0_12_months, 0)::int AS eligible_population_0_12_months,
-                    COALESCE(monthly_target, 0) AS monthly_target,
-                    COALESCE(SUM(COALESCE(monthly_target, 0)) OVER (
-                        PARTITION BY report_year
-                        ORDER BY report_month
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                    ), 0) AS cumulative_target_population,
+                    COALESCE(penta_target_config, 0)::int AS penta_target_config,
+                    COALESCE(mcv_target_config, 0)::int AS mcv_target_config,
+                    COALESCE(utilization_target_config, 0)::int AS utilization_target_config,
+                    (COALESCE(penta_target_config, 0) * report_month)::numeric AS cumulative_target_population,
                     COALESCE(penta1_count, 0)::int AS penta1_count,
                     COALESCE(penta3_count, 0)::int AS penta3_count,
                     COALESCE(mcv1_count, 0)::int AS mcv1_count,
@@ -1032,7 +1626,9 @@ class M1ReportService {
                 eligible_population,
                 eligible_population_0_11_months,
                 eligible_population_0_12_months,
-                monthly_target,
+                penta_target_config,
+                mcv_target_config,
+                utilization_target_config,
                 cumulative_target_population,
                 penta1_count,
                 penta3_count,
@@ -1076,7 +1672,12 @@ class M1ReportService {
             eligible_population: toNumber(row.eligible_population),
             eligible_population_0_11_months: toNumber(row.eligible_population_0_11_months),
             eligible_population_0_12_months: toNumber(row.eligible_population_0_12_months),
-            monthly_target: Number(row.monthly_target || 0),
+            penta_target_config: toNumber(row.penta_target_config),
+            mcv_target_config: toNumber(row.mcv_target_config),
+            utilization_target_config: toNumber(row.utilization_target_config),
+            penta_cumulative_target_population: toNumber(row.penta_target_config),
+            mcv_cumulative_target_population: toNumber(row.mcv_target_config),
+            utilization_cumulative_target_population: toNumber(row.utilization_target_config),
             cumulative_target_population: Number(row.cumulative_target_population || 0),
             penta1_count: toNumber(row.penta1_count),
             penta3_count: toNumber(row.penta3_count),
@@ -1096,7 +1697,7 @@ class M1ReportService {
             utilization_cumulative_dropout_rate: Number(row.utilization_cumulative_dropout_rate || 0),
             target_rows_found: toNumber(row.target_rows_found)
         }));
-        const targetsMissing = normalizedRows.every((row) => row.eligible_population <= 0);
+        const targetsMissing = normalizedRows.every((row) => row.penta_target_config <= 0 && row.mcv_target_config <= 0 && row.utilization_target_config <= 0);
 
         return {
             success: true,
@@ -1167,6 +1768,29 @@ class M1ReportService {
     }
 
     _normalizeEtclRow(row, remarkOverride = null) {
+        const externalFlags = {
+            bcg_external: row.bcg_external === true,
+            hepb_external: row.hepb_external === true,
+            penta1_external: row.penta1_external === true,
+            penta2_external: row.penta2_external === true,
+            penta3_external: row.penta3_external === true,
+            opv1_external: row.opv1_external === true,
+            opv2_external: row.opv2_external === true,
+            opv3_external: row.opv3_external === true,
+            pcv1_external: row.pcv1_external === true,
+            pcv2_external: row.pcv2_external === true,
+            pcv3_external: row.pcv3_external === true,
+            ipv1_external: row.ipv1_external === true,
+            ipv2_external: row.ipv2_external === true,
+            mcv1_external: row.mcv1_external === true,
+            mcv2_external: row.mcv2_external === true
+        };
+        const hasExternalDose = Object.values(externalFlags).some(Boolean);
+        const baseRemarks = remarkOverride || row.remarks || 'For monitoring';
+        const remarks = hasExternalDose && !String(baseRemarks).includes('External dose on file')
+            ? `${baseRemarks}; External dose on file`
+            : baseRemarks;
+
         return {
             infant_id: row.infant_id,
             id: row.infant_id,
@@ -1193,7 +1817,9 @@ class M1ReportService {
             ipv2_date: row.ipv2_date || null,
             mcv1_date: row.mcv1_date || null,
             mcv2_date: row.mcv2_date || null,
-            remarks: remarkOverride || row.remarks || 'For monitoring'
+            ...externalFlags,
+            has_external_dose: hasExternalDose,
+            remarks
         };
     }
 
@@ -1213,10 +1839,18 @@ class M1ReportService {
     }
 
     async getBarangayDssMetrics({ year, month, barangay } = {}) {
-        const reportYear = this._parseYear(year);
-        const reportMonth = this._parseMonth(month);
+        const { reportYear, reportMonth, periodMode, monthLabel } = this._resolveReportingPeriod({
+            year,
+            month,
+            allowAnnual: true
+        });
         const monitoring = await this.getMonitoringChart({ year: reportYear, barangay });
-        const selectedMonth = monitoring.rows.find((row) => row.report_month === reportMonth) || {};
+        const fallbackMonth = reportYear === new Date().getFullYear()
+            ? (new Date().getMonth() + 1)
+            : 12;
+        const selectedMonth = reportMonth === null
+            ? (monitoring.rows.find((row) => row.report_month === fallbackMonth) || monitoring.rows[monitoring.rows.length - 1] || {})
+            : (monitoring.rows.find((row) => row.report_month === reportMonth) || {});
         const canonicalSchedule = this._canonicalDoseCase('s');
         const vialGroupCase = this._vialGroupCase('s');
         const activeInfantClause = `COALESCE(i.status, 'Active') = 'Active'`;
@@ -1409,7 +2043,8 @@ class M1ReportService {
                 SELECT
                     v.infant_id,
                     COALESCE(v.report_dose_code, ${this._canonicalDoseCase('v')}) AS canonical_code,
-                    v.administered_date::date AS administered_date
+                    v.administered_date::date AS administered_date,
+                    COALESCE(v.is_external, FALSE) AS is_external
                 FROM vaccinations v
                 JOIN infants i ON i.id = v.infant_id
                 WHERE UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
@@ -1422,7 +2057,8 @@ class M1ReportService {
                 SELECT
                     s.infant_id,
                     ${canonicalSchedule} AS canonical_code,
-                    COALESCE(s.actual_date, s.recommended_date)::date AS administered_date
+                    COALESCE(s.actual_date, s.recommended_date)::date AS administered_date,
+                    FALSE AS is_external
                 FROM infant_schedules s
                 JOIN infants i ON i.id = s.infant_id
                 WHERE UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
@@ -1447,7 +2083,22 @@ class M1ReportService {
                     MIN(administered_date) FILTER (WHERE canonical_code = 'IPV1') AS ipv1_date,
                     MIN(administered_date) FILTER (WHERE canonical_code = 'IPV2') AS ipv2_date,
                     MIN(administered_date) FILTER (WHERE canonical_code = 'MCV1') AS mcv1_date,
-                    MIN(administered_date) FILTER (WHERE canonical_code = 'MCV2') AS mcv2_date
+                    MIN(administered_date) FILTER (WHERE canonical_code = 'MCV2') AS mcv2_date,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'BCG') AS bcg_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'HEPB') AS hepb_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PENTA1') AS penta1_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PENTA2') AS penta2_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PENTA3') AS penta3_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'OPV1') AS opv1_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'OPV2') AS opv2_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'OPV3') AS opv3_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PCV1') AS pcv1_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PCV2') AS pcv2_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'PCV3') AS pcv3_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'IPV1') AS ipv1_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'IPV2') AS ipv2_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'MCV1') AS mcv1_external,
+                    BOOL_OR(is_external) FILTER (WHERE canonical_code = 'MCV2') AS mcv2_external
                 FROM administered_doses
                 GROUP BY infant_id
             ),
@@ -1490,6 +2141,21 @@ class M1ReportService {
                 pd.ipv2_date,
                 pd.mcv1_date,
                 pd.mcv2_date,
+                COALESCE(pd.bcg_external, FALSE) AS bcg_external,
+                COALESCE(pd.hepb_external, FALSE) AS hepb_external,
+                COALESCE(pd.penta1_external, FALSE) AS penta1_external,
+                COALESCE(pd.penta2_external, FALSE) AS penta2_external,
+                COALESCE(pd.penta3_external, FALSE) AS penta3_external,
+                COALESCE(pd.opv1_external, FALSE) AS opv1_external,
+                COALESCE(pd.opv2_external, FALSE) AS opv2_external,
+                COALESCE(pd.opv3_external, FALSE) AS opv3_external,
+                COALESCE(pd.pcv1_external, FALSE) AS pcv1_external,
+                COALESCE(pd.pcv2_external, FALSE) AS pcv2_external,
+                COALESCE(pd.pcv3_external, FALSE) AS pcv3_external,
+                COALESCE(pd.ipv1_external, FALSE) AS ipv1_external,
+                COALESCE(pd.ipv2_external, FALSE) AS ipv2_external,
+                COALESCE(pd.mcv1_external, FALSE) AS mcv1_external,
+                COALESCE(pd.mcv2_external, FALSE) AS mcv2_external,
                 CASE
                     WHEN COALESCE(ss.has_defaulter, FALSE) THEN 'Defaulter'
                     WHEN COALESCE(ss.has_due_soon, FALSE) THEN 'Due Soon'
@@ -1536,7 +2202,7 @@ class M1ReportService {
             success: true,
             report_type: 'BARANGAY_DSS',
             generated_at: new Date().toISOString(),
-            period: { year: reportYear, month: reportMonth, month_label: MONTH_LABELS[reportMonth - 1] },
+            period: { year: reportYear, month: reportMonth, month_label: monthLabel, mode: periodMode },
             scope: { type: 'BARANGAY', barangay },
             metrics: {
                 defaulter_action_alert: {
@@ -1598,7 +2264,11 @@ class M1ReportService {
     }
 
     async getM1ReportForUser({ month, year, requestedBarangay, user } = {}) {
-        return this.getMonitoringChartForUser({ year, requestedBarangay, user, month });
+        const barangay = this._resolveUserBarangay({ requestedBarangay, user });
+        if (user?.role === ROLES.SUPER_ADMIN && !barangay) {
+            return this.getNipMacroReport({ year, month, barangay: undefined });
+        }
+        return this.getNipMicroReport({ year, month, barangay });
     }
 
     async getA1ReportForUser({ year, requestedBarangay, user } = {}) {

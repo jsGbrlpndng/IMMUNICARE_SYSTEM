@@ -78,8 +78,9 @@ router.get('/m1-targets', async (req, res) => {
         if (!requireSuperAdmin(req, res)) return;
 
         const reportYear = parseTargetYear(req.query.year);
+        const reportMonth = parseInt(String(req.query.month ?? new Date().getMonth() + 1), 10) || (new Date().getMonth() + 1);
         const service = new M1ReportService(db);
-        res.json(await service.getTargetConfiguration({ year: reportYear }));
+        res.json(await service.getTargetConfiguration({ year: reportYear, month: reportMonth }));
     } catch (error) {
         console.error('[GET /api/admin/m1-targets]', error);
         res.status(error.status || 500).json({
@@ -98,6 +99,7 @@ router.put('/m1-targets/bulk', async (req, res) => {
             ? { report_year: req.query?.year, targets: req.body }
             : (req.body || {});
         const reportYear = parseTargetYear(requestBody.report_year || requestBody.year);
+        const reportMonth = parseInt(String(requestBody.month ?? requestBody.report_month ?? req.query?.month ?? new Date().getMonth() + 1), 10) || (new Date().getMonth() + 1);
         const targets = Array.isArray(requestBody.targets)
             ? requestBody.targets.map((target) => ({
                 ...target,
@@ -105,13 +107,22 @@ router.put('/m1-targets/bulk', async (req, res) => {
                 eligible_population: parseInt(String(target?.eligible_population ?? '0'), 10) || 0,
                 eligible_population_0_11_months: parseInt(String(target?.eligible_population_0_11_months ?? target?.eligible_population ?? '0'), 10) || 0,
                 eligible_population_0_12_months: parseInt(String(target?.eligible_population_0_12_months ?? target?.eligible_population_0_11_months ?? target?.eligible_population ?? '0'), 10) || 0,
+                eligible_population_13_23_months: parseInt(String(target?.eligible_population_13_23_months ?? '0'), 10) || 0,
+                actual_population: parseInt(String(target?.actual_population ?? '0'), 10) || 0,
+                penta_cumulative_target_population: parseInt(String(target?.penta_cumulative_target_population ?? target?.eligible_population_0_11_months ?? '0'), 10) || 0,
+                mcv_cumulative_target_population: parseInt(String(target?.mcv_cumulative_target_population ?? target?.eligible_population_0_12_months ?? '0'), 10) || 0,
+                utilization_cumulative_target_population: parseInt(String(target?.utilization_cumulative_target_population ?? target?.eligible_population_0_12_months ?? '0'), 10) || 0,
                 monthly_target: target?.monthly_target === undefined ? undefined : Number(target.monthly_target),
+                monthly_target_0_11_months: target?.monthly_target_0_11_months === undefined ? undefined : Number(target.monthly_target_0_11_months),
+                monthly_target_13_23_months: target?.monthly_target_13_23_months === undefined ? undefined : Number(target.monthly_target_13_23_months),
                 monthly_target_is_manual: target?.monthly_target_is_manual === true
             }))
             : [];
         const service = new M1ReportService(db);
         const result = await service.saveTargetConfiguration({
             year: reportYear,
+            month: reportMonth,
+            municipalTarget: requestBody.municipal_target || requestBody.municipalTarget || {},
             targets,
             user: req.user,
             req

@@ -7,46 +7,8 @@ import {
     Clock
 } from 'lucide-react';
 import { formatDate, getDoseTimingStatus } from '../utils/formatters';
-const StatusBadge = ({ status }) => {
-    const styles = {
-        overdue: 'bg-red-100 text-red-700 border-red-200',
-        due_today: 'bg-orange-100 text-orange-700 border-orange-200',
-        due_soon: 'bg-amber-100 text-amber-700 border-amber-200',
-        scheduled: 'bg-gray-100 text-gray-600 border-gray-200',
-        administered: 'bg-green-100 text-green-700 border-green-200',
-        pending_validation: 'bg-amber-100 text-amber-700 border-amber-200',
-        ineligible: 'bg-slate-100 text-slate-600 border-slate-200',
-        default: 'bg-gray-100 text-gray-600'
-    };
-
-    const labels = {
-        overdue: 'Overdue',
-        due_today: 'Due Today',
-        due_soon: 'Due Soon',
-        scheduled: 'Scheduled',
-        administered: 'Administered',
-        pending_validation: 'Pending',
-        ineligible: 'Ineligible'
-    };
-
-    const icon = {
-        overdue: <AlertCircle className="w-3 h-3" />,
-        due_today: <Clock className="w-3 h-3" />,
-        due_soon: <Clock className="w-3 h-3" />,
-        scheduled: <Calendar className="w-3 h-3" />,
-        administered: <CheckCircle2 className="w-3 h-3" />,
-        pending_validation: <Clock className="w-3 h-3" />,
-        ineligible: <AlertCircle className="w-3 h-3" />
-    };
-
-    return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[status] || styles.default}`}>
-            {icon[status]}
-            {labels[status] || status}
-        </span>
-    );
-};
-
+import StatusBadge from './StatusBadge';
+import { normalizeClinicalStatus } from '../utils/clinicalStatus';
 
 const prepareScheduleForDisplay = (scheduleData) => {
     // Determine the array to map over. In the new merged API, it's passed directly or as schedule.record
@@ -86,6 +48,10 @@ const prepareScheduleForDisplay = (scheduleData) => {
             targetAge: v.target_age || v.targetAge || null,
             urgency: urgency,
             scheduleStatus,
+            clinical_status: normalizeClinicalStatus({
+                computed_schedule_status: scheduleStatus,
+                urgency
+            }),
             timingStatus,
             vaxStatus,
             vaccinationId: v.vaccination_id || v.vaccinationId
@@ -141,7 +107,7 @@ const NipScheduleTable = ({ schedule, isClinicalStaff, onRecordClick, registrati
                                         {formatDate(vax.dueDate)}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <StatusBadge status={vax.urgency} />
+                                        <StatusBadge record={vax} />
                                     </td>
                                     <td className="px-6 py-4 text-sm font-medium text-gray-900">
                                         {isCompleted ? formatDate(vax.administeredDate) : '-'}

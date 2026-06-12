@@ -75,6 +75,7 @@ const RecordVaccinationModal = ({
         brand: '',
         notes: '',
         vaccinator_name: user?.full_name || user?.name || '',
+        is_external: false,
         confirmation: false
     });
 
@@ -181,6 +182,7 @@ const RecordVaccinationModal = ({
                 administered_date: recordForm.administered_date,
                 brand: recordForm.brand || 'N/A',
                 notes: recordForm.notes,
+                is_external: recordForm.is_external,
                 recorded_by_role: user?.role,
                 override_early_dose: false, // Override logic is separate if needed, but hardstop enforces strictly now
                 validation_status: isBHW ? 'PENDING_VALIDATION' : 'VALIDATED'
@@ -367,6 +369,23 @@ const RecordVaccinationModal = ({
 
                         {/* Brand and Notes */}
                         <div className="space-y-5">
+                            <div className="rounded-sm border border-amber-200 bg-amber-50/60 p-4">
+                                <label className="flex items-start gap-3 text-sm font-semibold text-slate-800">
+                                    <input
+                                        type="checkbox"
+                                        checked={recordForm.is_external}
+                                        onChange={e => setRecordForm({ ...recordForm, is_external: e.target.checked })}
+                                        className="mt-0.5 h-5 w-5 rounded-sm border-slate-300 text-amber-700 focus:ring-amber-700"
+                                    />
+                                    <span>
+                                        <span className="block text-[10px] font-black uppercase tracking-widest text-amber-800">Administered Elsewhere</span>
+                                        <span className="mt-1 block text-xs font-bold leading-relaxed text-amber-900">
+                                            Use this for historical doses given at another clinic. It updates the child's schedule but is excluded from M1 accomplishment reporting.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vaccine Brand (Optional)</label>
                                 <input

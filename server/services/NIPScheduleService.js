@@ -563,6 +563,54 @@ class NIPScheduleService {
 
     }
 
+    async synchronizeCorrectedVaccination({
+        infantId,
+        vaccineCode,
+        doseNumber,
+        actualDate,
+        validationStatus,
+        scheduleId = null
+    }, connection = null) {
+        const db = connection || this.db;
+        const normalizedValidationStatus = String(validationStatus || '').trim().toUpperCase();
+        const targetStatus = normalizedValidationStatus === 'VALIDATED'
+            ? STATUS.COMPLETED
+            : STATUS.PENDING_VALIDATION;
+        const actualDateStr = targetStatus === STATUS.COMPLETED ? toDateOnlyString(actualDate) : null;
+
+        let resolvedScheduleId = scheduleId;
+        if (!resolvedScheduleId) {
+            const [scheduleRows] = await db.execute(
+                `SELECT id
+                 FROM infant_schedules
+                 WHERE infant_id = ? AND vaccine_code = ? AND dose_number = ?
+                 ORDER BY recommended_date ASC
+                 LIMIT 1`,
+                [infantId, vaccineCode, doseNumber]
+            );
+            resolvedScheduleId = scheduleRows[0]?.id || null;
+        }
+
+        if (!resolvedScheduleId) {
+            throw new Error(`GOVERNANCE ERROR: No matching schedule entry found for ${vaccineCode} Dose ${doseNumber} for this infant.`);
+        }
+
+        await db.execute(
+            `UPDATE infant_schedules
+             SET status = ?, actual_date = ?
+             WHERE id = ?`,
+            [targetStatus, actualDateStr, resolvedScheduleId]
+        );
+
+        await this.realignSeriesScheduleAfterCorrection(
+            infantId,
+            vaccineCode,
+            db
+        );
+
+        await this.updateScheduleStatuses(infantId, db);
+    }
+
     /**
      * Fetches the full schedule for an infant and categorizes it for the frontend
      */
@@ -635,6 +683,98 @@ class NIPScheduleService {
         });
 
         return categorization;
+    }
+
+    async realignSeriesScheduleAfterCorrection(infantId, vaccineCode, connection = null) {
+        const db = connection || this.db;
+        const series = getDoseSeriesKey(vaccineCode);
+        if (!series) return;
+
+        const [infantRows] = await db.execute(
+            'SELECT dob FROM infants WHERE id = ?',
+            [infantId]
+        );
+        if (!infantRows.length || !infantRows[0].dob) return;
+
+        const [scheduleRows] = await db.execute(
+            `SELECT id, vaccine_code, dose_number, latest_allowed_date, status, actual_date
+             FROM infant_schedules
+             WHERE infant_id = ?
+             ORDER BY dose_number ASC, recommended_date ASC`,
+            [infantId]
+        );
+
+        const seriesRows = scheduleRows.filter((row) => sameDoseSeries(row.vaccine_code, vaccineCode));
+        if (!seriesRows.length) return;
+
+        const activeRules = await this.getActiveRules(db);
+        const birthDate = new Date(infantRows[0].dob);
+        let rollingAnchorDate = null;
+
+        for (const row of seriesRows) {
+            const normalizedStatus = this._normalizeStoredStatus(row.status);
+            if (normalizedStatus === STATUS.COMPLETED && row.actual_date) {
+                rollingAnchorDate = new Date(row.actual_date);
+                continue;
+            }
+
+            if (normalizedStatus === STATUS.INELIGIBLE) {
+                continue;
+            }
+
+            const rule = activeRules.find((candidate) =>
+                String(candidate.vaccine_code).toUpperCase() === String(row.vaccine_code).toUpperCase()
+            );
+
+            if (!rule) continue;
+
+            const floorRecommendedDate = new Date(birthDate);
+            floorRecommendedDate.setDate(floorRecommendedDate.getDate() + Number(rule.min_age_days || 0));
+
+            const nextRecommendedDate = rollingAnchorDate && rule.min_interval_days
+                ? (() => {
+                    const intervalRecommendedDate = new Date(rollingAnchorDate);
+                    intervalRecommendedDate.setDate(intervalRecommendedDate.getDate() + Number(rule.min_interval_days || 0));
+                    return floorRecommendedDate > intervalRecommendedDate ? floorRecommendedDate : intervalRecommendedDate;
+                })()
+                : floorRecommendedDate;
+
+            const floorEarliestDate = new Date(birthDate);
+            floorEarliestDate.setDate(
+                floorEarliestDate.getDate() + getGraceAdjustedMinimumAgeDays(rule)
+            );
+
+            const nextEarliestDate = rollingAnchorDate && rule.min_interval_days
+                ? (() => {
+                    const intervalEarliestDate = new Date(rollingAnchorDate);
+                    intervalEarliestDate.setDate(
+                        intervalEarliestDate.getDate() + getGraceAdjustedIntervalDays(rule.min_interval_days)
+                    );
+                    return floorEarliestDate > intervalEarliestDate ? floorEarliestDate : intervalEarliestDate;
+                })()
+                : floorEarliestDate;
+
+            const recommendedDateString = toDateOnlyString(nextRecommendedDate);
+            const earliestDateString = toDateOnlyString(nextEarliestDate);
+            const latestAllowedDateString = toDateOnlyString(row.latest_allowed_date);
+
+            if (latestAllowedDateString && recommendedDateString > latestAllowedDateString) {
+                await db.execute(
+                    `UPDATE infant_schedules
+                     SET recommended_date = ?, earliest_allowed_date = ?, status = ?, actual_date = NULL
+                     WHERE id = ?`,
+                    [recommendedDateString, earliestDateString, STATUS.INELIGIBLE, row.id]
+                );
+                continue;
+            }
+
+            await db.execute(
+                `UPDATE infant_schedules
+                 SET recommended_date = ?, earliest_allowed_date = ?
+                 WHERE id = ?`,
+                [recommendedDateString, earliestDateString, row.id]
+            );
+        }
     }
 
     _calculateAgeMetrics(dob) {

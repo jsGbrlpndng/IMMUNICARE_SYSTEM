@@ -38,7 +38,21 @@ describe('vaccination report field derivation', () => {
 
     expect(mcv1.report_dose_code).toBe('MCV1');
     expect(mcv1.report_age_bucket).toBe(REPORT_AGE_BUCKETS.AGE_9_12M);
-    expect(mcv1.report_classification).toBeNull();
+    expect(mcv1.report_classification).toBe('ROUTINE');
+  });
+
+  test('derives catch-up classification for late routine series doses', () => {
+    const penta = buildVaccinationReportFields({
+      vaccine_code: 'PENTA-1',
+      vaccine_name: 'Pentavalent 1',
+      dose_number: 1,
+      administered_date: '2028-02-15',
+      dob: '2026-01-01',
+      barangay: 'LANGGAM'
+    });
+
+    expect(penta.report_age_bucket).toBe(REPORT_AGE_BUCKETS.AGE_24_59M);
+    expect(penta.report_classification).toBe('CATCH_UP');
   });
 
   test('normalizes only explicit report classification values', () => {

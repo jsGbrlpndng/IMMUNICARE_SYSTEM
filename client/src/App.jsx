@@ -41,6 +41,7 @@ import FollowUpTasks from './pages/clinical/FollowUpTasks';
 import AdminSpatialMap from './pages/admin/AdminSpatialMap';
 import AdminPopulationMap from './pages/admin/AdminPopulationMap';
 import TargetConfiguration from './pages/admin/TargetConfiguration';
+import SuperAdminMap from './pages/admin/SuperAdminMap';
 
 function App() {
     return (
@@ -324,6 +325,14 @@ function App() {
                         element={
                             <SuperAdminRoute>
                                 <SuperAdminLayout><SuperAdminAnalytics /></SuperAdminLayout>
+                            </SuperAdminRoute>
+                        }
+                    />
+                    <Route
+                        path="/superadmin/geospatial"
+                        element={
+                            <SuperAdminRoute>
+                                <SuperAdminLayout><SuperAdminMap /></SuperAdminLayout>
                             </SuperAdminRoute>
                         }
                     />

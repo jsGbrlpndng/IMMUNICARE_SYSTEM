@@ -144,7 +144,7 @@ export const isStepValid = (step, formData, errors) => {
         if (!formData.bcg_status || !formData.hepatitis_b_status) return false;
         
         // BCG Validation
-        if (formData.bcg_status === 'Given') {
+        if (formData.bcg_status?.startsWith('Given')) {
             if (!formData.bcg_date) return false;
             const bcgDate = new Date(formData.bcg_date);
             bcgDate.setHours(0, 0, 0, 0);

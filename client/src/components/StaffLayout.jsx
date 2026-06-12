@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart2, CalendarDays, ClipboardList, Map as MapIcon, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
 import SidebarNav from './SidebarNav';
+import NotificationBell from './NotificationBell';
+import { useAuth } from '../contexts/AuthContext';
 
 const clinicalNavigation = [
     {
@@ -42,6 +44,7 @@ const clinicalNavigation = [
  */
 const StaffLayout = ({ children }) => {
     const location = useLocation();
+    const { user } = useAuth();
 
     const [isCollapsed, setIsCollapsed] = useState(() => {
         const saved = localStorage.getItem('sidebar-collapsed');
@@ -94,6 +97,10 @@ const StaffLayout = ({ children }) => {
                         <p className="text-sm text-slate-400 font-medium">
                             Clinical Portal <span className="text-slate-700 font-bold">/ {pageName}</span>
                         </p>
+                    </div>
+
+                    <div className="ml-auto flex items-center gap-3">
+                        <NotificationBell visible={user?.role === 'Midwife'} />
                     </div>
                 </nav>
 

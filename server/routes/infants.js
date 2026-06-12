@@ -17,6 +17,14 @@ const requireClinicalPrivilege = requireRole(
     requireRole.CLINICAL_PRIVILEGED,
     'Only Midwives, Admins, and Super Admins can access infant clinical endpoints.'
 );
+const requireGlobalSearchPrivilege = requireRole(
+    [ROLES.BHW, ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN],
+    'Only BHWs, Midwives, Admins, and Super Admins can perform global infant search.'
+);
+const requireTransferPrivilege = requireRole(
+    [ROLES.MIDWIFE],
+    'Only Midwives can transfer infants into their assigned barangay.'
+);
 
 const ensureArchiveColumns = async () => {
     await db.execute(`ALTER TABLE infants ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(100)`);
@@ -124,6 +132,22 @@ router.get('/drafts', requireClinicalPrivilege, async (req, res) => {
     } catch (error) {
         console.error('Error fetching drafts:', error);
         res.status(500).json({ success: false, error: 'Failed to fetch drafts' });
+    }
+});
+
+// GET /api/infants/global-search
+// Municipal identity search for locating existing infant records before registration.
+router.get('/global-search', requireGlobalSearchPrivilege, async (req, res) => {
+    try {
+        const result = await infantService.globalSearchInfants(req.query, req.user);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        const status = error.status || 500;
+        res.status(status).json({
+            success: false,
+            error: status === 500 ? 'Failed to search global infant records' : error.message,
+            code: error.code || undefined
+        });
     }
 });
 
@@ -331,6 +355,39 @@ router.get('/:id/vaccination-record', requireClinicalPrivilege, async (req, res)
     } catch (error) {
         console.error("CRASH IN /vaccination-record:", error);
         res.status(500).json({ error: "Failed to fetch vaccination records." });
+    }
+});
+
+// POST /api/infants/:id/transfer
+// Transfer an existing infant into the authenticated Midwife's assigned barangay.
+router.post('/:id/transfer', requireTransferPrivilege, async (req, res) => {
+    try {
+        const result = await infantService.transferInfant({
+            infantId: req.params.id,
+            actor: req.user,
+            reason: req.body.reason,
+            notes: req.body.notes,
+            current_address: req.body.current_address,
+            exact_address: req.body.exact_address,
+            locality: req.body.locality,
+            landmark: req.body.landmark,
+            latitude: req.body.latitude,
+            longitude: req.body.longitude,
+            req
+        });
+
+        res.json({
+            success: true,
+            message: 'Infant transferred successfully',
+            ...result
+        });
+    } catch (error) {
+        const status = error.status || 500;
+        res.status(status).json({
+            success: false,
+            error: status === 500 ? 'Failed to transfer infant record' : error.message,
+            code: error.code || undefined
+        });
     }
 });
 

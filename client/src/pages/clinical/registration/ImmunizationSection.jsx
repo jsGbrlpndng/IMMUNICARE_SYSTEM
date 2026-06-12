@@ -14,18 +14,19 @@ const ImmunizationSection = ({ formData, errors, handleChange, isReadOnly = fals
                         <InputWrapper label="BCG" required hasError={!!errors.bcg_status}>
                             <select name="bcg_status" value={formData.bcg_status} onChange={handleChange} className={inputClasses} disabled={isReadOnly}>
                                 <option value="">Select Status</option>
-                                <option value="Given">Given</option>
+                                <option value="Given within 24 hours">Given within 24 hours</option>
+                                <option value="Given more than 24 hours">Given more than 24 hours</option>
                                 <option value="Not Given">Not Given</option>
                                 <option value="Unknown">Unknown</option>
                             </select>
                         </InputWrapper>
-                        <InputWrapper label="Date Given" required={formData.bcg_status === 'Given'} hasError={!!errors.bcg_date}>
+                        <InputWrapper label="Date Given" required={formData.bcg_status?.startsWith('Given')} hasError={!!errors.bcg_date}>
                             <input 
                                 type="date" 
                                 name="bcg_date" 
                                 value={formData.bcg_date} 
                                 onChange={handleChange} 
-                                disabled={formData.bcg_status !== 'Given' || isReadOnly} 
+                                disabled={formData.bcg_status !== 'Given more than 24 hours' || isReadOnly} 
                                 min={formData.dob}
                                 max={new Date().toISOString().split('T')[0]}
                                 className={inputClasses} 

@@ -27,7 +27,10 @@ const ACTION_LABELS = {
     USER_DELETE: 'Deleted Staff Account',
     SYSTEM_CONFIG_UPDATE: 'Updated System Settings',
     M1_TARGETS_BULK_UPDATE: 'Updated Annual Barangay Targets',
-    AUDIT_EXPORT: 'Exported Audit Records'
+    AUDIT_EXPORT: 'Exported Audit Records',
+    REGISTRATION_SUBMIT: 'Submitted Registration',
+    TRANSFER_MERGE: 'Merged Transfer',
+    TRANSFER_HANDOFF_NOTIF: 'Sent Transfer Handoff Notice'
 };
 
 const TARGET_LABELS = {
@@ -185,6 +188,13 @@ export const formatAuditTarget = (targetEntityOrRow = {}, targetRecordId = undef
     const row = typeof targetEntityOrRow === 'object' && targetEntityOrRow !== null
         ? targetEntityOrRow
         : { target_entity: targetEntityOrRow, target_record_id: targetRecordId, target_name: targetName };
+    const transferMetadata = safeObject(row.metadata);
+    const transferFrom = transferMetadata.from_barangay || transferMetadata.previous_barangay || transferMetadata.originating_barangay;
+    const transferTo = transferMetadata.to_barangay || transferMetadata.new_barangay || transferMetadata.current_barangay;
+    const action = String(row.action || row.action_type || '').trim().toUpperCase();
+    if (action === 'TRANSFER_MERGE' && transferFrom && transferTo) {
+        return `Transfer: ${transferFrom} -> ${transferTo}`;
+    }
     const readableName = String(row.target_name || '').trim();
     if (readableName) return readableName;
     const entity = String(row.target_entity || '').trim();

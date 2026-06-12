@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BarChart3, FileText, Filter, LayoutDashboard, Menu, Settings, Target, Users } from 'lucide-react';
+import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Settings, Target, Users } from 'lucide-react';
 import SidebarNav from './SidebarNav';
 import { useBarangayFilter } from '../contexts/BarangayFilterContext';
 import { RHU2_BARANGAYS } from './reports/reportConfig';
@@ -13,6 +13,7 @@ const superAdminNavigation = [
             { name: 'User Management', path: '/superadmin/users', icon: Users },
             { name: 'Target Configuration', path: '/superadmin/targets', icon: Target },
             { name: 'Municipal Reports', path: '/superadmin/reports', icon: BarChart3 },
+            { name: 'Geospatial Intelligence', path: '/superadmin/geospatial', icon: MapPinned },
             { name: 'Audit Trail', path: '/superadmin/audit', icon: FileText },
             { name: 'Account Settings', path: '/superadmin/account-settings', icon: Settings }
         ]
@@ -43,7 +44,7 @@ const SuperAdminLayout = ({ children }) => {
     }, [pageName]);
 
     return (
-        <div className="flex min-h-screen bg-[#F8FAFC]">
+        <div className="flex min-h-screen overflow-x-hidden bg-[#F8FAFC]">
             <SidebarNav
                 isCollapsed={isCollapsed}
                 setIsCollapsed={setIsCollapsed}
@@ -55,7 +56,7 @@ const SuperAdminLayout = ({ children }) => {
                 logoutRedirectPath="/portal"
             />
 
-            <div className={`flex flex-1 flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
+            <div className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
                 <nav className="sticky top-0 z-40 flex h-14 w-full items-center justify-between gap-4 border-b border-slate-100 bg-white/95 px-5 shadow-sm backdrop-blur-lg">
                     <div className="flex items-center gap-4">
                         <button
@@ -92,7 +93,7 @@ const SuperAdminLayout = ({ children }) => {
                     </div>
                 </nav>
 
-                <main className="flex-1">
+                <main className="flex min-w-0 flex-1 overflow-x-hidden">
                     {children}
                 </main>
             </div>

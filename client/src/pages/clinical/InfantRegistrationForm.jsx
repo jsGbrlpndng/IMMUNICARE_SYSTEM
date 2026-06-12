@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import apiClient from '../../services/apiClient';
-import { 
+import {
     ClipboardCheck, CheckCircle, Save, Loader2, SaveAll, AlertTriangle, Check, ChevronLeft, ChevronRight, Info
 } from 'lucide-react';
 
@@ -58,6 +58,7 @@ const initialFormState = {
     bcg_date: '',
     hepatitis_b_status: '',
     hepatitis_b_date: '',
+    bhw_intake_notes: '',
     birth_setting: 'FACILITY',
     registration_status: '',
     rejection_reason: '',
@@ -106,6 +107,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const [duplicateWarning, setDuplicateWarning] = useState(null);
     const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
     const [pendingDuplicateAction, setPendingDuplicateAction] = useState(null);
+    const [activeTransferInquiry, setActiveTransferInquiry] = useState(null);
     const [registeredInfantInfo, setRegisteredInfantInfo] = useState(null);
     const [activeRegistrationId, setActiveRegistrationId] = useState(null);
 
@@ -132,7 +134,10 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             actionType,
             matches,
             duplicateTier: options.duplicateTier || 'STRICT_DUPLICATE',
-            message: options.message || null
+            message: options.message || null,
+            inquiryBarangay: options.inquiryBarangay || null,
+            hardBlock: options.hardBlock === true,
+            allowOverride: options.allowOverride !== false
         });
         setDuplicateAcknowledged(false);
         setPendingDuplicateAction(actionType);
@@ -602,6 +607,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
 
         if (name === 'dob') {
+            if (newFormData.bcg_status === 'Given within 24 hours') {
+                newFormData.bcg_date = value;
+            }
             if (newFormData.hepatitis_b_status === 'Given within 24 hours') {
                 newFormData.hepatitis_b_date = value;
             }
@@ -622,7 +630,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         }
         // --- Immunization Logic & Automation ---
         if (name === 'bcg_status') {
-            if (value === 'Not Given' || value === 'Unknown' || value === '') {
+            if (value === 'Given within 24 hours') {
+                newFormData.bcg_date = formData.dob;
+            } else if (value === 'Not Given' || value === 'Unknown' || value === '') {
                 newFormData.bcg_date = '';
             }
         }
@@ -699,21 +709,6 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             return;
         }
 
-        if (currentStep === 4) {
-            setIsCheckingDuplicates(true);
-            try {
-                const res = await apiClient.post('/registrations/check-duplicates', { data: formData });
-                if (res.ok) {
-                    const data = await res.json();
-                    setDuplicateMatches(data.matches || []);
-                }
-            } catch (err) {
-                console.error("Duplicate check failed:", err);
-            } finally {
-                setIsCheckingDuplicates(false);
-            }
-        }
-
         setCurrentStep(prev => Math.min(prev + 1, 5));
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -721,6 +716,70 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const handleBack = () => {
         setCurrentStep(prev => Math.max(prev - 1, 1));
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const runSubmissionDuplicateGate = async (normalizedFormData) => {
+        const res = await apiClient.post('/registrations/check-duplicates', { data: normalizedFormData });
+        if (!res.ok) {
+            throw new Error(await readApiError(res, 'Failed to validate duplicate status before submission.'));
+        }
+
+        const data = await res.json().catch(() => ({}));
+        const duplicateTier = String(data?.duplicate_alert?.status || data?.type || '').toUpperCase();
+        const matches = Array.isArray(data?.matches) ? data.matches : [];
+        const inquiryNotes = String(overrideReason || '').trim();
+
+        if (['STRICT_DUPLICATE', 'PROBABLE_DUPLICATE'].includes(duplicateTier)) {
+            setActiveTransferInquiry(null);
+            openDuplicateWarning('submit', matches, {
+                duplicateTier,
+                message: data?.duplicate_alert?.message || data?.message || 'An existing infant record already matches this identity in your barangay.',
+                hardBlock: true,
+                allowOverride: false
+            });
+            return { blocked: true };
+        }
+
+        if (duplicateTier === 'TRANSFER_POSSIBLE') {
+            const transferInquiry = {
+                duplicateTier,
+                inquiryBarangay: data?.duplicate_alert?.barangay || null,
+                signature: data?.duplicate_alert?.signature || null,
+                matches
+            };
+            setActiveTransferInquiry(transferInquiry);
+
+            if (inquiryNotes) {
+                return {
+                    blocked: false,
+                    transferInquiry: {
+                        transfer_inquiry_notes: inquiryNotes,
+                        override_reason: inquiryNotes,
+                        duplicate_resolution: {
+                            disposition: 'TRANSFER_INQUIRY_SUBMITTED',
+                            resolved: false,
+                            signature: transferInquiry.signature,
+                            inquiry_barangay: transferInquiry.inquiryBarangay,
+                            notes: inquiryNotes,
+                            submitted_at: new Date().toISOString()
+                        }
+                    }
+                };
+            }
+
+            openDuplicateWarning('submit', matches, {
+                duplicateTier,
+                message: data?.duplicate_alert?.message || `Potential match found in Barangay ${data?.duplicate_alert?.barangay || 'another barangay'}. Please ask the caregiver: "Are you from another Barangay?" If yes, contact your Midwife to initiate a formal transfer.`,
+                inquiryBarangay: data?.duplicate_alert?.barangay || null,
+                hardBlock: false,
+                allowOverride: false
+            });
+            setSubmissionError('Transfer inquiry notes are required before submitting this cross-barangay match for Midwife review.');
+            return { blocked: true };
+        }
+
+        setActiveTransferInquiry(null);
+        return { blocked: false };
     };
 
     const handleSaveDraft = async ({ overrideDuplicate = false } = {}) => {
@@ -798,6 +857,18 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 exact_address: formData.exact_address || '',
                 current_address: formData.current_address || formData.exact_address || ''
             };
+
+            if (userRole === 'BHW' && !overrideDuplicate) {
+                const duplicateGate = await runSubmissionDuplicateGate(normalizedFormData);
+                if (duplicateGate.blocked) {
+                    return;
+                }
+
+                if (duplicateGate.transferInquiry) {
+                    Object.assign(normalizedFormData, duplicateGate.transferInquiry);
+                }
+            }
+
             let res;
             if (userRole === 'BHW') {
                 // BHW Workflow: Submit for validation
@@ -857,9 +928,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 if (res.status === 409) {
                     const conflictData = await res.json().catch(() => ({}));
                     if (String(conflictData?.error_code || '').includes('DUPLICATE')) {
-                        openDuplicateWarning(userRole === 'BHW' ? 'submit' : 'submit', conflictData.matches || [], {
-                            duplicateTier: conflictData?.duplicate_tier || conflictData?.duplicate_alert?.status,
-                            message: conflictData?.message || conflictData?.error
+                        const duplicateTier = String(conflictData?.duplicate_tier || conflictData?.duplicate_alert?.status || '').toUpperCase();
+                        openDuplicateWarning('submit', conflictData.matches || [], {
+                            duplicateTier,
+                            message: conflictData?.message || conflictData?.error,
+                            inquiryBarangay: conflictData?.duplicate_alert?.barangay || null,
+                            hardBlock: ['STRICT_DUPLICATE', 'PROBABLE_DUPLICATE'].includes(duplicateTier),
+                            allowOverride: false
                         });
                         return;
                     }
@@ -904,7 +979,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     };
 
     const handleProceedDuplicateOverride = async () => {
-        if (!duplicateWarning || !duplicateAcknowledged || !pendingDuplicateAction) return;
+        if (!duplicateWarning || !duplicateWarning.allowOverride || !duplicateAcknowledged || !pendingDuplicateAction) return;
         const action = pendingDuplicateAction;
         closeDuplicateWarning();
 
@@ -989,15 +1064,23 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                             </div>
                             <div className="flex-1">
                                 <p className="text-[10px] font-black uppercase tracking-[0.28em] text-amber-700 mb-1">
-                                    {duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE' ? 'Possible Duplicate Detected' : 'Duplicate Registration Detected'}
+                                    {duplicateWarning.duplicateTier === 'TRANSFER_POSSIBLE'
+                                        ? 'Transfer Inquiry'
+                                        : duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
+                                            ? 'Possible Duplicate Detected'
+                                            : 'Duplicate Registration Detected'}
                                 </p>
                                 <h2 className="text-lg font-black text-slate-900 leading-tight">
-                                    {duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
+                                    {duplicateWarning.duplicateTier === 'TRANSFER_POSSIBLE'
+                                        ? 'Potential cross-barangay match requires Midwife review.'
+                                        : duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
                                         ? 'Clinical review required before saving a similar patient identity.'
                                         : 'Clinical review required before saving this record.'}
                                 </h2>
                                 <p className="mt-2 text-sm font-semibold text-slate-600 leading-relaxed">
-                                    {duplicateWarning.message || (duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
+                                    {duplicateWarning.message || (duplicateWarning.duplicateTier === 'TRANSFER_POSSIBLE'
+                                        ? `Potential match found in Barangay ${duplicateWarning.inquiryBarangay || 'another barangay'}. Please ask the caregiver: "Are you from another Barangay?" If yes, contact your Midwife to initiate a formal transfer.`
+                                        : duplicateWarning.duplicateTier === 'PROBABLE_DUPLICATE'
                                         ? 'A similar infant record already exists in this barangay. Review the matching records before proceeding.'
                                         : 'An existing record matches this Infant&apos;s Name, DOB, and Barangay.')}
                                 </p>
@@ -1026,17 +1109,19 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                 </div>
                             </div>
 
-                            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-                                <input
-                                    type="checkbox"
-                                    checked={duplicateAcknowledged}
-                                    onChange={(e) => setDuplicateAcknowledged(e.target.checked)}
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-[#064E3B] focus:ring-[#064E3B]"
-                                />
-                                <span className="text-sm font-semibold text-slate-700 leading-relaxed">
-                                    I acknowledge this is a potential duplicate and confirm this is a distinct patient.
-                                </span>
-                            </label>
+                            {duplicateWarning.allowOverride && (
+                                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                                    <input
+                                        type="checkbox"
+                                        checked={duplicateAcknowledged}
+                                        onChange={(e) => setDuplicateAcknowledged(e.target.checked)}
+                                        className="mt-1 h-4 w-4 rounded border-slate-300 text-[#064E3B] focus:ring-[#064E3B]"
+                                    />
+                                    <span className="text-sm font-semibold text-slate-700 leading-relaxed">
+                                        I acknowledge this is a potential duplicate and confirm this is a distinct patient.
+                                    </span>
+                                </label>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
@@ -1045,16 +1130,18 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                 onClick={closeDuplicateWarning}
                                 className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-slate-600 hover:bg-slate-100"
                             >
-                                Cancel
+                                {duplicateWarning.duplicateTier === 'TRANSFER_POSSIBLE' ? 'Close' : 'Cancel'}
                             </button>
-                            <button
-                                type="button"
-                                onClick={handleProceedDuplicateOverride}
-                                disabled={!duplicateAcknowledged}
-                                className="rounded-md bg-[#064E3B] px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-sm hover:bg-[#065f46] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                Proceed Anyway
-                            </button>
+                            {duplicateWarning.allowOverride && (
+                                <button
+                                    type="button"
+                                    onClick={handleProceedDuplicateOverride}
+                                    disabled={!duplicateAcknowledged}
+                                    className="rounded-md bg-[#064E3B] px-5 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-sm hover:bg-[#065f46] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Proceed Anyway
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

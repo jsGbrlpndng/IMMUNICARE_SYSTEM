@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import apiClient from '../services/apiClient';
+import { formatReportingPeriodLabel } from './reports/reportConfig';
 
 const safeNumber = (value) => {
     const parsed = Number(value || 0);
@@ -419,7 +420,7 @@ const M1ReportView = ({ month, year, barangay, reportMode }) => {
     const buildQuery = useCallback((path, includeMonth = true) => {
         const params = new URLSearchParams();
         if (year) params.set('year', year);
-        if (includeMonth && month) params.set('month', month);
+        if (includeMonth && month !== undefined && month !== null) params.set('month', String(month));
         if (barangay) params.set('barangay', String(barangay));
         const query = params.toString();
         return query ? `${path}?${query}` : path;
@@ -490,6 +491,8 @@ const M1ReportView = ({ month, year, barangay, reportMode }) => {
 
     const period = primaryReport?.period || {};
     const scope = primaryReport?.scope || {};
+    const periodLabel = formatReportingPeriodLabel(period?.month, period?.year || year);
+    const isAnnual = period?.mode === 'ANNUAL' || period?.month === null;
 
     return (
         <div className="space-y-6 print:space-y-3">
@@ -498,13 +501,15 @@ const M1ReportView = ({ month, year, barangay, reportMode }) => {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-100">
-                                San Pedro NIP Monthly Accomplishment
+                                {isAnnual ? 'San Pedro NIP Annual Accomplishment' : 'San Pedro NIP Monthly Accomplishment'}
                             </p>
                             <h2 className="mt-1 text-2xl font-black">
-                                {shouldUseMicroView ? 'Barangay Micro Report' : 'RHU Macro Report'}
+                                {shouldUseMicroView
+                                    ? (isAnnual ? 'Barangay Annual Report' : 'Barangay Micro Report')
+                                    : (isAnnual ? 'RHU Annual Macro Report' : 'RHU Macro Report')}
                             </h2>
                             <p className="mt-1 text-xs font-bold text-emerald-100">
-                                {scope?.label || scope?.barangay || 'Assigned Barangay'} - {period?.month_label || ''} {period?.year || year}
+                                {scope?.label || scope?.barangay || 'Assigned Barangay'} - {periodLabel}
                             </p>
                         </div>
                         <button

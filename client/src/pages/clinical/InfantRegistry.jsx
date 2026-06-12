@@ -3,27 +3,23 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Search,
-    User,
-    Calendar,
-    MapPin,
     ChevronLeft,
     ChevronRight,
-    ExternalLink,
-    Filter,
     Users,
     RefreshCw,
-    CheckCircle2,
-    AlertCircle,
-    Activity,
     Clock,
     FileText,
     ShieldCheck,
     Plus,
-    Phone
+    Phone,
+    AlertCircle
 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
+import GlobalInfantSearchModal from '../../components/GlobalInfantSearchModal';
+import StatusBadge from '../../components/StatusBadge';
+import FilterToolbar from '../../components/FilterToolbar';
 
 /**
  * InfantRegistry - Master clinical directory with server-side pagination and search.
@@ -40,13 +36,28 @@ export default function InfantRegistry() {
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(1);
     const [meta, setMeta] = useState({ totalRecords: 0, totalPages: 1 });
+    const [filterOptions, setFilterOptions] = useState({
+        barangays: [],
+        assignedBhws: [],
+        vaccineTypes: [],
+        ageGroups: [],
+        sortOptions: []
+    });
     const [view, setView] = useState('Active');
     const [statusFilter, setStatusFilter] = useState('APPROVED,PENDING_VALIDATION,NEEDS_CORRECTION');
+    const [registryFilters, setRegistryFilters] = useState({
+        barangay: 'All',
+        ageGroup: 'All',
+        vaccineType: 'All',
+        assignedBhw: 'All'
+    });
+    const [sortBy, setSortBy] = useState('urgency');
     const [confirmArchiveInfant, setConfirmArchiveInfant] = useState(null);
     const [archiveReason, setArchiveReason] = useState('');
     const [archiveNotes, setArchiveNotes] = useState('');
     const [archiveError, setArchiveError] = useState('');
     const [updatingStatusId, setUpdatingStatusId] = useState(null);
+    const [showGlobalSearch, setShowGlobalSearch] = useState(false);
     const limit = 15;
     
     // Parse urgency from URL search params safely
@@ -57,39 +68,74 @@ export default function InfantRegistry() {
     }, [location?.search]);
 
     // Fetch data from backend
-    const fetchRegistry = useCallback(async (search = '', currentPage = 1, registrationStatus = '', urgency = '', lifecycleStatus = 'Active') => {
+    const fetchRegistry = useCallback(async (
+        search = '',
+        currentPage = 1,
+        registrationStatus = '',
+        urgency = '',
+        lifecycleStatus = 'Active',
+        activeFilters = registryFilters,
+        activeSortBy = sortBy
+    ) => {
         setLoading(true);
         try {
-            const statusParam = `&status=${encodeURIComponent(lifecycleStatus || 'Active')}`;
-            const registrationStatusParam = registrationStatus ? `&registration_status=${registrationStatus}` : '';
-            const urgencyParam = urgency ? `&urgency=${urgency}` : '';
-            const res = await apiClient.get(`/infants?search=${encodeURIComponent(search)}&page=${currentPage}&limit=${limit}${statusParam}${registrationStatusParam}${urgencyParam}`);
+            const params = new URLSearchParams();
+            params.set('search', search);
+            params.set('page', String(currentPage));
+            params.set('limit', String(limit));
+            params.set('status', lifecycleStatus || 'Active');
+            if (registrationStatus) params.set('registration_status', registrationStatus);
+            if (urgency) params.set('urgency', urgency);
+            if (activeSortBy) params.set('sortBy', activeSortBy);
+
+            if (user?.role === 'Super Admin') {
+                params.set('barangay', activeFilters?.barangay === 'All' ? '' : (activeFilters?.barangay || ''));
+            }
+
+            if (activeFilters?.ageGroup && activeFilters.ageGroup !== 'All') {
+                params.set('ageGroup', activeFilters.ageGroup);
+            }
+            if (activeFilters?.vaccineType && activeFilters.vaccineType !== 'All') {
+                params.set('vaccineType', activeFilters.vaccineType);
+            }
+            if (activeFilters?.assignedBhw && activeFilters.assignedBhw !== 'All') {
+                params.set('assignedBhw', activeFilters.assignedBhw);
+            }
+
+            const res = await apiClient.get(`/infants?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
                 setInfants(data.infants);
                 setMeta(data.pagination);
+                setFilterOptions(data.filter_options || {
+                    barangays: [],
+                    assignedBhws: [],
+                    vaccineTypes: [],
+                    ageGroups: [],
+                    sortOptions: []
+                });
             }
         } catch (error) {
             console.error('Registry Fetch Error:', error);
         } finally {
             setLoading(false);
         }
-    }, [limit]);
+    }, [limit, registryFilters, sortBy, user?.role]);
 
     // Debounced search effect
     useEffect(() => {
         const timeout = setTimeout(() => {
-            fetchRegistry(searchTerm, 1, statusFilter, urgencyFilter, view);
+            fetchRegistry(searchTerm, 1, statusFilter, urgencyFilter, view, registryFilters, sortBy);
             setPage(1);
         }, 500);
         return () => clearTimeout(timeout);
-    }, [searchTerm, statusFilter, urgencyFilter, view, fetchRegistry]);
+    }, [searchTerm, statusFilter, urgencyFilter, view, registryFilters, sortBy, fetchRegistry]);
 
     // Page change handler
     const handlePageChange = (newPage) => {
         if (newPage >= 1 && newPage <= meta.totalPages) {
             setPage(newPage);
-            fetchRegistry(searchTerm, newPage, statusFilter, urgencyFilter, view);
+            fetchRegistry(searchTerm, newPage, statusFilter, urgencyFilter, view, registryFilters, sortBy);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
@@ -99,7 +145,7 @@ export default function InfantRegistry() {
         setPage(1);
     };
 
-    const refreshCurrentView = () => fetchRegistry(searchTerm, page, statusFilter, urgencyFilter, view);
+    const refreshCurrentView = () => fetchRegistry(searchTerm, page, statusFilter, urgencyFilter, view, registryFilters, sortBy);
 
     const archiveRecord = async () => {
         if (!confirmArchiveInfant?.id || !archiveReason) return;
@@ -138,6 +184,13 @@ export default function InfantRegistry() {
             alert(error.message);
         } finally {
             setUpdatingStatusId(null);
+        }
+    };
+
+    const handleGlobalTransferComplete = async (payload) => {
+        await refreshCurrentView();
+        if (payload?.infant_id) {
+            navigate(`/clinical/registry/${payload.infant_id}`);
         }
     };
 
@@ -202,54 +255,6 @@ export default function InfantRegistry() {
         }
     };
 
-    // Dynamic NIP Status Badge Mapping
-    const getStatusBadge = (infant) => {
-        const urgency = infant.urgency;
-        const computedStatus = infant.computed_schedule_status;
-        const days = infant.days_overdue || 0;
-
-        switch (urgency) {
-            case 'defaulter':
-                return (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white border border-red-700 flex items-center gap-1.5 w-fit">
-                        <AlertCircle className="w-3 h-3" /> Defaulter
-                    </span>
-                );
-            case 'overdue':
-                if (days > 42 || computedStatus === 'DEFAULTER') {
-                    return (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white border border-red-700 flex items-center gap-1.5 w-fit">
-                            <AlertCircle className="w-3 h-3" /> Defaulter
-                        </span>
-                    );
-                }
-                return (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-red-700 border border-red-100 flex items-center gap-1.5 w-fit">
-                        <AlertCircle className="w-3 h-3" /> Overdue
-                    </span>
-                );
-            case 'due_today':
-            case 'due_soon':
-                return (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100 flex items-center gap-1.5 w-fit">
-                        <Clock className="w-3 h-3" /> Due Soon
-                    </span>
-                );
-            case 'completed':
-                return (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-1.5 w-fit">
-                        <CheckCircle2 className="w-3 h-3" /> Fully Immunized
-                    </span>
-                );
-            default:
-                return (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-100 flex items-center gap-1.5 w-fit">
-                        <Activity className="w-3 h-3" /> On Track
-                    </span>
-                );
-        }
-    };
-
     return (
         <div className="flex flex-col gap-6">
             <div className="clinical-card">
@@ -269,6 +274,16 @@ export default function InfantRegistry() {
 
                     <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
 
+                        {['Midwife', 'Admin', 'Super Admin'].includes(user?.role) && (
+                            <button
+                                onClick={() => setShowGlobalSearch(true)}
+                                className="border border-emerald-800 bg-white px-5 py-3 rounded-md flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-800 transition-all hover:bg-emerald-50 active:scale-95 w-full md:w-auto"
+                            >
+                                <Search className="w-4 h-4" />
+                                Global Search
+                            </button>
+                        )}
+
                         {user?.role === 'BHW' && (
                             <button
                                 onClick={() => navigate('/bhw/register')}
@@ -278,18 +293,11 @@ export default function InfantRegistry() {
                                 Register New Infant
                             </button>
                         )}
-                        
-                        <div className="relative w-full md:w-80">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Search registry..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:ring-4 focus:ring-emerald-800/10 focus:border-emerald-800 transition-all outline-none font-bold text-slate-700 text-sm"
-                            />
-                        </div>
+                    </div>
+                </div>
 
+                <div className="mt-5 border-t border-slate-100 pt-5 flex flex-col gap-4">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                         <select 
                             value={urgencyFilter}
                             onChange={(e) => {
@@ -298,19 +306,19 @@ export default function InfantRegistry() {
                                 else newParams.delete('urgency');
                                 navigate(`${location.pathname}?${newParams.toString()}`);
                             }}
-                            className="bg-white border-2 border-slate-100 px-4 py-3 rounded-md text-xs font-black uppercase tracking-widest text-slate-600 outline-none focus:border-emerald-800"
+                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
                         >
-                            <option value="">All Health Status</option>
-                            <option value="defaulter">Defaulters</option>
+                            <option value="">All Clinical Status</option>
+                            <option value="defaulter">Defaulted</option>
                             <option value="due_today">Due Today</option>
                             <option value="due_soon">Due Soon</option>
-                            <option value="upcoming">On Track</option>
+                            <option value="upcoming">Up-to-Date</option>
                         </select>
 
                         <select 
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="bg-white border-2 border-slate-100 px-4 py-3 rounded-md text-xs font-black uppercase tracking-widest text-slate-600 outline-none focus:border-emerald-800"
+                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
                         >
                             <option value="APPROVED,PENDING_VALIDATION,NEEDS_CORRECTION">All Process Stages</option>
                             <option value="APPROVED">Approved Only</option>
@@ -318,8 +326,28 @@ export default function InfantRegistry() {
                             <option value="NEEDS_CORRECTION">Needs Correction</option>
                             <option value="DRAFT">My Drafts</option>
                         </select>
-
                     </div>
+
+                    <FilterToolbar
+                        category="infant_registry"
+                        searchTerm={searchTerm}
+                        onSearchChange={setSearchTerm}
+                        filters={registryFilters}
+                        onFiltersChange={setRegistryFilters}
+                        sortBy={sortBy}
+                        onSortChange={setSortBy}
+                        barangayOptions={filterOptions.barangays || []}
+                        ageGroupOptions={filterOptions.ageGroups || []}
+                        vaccineOptions={filterOptions.vaccineTypes || []}
+                        assignedBhwOptions={filterOptions.assignedBhws || []}
+                        sortOptions={filterOptions.sortOptions || []}
+                        showBarangayFilter={user?.role === 'Super Admin'}
+                        showSexFilter={false}
+                        showAgeGroupFilter
+                        showVaccineTypeFilter
+                        showAssignedBhwFilter
+                        searchPlaceholder="Search by infant name or reference ID..."
+                    />
                 </div>
             </div>
 
@@ -408,6 +436,11 @@ export default function InfantRegistry() {
                                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight italic">
                                                     {infant.barangay}, {infant.purok}
                                                 </div>
+                                                {infant.assigned_bhw_name && (
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                                        BHW: {infant.assigned_bhw_name}
+                                                    </div>
+                                                )}
                                             </div>
                                         </td>
 
@@ -427,7 +460,9 @@ export default function InfantRegistry() {
 
                                         <td className="clinical-table-td py-5">
                                                     {getRiskTierBadge(infant.urgency)}
-                                                    <div className="mt-2">{getStatusBadge(infant)}</div>
+                                                    <div className="mt-2">
+                                                        <StatusBadge record={infant} emphasize={infant.clinical_status === 'DEFAULTED'} />
+                                                    </div>
                                                 </td>
 
                                         <td className="clinical-table-td py-5 text-right">
@@ -607,6 +642,13 @@ export default function InfantRegistry() {
                     </div>
                 </div>
             )}
+
+            <GlobalInfantSearchModal
+                isOpen={showGlobalSearch}
+                onClose={() => setShowGlobalSearch(false)}
+                onTransferred={handleGlobalTransferComplete}
+                user={user}
+            />
         </div>
     );
 }

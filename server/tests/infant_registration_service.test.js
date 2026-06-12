@@ -4,6 +4,7 @@ jest.mock('../utils/auditLedger', () => ({
 }));
 
 const InfantRegistrationService = require('../services/InfantRegistrationService');
+const { safeRecordAuditEvent } = require('../utils/auditLedger');
 
 describe('InfantRegistrationService strict registration validation', () => {
     let db;
@@ -50,9 +51,7 @@ describe('InfantRegistrationService strict registration validation', () => {
 
     test('rejects future dob values', async () => {
         const payload = validPayload();
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        payload.dob = tomorrow.toISOString().slice(0, 10);
+        payload.dob = '2099-01-01';
 
         await expect(service.saveRegistration(payload, actor)).rejects.toMatchObject({
             status: 400,
@@ -87,7 +86,7 @@ describe('InfantRegistrationService strict registration validation', () => {
             status: 'DRAFT',
             duplicate_alert: null
         });
-        expect(db.execute).toHaveBeenCalledTimes(5);
+        expect(db.execute).toHaveBeenCalledTimes(7);
     });
 
     test('saves a properly formatted BHW submission as PENDING_VALIDATION', async () => {
@@ -102,7 +101,7 @@ describe('InfantRegistrationService strict registration validation', () => {
             status: 'PENDING_VALIDATION',
             duplicate_alert: null
         });
-        expect(db.execute).toHaveBeenCalledTimes(5);
+        expect(db.execute).toHaveBeenCalledTimes(7);
     });
 
     test('rejects draft saves missing infant identity', async () => {
@@ -151,7 +150,7 @@ describe('InfantRegistrationService strict registration validation', () => {
     });
 
     test('blocks exact duplicate registrations unless override_duplicate is true', async () => {
-        db.execute.mockImplementation(async (sql) => {
+        db.execute.mockImplementation(async (sql, params) => {
             if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
                 return [[]];
             }
@@ -188,7 +187,7 @@ describe('InfantRegistrationService strict registration validation', () => {
         expect(db.execute).toHaveBeenCalled();
 
         db.execute.mockClear();
-        db.execute.mockImplementation(async (sql) => {
+        db.execute.mockImplementation(async (sql, params) => {
             if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
                 return [[]];
             }
@@ -231,8 +230,8 @@ describe('InfantRegistrationService strict registration validation', () => {
         expect(db.execute).toHaveBeenCalled();
     });
 
-    test('allows cross-barangay full-identity matches and returns a transfer alert', async () => {
-        db.execute.mockImplementation(async (sql) => {
+    test('requires inquiry notes before saving a cross-barangay full-identity match', async () => {
+        db.execute.mockImplementation(async (sql, params) => {
             if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
                 return [[]];
             }
@@ -260,7 +259,109 @@ describe('InfantRegistrationService strict registration validation', () => {
             return [[{ affectedRows: 1 }]];
         });
 
-        const result = await service.saveRegistration(validPayload(), actor);
+        await expect(service.saveRegistration(validPayload(), actor)).rejects.toMatchObject({
+            status: 400,
+            message: 'Transfer inquiry notes are required before submitting a cross-barangay match for Midwife review.'
+        });
+    });
+
+    test('allows cross-barangay full-identity matches to submit when inquiry notes are provided', async () => {
+        let persistedRegistrationData = null;
+        db.execute.mockImplementation(async (sql, params) => {
+            if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infant_registrations ir')) {
+                return [[{
+                    id: 'existing-reg-2',
+                    reference_id: 'UB-2026-1001',
+                    status: 'PENDING_VALIDATION',
+                    barangay: 'United Bayanihan',
+                    created_at: '2026-06-01T10:00:00.000Z',
+                    first_name: 'Maria',
+                    middle_name: 'Nicole',
+                    last_name: 'Santos',
+                    dob: '2026-01-15',
+                    sex: 'F',
+                    promoted_infant_id: null
+                }]];
+            }
+            if (sql.includes('FROM infants i') && sql.includes(`LOWER(TRIM(COALESCE(i.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infants i')) {
+                return [[]];
+            }
+            if (sql.includes('INSERT INTO infant_registrations')) {
+                persistedRegistrationData = JSON.parse(params[2] || '{}');
+                return [{ affectedRows: 1, insertId: 1 }];
+            }
+            return [[{ affectedRows: 1 }]];
+        });
+
+        const result = await service.saveRegistration({
+            ...validPayload(),
+            transfer_inquiry_notes: 'Caregiver reports they recently moved into Langgam.'
+        }, actor);
+
+        expect(result.status).toBe('PENDING_VALIDATION');
+        expect(result.duplicate_alert).toMatchObject({
+            status: 'TRANSFER_POSSIBLE',
+            barangay: 'United Bayanihan'
+        });
+        expect(persistedRegistrationData).toEqual(expect.objectContaining({
+            transfer_inquiry_notes: 'Caregiver reports they recently moved into Langgam.',
+            override_reason: 'Caregiver reports they recently moved into Langgam.',
+            duplicate_resolution: expect.objectContaining({
+                disposition: 'TRANSFER_INQUIRY_SUBMITTED',
+                resolved: false,
+                notes: 'Caregiver reports they recently moved into Langgam.'
+            })
+        }));
+    });
+
+    test('allows cross-barangay name-and-dob matches with middle-name mismatch when inquiry notes are provided', async () => {
+        db.execute.mockImplementation(async (sql) => {
+            const isCrossBarangayRegistrationQuery =
+                sql.includes('FROM infant_registrations ir')
+                && sql.includes("TRIM(COALESCE(ir.registration_data->>'dob'")
+                && sql.includes("LOWER(TRIM(COALESCE(ir.barangay, ''))) <>");
+            const isCrossBarangayInfantQuery =
+                sql.includes('FROM infants i')
+                && sql.includes("TRIM(COALESCE(i.dob::text")
+                && sql.includes("LOWER(TRIM(COALESCE(i.barangay, ''))) <>");
+
+            if (isCrossBarangayRegistrationQuery) {
+                return [[{
+                    id: 'existing-reg-3',
+                    reference_id: 'UB-2026-1002',
+                    status: 'PENDING_VALIDATION',
+                    barangay: 'United Bayanihan',
+                    created_at: '2026-06-02T10:00:00.000Z',
+                    first_name: 'Maria',
+                    middle_name: 'Angela',
+                    last_name: 'Santos',
+                    dob: '2026-01-15',
+                    sex: 'F',
+                    promoted_infant_id: null
+                }]];
+            }
+            if (sql.includes('FROM infant_registrations ir')) {
+                return [[]];
+            }
+            if (isCrossBarangayInfantQuery) {
+                return [[]];
+            }
+            if (sql.includes('FROM infants i')) {
+                return [[]];
+            }
+            return [[{ affectedRows: 1 }]];
+        });
+
+        const result = await service.saveRegistration({
+            ...validPayload(),
+            transfer_inquiry_notes: 'Caregiver states the child is from another barangay and needs Midwife review.'
+        }, actor);
 
         expect(result.status).toBe('PENDING_VALIDATION');
         expect(result.duplicate_alert).toMatchObject({
@@ -395,6 +496,217 @@ describe('InfantRegistrationService draft deletion workflow', () => {
         });
         expect(connection.execute).not.toHaveBeenCalledWith('DELETE FROM infant_registrations WHERE id = ?', ['reg-1']);
         expect(connection.rollback).toHaveBeenCalled();
+    });
+});
+
+describe('InfantRegistrationService duplicate check response shaping', () => {
+    let db;
+    let service;
+    let actor;
+
+    const duplicatePayload = () => ({
+        first_name: 'Maria',
+        has_no_middle_name: false,
+        middle_name: 'Nicole',
+        last_name: 'Santos',
+        dob: '2026-01-15',
+        sex: 'F',
+        barangay: 'Langgam',
+        exact_address: 'Blk 2 Lot 4 Langgam, San Pedro, Laguna',
+        landmark: 'Blue gate beside sari-sari store',
+        caregiver_phone: '09123456789'
+    });
+
+    beforeEach(() => {
+        db = {
+            execute: jest.fn(),
+            getConnection: jest.fn()
+        };
+        service = new InfantRegistrationService(db);
+        actor = {
+            id: 'bhw-1',
+            role: 'BHW',
+            assigned_barangay: 'Langgam',
+            assigned_barangays: ['Langgam']
+        };
+    });
+
+    test('returns identity-only markers for BHW same-barangay strict duplicate checks', async () => {
+        db.execute.mockImplementation(async (sql) => {
+            if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infant_registrations ir')) {
+                return [[{
+                    id: 'existing-reg-1',
+                    reference_id: 'LG-2026-0999',
+                    status: 'PENDING_VALIDATION',
+                    barangay: 'Langgam',
+                    created_at: '2026-06-01T10:00:00.000Z',
+                    first_name: 'Maria',
+                    middle_name: 'Nicole',
+                    last_name: 'Santos',
+                    dob: '2026-01-15',
+                    sex: 'F',
+                    caregiver_phone: '09123456789',
+                    current_address: 'Sensitive address'
+                }]];
+            }
+            if (sql.includes('FROM infants i') && sql.includes(`LOWER(TRIM(COALESCE(i.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infants i')) {
+                return [[]];
+            }
+            return [[]];
+        });
+
+        const result = await service.checkDuplicates(duplicatePayload(), actor);
+
+        expect(result.type).toBe('STRICT_DUPLICATE');
+        expect(result.matches).toEqual([
+            expect.objectContaining({
+                id: 'existing-reg-1',
+                first_name: 'Maria',
+                middle_name: 'Nicole',
+                last_name: 'Santos',
+                dob: '2026-01-15',
+                barangay: 'Langgam',
+                status: 'PENDING_VALIDATION'
+            })
+        ]);
+        expect(result.matches[0]).not.toHaveProperty('caregiver_phone');
+        expect(result.matches[0]).not.toHaveProperty('current_address');
+        expect(result.duplicate_alert).toEqual(
+            expect.objectContaining({
+                status: 'STRICT_DUPLICATE',
+                message: expect.any(String),
+                signature: expect.any(String)
+            })
+        );
+        expect(result.duplicate_alert).not.toHaveProperty('matches');
+    });
+
+    test('returns identity-only markers for BHW cross-barangay transfer inquiries', async () => {
+        db.execute.mockImplementation(async (sql) => {
+            if (sql.includes('FROM infant_registrations ir') && sql.includes(`LOWER(TRIM(COALESCE(ir.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infant_registrations ir')) {
+                return [[{
+                    id: 'existing-reg-2',
+                    reference_id: 'UB-2026-1001',
+                    status: 'PENDING_VALIDATION',
+                    barangay: 'United Bayanihan',
+                    created_at: '2026-06-01T10:00:00.000Z',
+                    first_name: 'Maria',
+                    middle_name: 'Nicole',
+                    last_name: 'Santos',
+                    dob: '2026-01-15',
+                    sex: 'F',
+                    caregiver_phone: '09123456789',
+                    current_address: 'Sensitive address',
+                    promoted_infant_id: null
+                }]];
+            }
+            if (sql.includes('FROM infants i') && sql.includes(`LOWER(TRIM(COALESCE(i.barangay`)) {
+                return [[]];
+            }
+            if (sql.includes('FROM infants i')) {
+                return [[]];
+            }
+            return [[]];
+        });
+
+        const result = await service.checkDuplicates(duplicatePayload(), actor);
+
+        expect(result.type).toBe('TRANSFER_POSSIBLE');
+        expect(result.matches).toEqual([
+            expect.objectContaining({
+                id: 'existing-reg-2',
+                first_name: 'Maria',
+                middle_name: 'Nicole',
+                last_name: 'Santos',
+                dob: '2026-01-15',
+                barangay: 'United Bayanihan',
+                status: 'PENDING_VALIDATION'
+            })
+        ]);
+        expect(result.matches[0]).not.toHaveProperty('caregiver_phone');
+        expect(result.matches[0]).not.toHaveProperty('current_address');
+        expect(result.duplicate_alert).toEqual(
+            expect.objectContaining({
+                status: 'TRANSFER_POSSIBLE',
+                barangay: 'United Bayanihan',
+                full_name: 'Maria Nicole Santos'
+            })
+        );
+        expect(result.duplicate_alert).not.toHaveProperty('matches');
+    });
+
+    test('returns identity-only transfer inquiry payload for BHW cross-barangay name-and-dob matches with middle-name mismatch', async () => {
+        db.execute.mockImplementation(async (sql) => {
+            const isCrossBarangayRegistrationQuery =
+                sql.includes('FROM infant_registrations ir')
+                && sql.includes("TRIM(COALESCE(ir.registration_data->>'dob'")
+                && sql.includes("LOWER(TRIM(COALESCE(ir.barangay, ''))) <>");
+            const isCrossBarangayInfantQuery =
+                sql.includes('FROM infants i')
+                && sql.includes("TRIM(COALESCE(i.dob::text")
+                && sql.includes("LOWER(TRIM(COALESCE(i.barangay, ''))) <>");
+
+            if (isCrossBarangayRegistrationQuery) {
+                return [[{
+                    id: 'existing-reg-4',
+                    reference_id: 'UB-2026-1003',
+                    status: 'PENDING_VALIDATION',
+                    barangay: 'United Bayanihan',
+                    created_at: '2026-06-03T10:00:00.000Z',
+                    first_name: 'Maria',
+                    middle_name: 'Angela',
+                    last_name: 'Santos',
+                    dob: '2026-01-15',
+                    sex: 'F',
+                    caregiver_phone: '09123456789',
+                    current_address: 'Sensitive address',
+                    promoted_infant_id: null
+                }]];
+            }
+            if (sql.includes('FROM infant_registrations ir')) {
+                return [[]];
+            }
+            if (isCrossBarangayInfantQuery) {
+                return [[]];
+            }
+            if (sql.includes('FROM infants i')) {
+                return [[]];
+            }
+            return [[]];
+        });
+
+        const result = await service.checkDuplicates(duplicatePayload(), actor);
+
+        expect(result.type).toBe('TRANSFER_POSSIBLE');
+        expect(result.matches).toEqual([
+            expect.objectContaining({
+                id: 'existing-reg-4',
+                first_name: 'Maria',
+                middle_name: 'Angela',
+                last_name: 'Santos',
+                dob: '2026-01-15',
+                barangay: 'United Bayanihan',
+                status: 'PENDING_VALIDATION'
+            })
+        ]);
+        expect(result.matches[0]).not.toHaveProperty('caregiver_phone');
+        expect(result.matches[0]).not.toHaveProperty('current_address');
+        expect(result.duplicate_alert).toEqual(
+            expect.objectContaining({
+                status: 'TRANSFER_POSSIBLE',
+                barangay: 'United Bayanihan',
+                full_name: 'Maria Angela Santos'
+            })
+        );
     });
 });
 
@@ -554,6 +866,207 @@ describe('InfantRegistrationService approval promotion SQL alignment', () => {
     });
 });
 
+describe('InfantRegistrationService merge-transfer validation event mapping', () => {
+    let db;
+    let service;
+    let connection;
+    let auditPayloads;
+
+    beforeEach(() => {
+        auditPayloads = [];
+        safeRecordAuditEvent.mockClear();
+        safeRecordAuditEvent.mockImplementation(async (payload) => {
+            auditPayloads.push(payload);
+            return null;
+        });
+        connection = {
+            beginTransaction: jest.fn().mockResolvedValue(),
+            commit: jest.fn().mockResolvedValue(),
+            rollback: jest.fn().mockResolvedValue(),
+            release: jest.fn(),
+            execute: jest.fn(async (sql, params) => {
+                if (sql.includes('SELECT promoted_infant_id FROM infant_registrations')) {
+                    return [[{ promoted_infant_id: 'inf-22' }]];
+                }
+
+                if (sql.includes('FROM infants') && sql.includes('FOR UPDATE')) {
+                    expect(params).toEqual(['inf-22']);
+                    return [[{
+                        id: 'inf-22',
+                        reference_id: 'INF-2026-22',
+                        first_name: 'Maria',
+                        middle_name: 'Anne',
+                        last_name: 'Santos',
+                        dob: '2026-01-15',
+                        sex: 'F',
+                        barangay: 'United Bayanihan',
+                        current_address: 'Old address',
+                        exact_address: 'Old exact address',
+                        landmark: 'Old landmark',
+                        status: 'ACTIVE'
+                    }]];
+                }
+
+                if (sql.includes('UPDATE infants')) {
+                    expect(params[4]).toBe('inf-22');
+                    return [{ affectedRows: 1 }];
+                }
+
+                if (sql.includes('FROM infants') && sql.includes('LIMIT 1')) {
+                    expect(params).toEqual(['inf-22']);
+                    return [[{
+                        id: 'inf-22',
+                        reference_id: 'INF-2026-22',
+                        first_name: 'Maria',
+                        middle_name: 'Anne',
+                        last_name: 'Santos',
+                        dob: '2026-01-15',
+                        sex: 'F',
+                        barangay: 'Langgam',
+                        current_address: 'Langgam, San Pedro',
+                        exact_address: 'Kapitan Caron Avenue',
+                        landmark: 'Blue gate',
+                        status: 'ACTIVE'
+                    }]];
+                }
+
+                if (sql.includes('UPDATE infant_registrations')) {
+                    expect(params[0]).toBe('inf-22');
+                    expect(params[1]).toBe('mw-1');
+                    const updatedPayload = JSON.parse(params[3]);
+                    expect(updatedPayload.duplicate_resolution).toEqual(expect.objectContaining({
+                        disposition: 'TRANSFER_CONFIRMED',
+                        resolved: true
+                    }));
+                    return [{ affectedRows: 1 }];
+                }
+
+                if (sql.includes('INSERT INTO registration_validation_events')) {
+                    expect(params[2]).toBe('APPROVED');
+                    const metadata = JSON.parse(params[6]);
+                    expect(metadata).toEqual(expect.objectContaining({
+                        review_outcome: 'TRANSFER_CONFIRMED',
+                        requested_event_type: 'APPROVED',
+                        recorded_event_type: 'APPROVED',
+                        target_infant_id: 'inf-22',
+                        transfer_inquiry_notes: 'Caregiver moved from United Bayanihan and requested transfer.'
+                    }));
+                    return [{ affectedRows: 1 }];
+                }
+
+                return [[]];
+            })
+        };
+
+        db = {
+            execute: jest.fn(),
+            getConnection: jest.fn().mockResolvedValue(connection)
+        };
+
+        service = new InfantRegistrationService(db);
+        service._getRegistrationForActor = jest.fn().mockResolvedValue({
+            id: 'reg-transfer-1',
+            reference_id: 'REG-2026-3001',
+            status: 'PENDING_VALIDATION',
+            barangay: 'Langgam',
+            created_by: 'bhw-1',
+            review_history: [],
+            registration_data: JSON.stringify({
+                first_name: 'Maria',
+                middle_name: 'Nicole',
+                last_name: 'Santos',
+                dob: '2026-01-15',
+                current_address: 'Langgam, San Pedro',
+                exact_address: 'Kapitan Caron Avenue',
+                landmark: 'Blue gate',
+                transfer_inquiry_notes: 'Caregiver moved from United Bayanihan and requested transfer.'
+            })
+        });
+        service._findDuplicateIdentitySignals = jest.fn().mockResolvedValue({
+            crossBarangayAlert: {
+                status: 'TRANSFER_POSSIBLE',
+                barangay: 'United Bayanihan',
+                source_table: 'REGISTRATION',
+                source_record_id: 'reg-existing',
+                reference_id: 'UB-2026-1001'
+            }
+        });
+        service.notificationService.createTransferNotification = jest.fn().mockResolvedValue({
+            created: 1,
+            recipients: 1
+        });
+    });
+
+    test('records merge-transfer as an APPROVED validation event with transfer metadata', async () => {
+        const result = await service.mergeTransferRegistration('reg-transfer-1', {
+            id: 'mw-1',
+            role: 'Midwife',
+            assigned_barangay: 'Langgam',
+            assigned_barangays: ['Langgam']
+        }, 'Caregiver confirmed transfer during validation.');
+
+        expect(result).toEqual(expect.objectContaining({
+            success: true,
+            infantId: 'inf-22',
+            status: 'APPROVED'
+        }));
+        expect(service.notificationService.createTransferNotification).toHaveBeenCalledWith(expect.objectContaining({
+            originatingBarangay: 'United Bayanihan',
+            newBarangay: 'Langgam',
+            infantIdentity: expect.objectContaining({
+                first_name: 'Maria',
+                last_name: 'Santos',
+                dob: '2026-01-15'
+            }),
+            sourceRegistrationId: 'reg-transfer-1',
+            targetInfantId: 'inf-22',
+            triggeredByUserId: 'mw-1'
+        }));
+        const mergeAudit = auditPayloads.find((event) => event.action === 'TRANSFER_MERGE');
+        expect(mergeAudit).toEqual(expect.objectContaining({
+            targetEntity: 'infants',
+            targetRecordId: 'inf-22',
+            oldValues: expect.objectContaining({
+                barangay: 'United Bayanihan'
+            }),
+            newValues: expect.objectContaining({
+                barangay: 'Langgam'
+            }),
+            metadata: expect.objectContaining({
+                from_barangay: 'United Bayanihan',
+                to_barangay: 'Langgam',
+                transfer_inquiry_notes: 'Caregiver moved from United Bayanihan and requested transfer.'
+            })
+        }));
+        expect(connection.commit).toHaveBeenCalled();
+    });
+
+    test('does not block merge-transfer when notification creation fails', async () => {
+        service.notificationService.createTransferNotification = jest.fn().mockRejectedValue(new Error('notification subsystem offline'));
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const result = await service.mergeTransferRegistration('reg-transfer-1', {
+            id: 'mw-1',
+            role: 'Midwife',
+            assigned_barangay: 'Langgam',
+            assigned_barangays: ['Langgam']
+        }, 'Caregiver confirmed transfer during validation.');
+
+        expect(result).toEqual(expect.objectContaining({
+            success: true,
+            infantId: 'inf-22',
+            status: 'APPROVED'
+        }));
+        expect(connection.commit).toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledWith(
+            '[Transfer Notification] Failed to create handoff notice:',
+            'notification subsystem offline'
+        );
+
+        warnSpy.mockRestore();
+    });
+});
+
 describe('InfantRegistrationService validation detail payload', () => {
     let db;
     let service;
@@ -600,6 +1113,7 @@ describe('InfantRegistrationService validation detail payload', () => {
                             purok: 'Purok 1',
                             exact_address: 'Blk 2 Lot 4',
                             landmark: 'Blue gate',
+                            transfer_inquiry_notes: 'Family recently moved from United Bayanihan and needs transfer review.',
                             bcg_status: 'Not Given',
                             hepatitis_b_status: 'Given within 24 hours',
                             hepa_b_date_given: '2026-05-01'
@@ -646,6 +1160,7 @@ describe('InfantRegistrationService validation detail payload', () => {
         expect(result.success).toBe(true);
         expect(result.registration.status).toBe('RETURNED_FOR_CORRECTION');
         expect(result.registration.registration_status).toBe('RETURNED_FOR_CORRECTION');
+        expect(result.registration.transfer_inquiry_notes).toBe('Family recently moved from United Bayanihan and needs transfer review.');
         expect(result.infant_demographics).toMatchObject({
             first_name: 'Maria',
             middle_name: 'Nicole',
@@ -659,6 +1174,9 @@ describe('InfantRegistrationService validation detail payload', () => {
         expect(result.at_birth_immunizations).toMatchObject({
             bcg_status: 'Not Given',
             hepatitis_b_status: 'Given within 24 hours'
+        });
+        expect(result.duplicate_review_context).toMatchObject({
+            transfer_inquiry_notes: 'Family recently moved from United Bayanihan and needs transfer review.'
         });
         expect(result.correction_history[0]).toMatchObject({
             action: 'RETURNED_FOR_CORRECTION',

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, memo, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, GeoJSON, Polygon, useMap, Popup, ScaleControl } from 'react-leaflet';
 import L from 'leaflet';
-import { 
+import {
     Loader2,
     ArrowRight,
     AlertTriangle,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { computeConvexHull } from '../../utils/spatialUtils';
 import { barangayBoundaryStyle } from '../../utils/barangayBoundaries';
+import { CLINICAL_STATUS, getClinicalStatusMeta, normalizeClinicalStatus } from '../../utils/clinicalStatus';
 import 'leaflet/dist/leaflet.css';
 
 // --- CSS Override for CDSS Popup ---
@@ -51,24 +52,17 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
     let anchor = [8, 8];
 
     // Normalize parameters in case it's a single argument call where color = urgency
-    let actualUrgency = urgency || (['DEFAULTER', 'defaulter', 'due_today', 'upcoming', 'completed', 'due_soon'].includes(color) ? color : null);
+    let actualUrgency = urgency || (['DEFAULTER', 'defaulter', 'DEFAULTED', 'overdue', 'due_today', 'upcoming', 'on_track', 'completed', 'due_soon'].includes(color) ? color : null);
     let actualColor = actualUrgency === color ? null : color;
 
     // Force exact matching for Leaflet marker colors based on computed_map_status.
     // 4 fully independent states — must not bundle or derive one from another.
-    const markerColor = 
-        computed_map_status === 'DEFAULTER'                             ? '#EF4444' : // Red
-        (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') ? '#F59E0B' : // Amber
-        computed_map_status === 'ON_TRACK'                             ? '#10B981' : // Green (on schedule, not yet FIC)
-        computed_map_status === 'COMPLETED'                            ? '#64748B' : // Grey (Fully Immunized)
-        actualColor || (
-            actualUrgency === 'DEFAULTER' || actualUrgency === 'defaulter' ? '#EF4444' :
-            actualUrgency === 'due_soon' || actualUrgency === 'due_today' ? '#F59E0B' :
-            actualUrgency === 'on_track'                              ? '#10B981' :
-            actualUrgency === 'completed'                             ? '#64748B' : '#94A3B8'
-        );
+    const markerColor = getClinicalStatusMeta({
+        computed_map_status,
+        urgency: actualUrgency
+    }).colorHex || actualColor || '#94A3B8';
 
-    if (computed_map_status === 'DEFAULTER' || actualUrgency === 'DEFAULTER' || actualUrgency === 'defaulter') {
+    if (normalizeClinicalStatus({ computed_map_status, urgency: actualUrgency }) === 'DEFAULTED') {
         // Elevated diamond for defaulters.
         html = `
             <div class="flex items-center justify-center">
@@ -227,32 +221,32 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
         {
             id: 'defaulter_group',
             statuses: ['defaulter'],
-            label: 'Defaulters',
-            color: '#EF4444',
+            label: getClinicalStatusMeta(CLINICAL_STATUS.DEFAULTED).label,
+            color: getClinicalStatusMeta(CLINICAL_STATUS.DEFAULTED).colorHex,
             icon: 'diamond',
             count: derivedCounts.total_defaulters ?? derivedCounts.mappedDefaulter ?? 0
         },
         {
             id: 'due_group',
             statuses: ['due_soon'],
-            label: 'Due Today / Due Soon',
-            color: '#F59E0B',
+            label: getClinicalStatusMeta(CLINICAL_STATUS.DUE_SOON).label,
+            color: getClinicalStatusMeta(CLINICAL_STATUS.DUE_SOON).colorHex,
             icon: 'circle',
             count: derivedCounts.total_due_soon ?? derivedCounts.mappedDueSoon ?? 0
         },
         {
             id: 'on_track_group',
             statuses: ['on_track'],
-            label: 'On Track',
-            color: '#10B981',
+            label: getClinicalStatusMeta(CLINICAL_STATUS.UP_TO_DATE).label,
+            color: getClinicalStatusMeta(CLINICAL_STATUS.UP_TO_DATE).colorHex,
             icon: 'circle',
             count: derivedCounts.total_on_track ?? 0
         },
         {
             id: 'completed_group',
             statuses: ['completed'],
-            label: 'Completed (FIC)',
-            color: '#64748B',
+            label: getClinicalStatusMeta(CLINICAL_STATUS.FULLY_IMMUNIZED).label,
+            color: getClinicalStatusMeta(CLINICAL_STATUS.FULLY_IMMUNIZED).colorHex,
             icon: 'circle',
             count: derivedCounts.total_completed ?? 0
         },
@@ -358,28 +352,25 @@ const HeatmapMap = memo(({
             const doseCount = (pt.vaccination_needs || []).length;
             const addressLine = buildAddressLine(pt);
 
-            let statusLabel = 'Unknown Status';
-            let statusColor = '#64748b';
+            const statusMeta = getClinicalStatusMeta(pt);
+            let statusLabel = statusMeta.label;
+            let statusColor = statusMeta.colorHex;
             let actionText = 'Routine Clinical Follow-Up';
 
-            if (pt.urgency === 'defaulter' || pt.computed_map_status === 'DEFAULTER') {
-                statusLabel = 'Defaulter';
-                statusColor = '#e11d48';
+            if (statusMeta.code === 'DEFAULTED') {
                 const vaccine = doseCount > 0 ? (pt.vaccination_needs[0].vaccine_name || pt.vaccination_needs[0].vaccine_code) : null;
                 actionText = vaccine ? `Urgent: Administer ${vaccine}` : 'Urgent Follow-Up Required';
-            } else if (pt.urgency === 'due_today' || pt.urgency === 'due_soon') {
-                statusLabel = 'Due Soon';
-                statusColor = '#d97706';
+            } else if (statusMeta.code === 'DUE_SOON') {
                 const vaccine = doseCount > 0 ? (pt.vaccination_needs[0].vaccine_name || pt.vaccination_needs[0].vaccine_code) : null;
                 actionText = vaccine ? `Prepare ${vaccine}` : 'Prepare Next Dose';
-            } else if (pt.urgency === 'upcoming') {
-                statusLabel = 'On Track';
-                statusColor = '#059669';
+            } else if (statusMeta.code === 'UP_TO_DATE') {
                 actionText = pt.next_due_vaccine ? `Next Due: ${pt.next_due_vaccine}` : 'Schedule Maintained';
-            } else if (pt.urgency === 'completed') {
-                statusLabel = 'Schedule Complete';
-                statusColor = '#94a3b8';
+            } else if (statusMeta.code === 'FULLY_IMMUNIZED') {
                 actionText = 'Fully Immunized (Current Phase)';
+            } else if (statusMeta.code === 'OVERDUE') {
+                actionText = 'Overdue follow-up required';
+            } else if (statusMeta.code === 'INCOMPLETE') {
+                actionText = 'Registration or validation incomplete';
             }
 
             return (
