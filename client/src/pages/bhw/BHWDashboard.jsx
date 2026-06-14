@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
+import LogVisitModal from '../../components/LogVisitModal';
 
 const BHWDashboard = () => {
     const { user } = useAuth();
@@ -29,6 +30,7 @@ const BHWDashboard = () => {
     const [fieldTasks, setFieldTasks] = useState([]);
     const [activeDeployments, setActiveDeployments] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedInfant, setSelectedInfant] = useState(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -72,6 +74,12 @@ const BHWDashboard = () => {
                 const followUpsData = await followUpsRes.json();
                 const tasks = (followUpsData.follow_ups || [])
                     .filter((item) => item?.status === 'DEFAULTER' || item?.status === 'DUE_SOON')
+                    .sort((a, b) => {
+                        if (Boolean(a?.is_midwife_delegated) !== Boolean(b?.is_midwife_delegated)) {
+                            return a?.is_midwife_delegated ? -1 : 1;
+                        }
+                        return (b?.days_overdue || 0) - (a?.days_overdue || 0);
+                    })
                     .slice(0, 6);
                 setFieldTasks(tasks);
             } else {
@@ -361,48 +369,69 @@ const BHWDashboard = () => {
                             </p>
                         </div>
                     ) : (
-                        fieldTasks.map((task) => (
-                            <div
-                                key={task.infant_id || task.id}
-                                className="flex flex-col gap-4 px-5 py-4 transition-colors hover:bg-slate-50 lg:flex-row lg:items-center lg:justify-between"
-                            >
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <p className="text-lg font-bold tracking-tight text-slate-900">
-                                            {formatFullNameFromObject(task) || 'Unnamed infant'}
-                                        </p>
-                                        <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${getTaskStatusPill(task.status)}`}>
-                                            {task.status}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 flex flex-col gap-1 text-sm text-slate-500">
-                                        <span>
-                                            Due vaccines: {(task.due_vaccines || []).slice(0, 2).join(', ') || task.missing_vaccine_name || '-'}
-                                        </span>
-                                        <span className="flex items-center gap-2">
-                                            <MapPin className="h-4 w-4 text-slate-400" />
-                                            {task.reference_id || '-'} · {task.parent_contact || task.caregiver_phone || 'No contact number'}
-                                        </span>
-                                    </div>
-                                </div>
+                        fieldTasks.map((task) => {
+                            const isUrgent = task?.is_midwife_delegated;
+                            let rowClass = "flex flex-col gap-4 px-5 py-4 transition-colors lg:flex-row lg:items-center lg:justify-between ";
+                            if (isUrgent) {
+                                rowClass += "border-l-4 border-l-amber-500 bg-amber-50/40 hover:bg-amber-100/40";
+                            } else {
+                                rowClass += "hover:bg-slate-50";
+                            }
 
-                                <div className="flex items-center justify-between gap-3 lg:justify-end">
-                                    <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                                        {task.earliest_recommended_date
-                                            ? `Due ${new Date(task.earliest_recommended_date).toLocaleDateString()}`
-                                            : 'Visit required'}
+                            return (
+                                <div
+                                    key={task.infant_id || task.id}
+                                    className={rowClass}
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <p className="text-lg font-bold tracking-tight text-slate-900">
+                                                {formatFullNameFromObject(task) || 'Unnamed infant'}
+                                            </p>
+                                            <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${getTaskStatusPill(task.status)}`}>
+                                                {task.status}
+                                            </span>
+                                            {isUrgent && (
+                                                <span className="inline-flex border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">
+                                                    URGENT: Midwife Requested
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mt-2 flex flex-col gap-1 text-sm text-slate-500">
+                                            <span>
+                                                Due vaccines: {(task.due_vaccines || []).slice(0, 2).join(', ') || task.missing_vaccine_name || '-'}
+                                            </span>
+                                            <span className="flex items-center gap-2">
+                                                <MapPin className="h-4 w-4 text-slate-400" />
+                                                {task.reference_id || '-'} · {task.parent_contact || task.caregiver_phone || 'No contact number'}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => navigate('/bhw/follow-ups')}
-                                        className="inline-flex items-center gap-2 rounded border border-[#084C39] bg-[#084C39] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#07362A]"
-                                    >
-                                        <Stethoscope className="h-4 w-4" />
-                                        Log Visit
-                                    </button>
+
+                                    <div className="flex items-center justify-between gap-3 lg:justify-end">
+                                        <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                                            {task.earliest_recommended_date
+                                                ? `Due ${new Date(task.earliest_recommended_date).toLocaleDateString()}`
+                                                : 'Visit required'}
+                                        </div>
+                                        {task?.assigned_cluster_bhw_role === 'Midwife' ? (
+                                            <span className="inline-flex items-center gap-1.5 rounded bg-amber-50 border border-amber-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-800 shadow-sm">
+                                                Midwife Deployed
+                                            </span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedInfant(task)}
+                                                className="inline-flex items-center gap-2 rounded border border-[#084C39] bg-[#084C39] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#07362A]"
+                                            >
+                                                <Stethoscope className="h-4 w-4" />
+                                                Log Visit
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </section>
@@ -496,6 +525,16 @@ const BHWDashboard = () => {
                     )}
                 </div>
             </section>
+
+            <LogVisitModal
+                isOpen={!!selectedInfant}
+                onClose={() => setSelectedInfant(null)}
+                infant={selectedInfant}
+                onLogSuccess={async () => {
+                    await fetchDashboardData();
+                    window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
+                }}
+            />
         </div>
     );
 };

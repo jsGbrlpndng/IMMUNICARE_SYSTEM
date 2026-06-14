@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
 const clinicalAuth = require('../middleware/clinicalAuth');
 const requireRole = require('../middleware/requireRole');
@@ -7,10 +8,12 @@ const { ROLES } = require('../constants/domain');
 const SpatialDSSService = require('../services/SpatialDSSService');
 const SnapshotManager = require('../services/SnapshotManager');
 const SpatialExportService = require('../services/SpatialExportService');
+const AuditLogService = require('../services/AuditLogService');
 
 const spatialDssService = new SpatialDSSService(db);
 const snapshotManager = new SnapshotManager(db);
 const spatialExportService = new SpatialExportService();
+const auditLogService = new AuditLogService(db);
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -170,6 +173,115 @@ router.post('/seed-snapshots', async (req, res) => {
         res.status(status).json({
             success: false,
             error: error.message || 'Failed to seed historical trend snapshots.'
+        });
+    }
+});
+
+router.post('/notify-admin', async (req, res) => {
+    try {
+        const { barangay, note, clusterSummary } = req.body || {};
+
+        if (!barangay || typeof barangay !== 'string' || !barangay.trim()) {
+            return res.status(400).json({ success: false, error: 'Barangay is required.' });
+        }
+        if (!note || typeof note !== 'string' || !note.trim()) {
+            return res.status(400).json({ success: false, error: 'A note/instruction is required.' });
+        }
+
+        const trimmedBarangay = barangay.trim();
+        const trimmedNote = note.trim().slice(0, 1000);
+
+        // Look up all active Admin users assigned to this barangay
+        const [recipientRows] = await db.execute(`
+            SELECT id, full_name, assigned_barangay
+            FROM users
+            WHERE role = ?
+              AND is_active = TRUE
+              AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+        `, [ROLES.ADMIN, trimmedBarangay]);
+
+        if (!recipientRows.length) {
+            return res.status(404).json({
+                success: false,
+                error: `No active Admin users found for barangay "${trimmedBarangay}".`
+            });
+        }
+
+        const actorName = req.user?.full_name || req.user?.name || 'Super Admin';
+        const title = 'Spatial Cluster Alert';
+        const message = `${actorName} flagged ${trimmedBarangay} for cluster/defaulter follow-up: "${trimmedNote}"`;
+
+        const rows = recipientRows.map((recipient) => [
+            uuidv4(),
+            recipient.id,
+            ROLES.ADMIN,
+            trimmedBarangay,
+            'SPATIAL_CLUSTER_ALERT',
+            title,
+            message,
+            JSON.stringify({
+                source: 'spatial_dss',
+                sender_user_id: req.user?.id || null,
+                sender_name: actorName,
+                barangay: trimmedBarangay,
+                note: trimmedNote,
+                cluster_summary: clusterSummary || null
+            })
+        ]);
+
+        await db.execute(`
+            INSERT INTO notifications (
+                id,
+                recipient_user_id,
+                recipient_role,
+                recipient_barangay,
+                notification_type,
+                title,
+                message,
+                payload
+            )
+            VALUES ?
+        `, [rows]);
+
+        // Write audit trail
+        try {
+            await auditLogService.recordEvent({
+                actor: req.user || {},
+                action: 'SPATIAL_CLUSTER_NOTIFY',
+                targetEntity: 'notifications',
+                targetRecordId: null,
+                targetName: `Cluster Alert — ${trimmedBarangay}`,
+                barangay: trimmedBarangay,
+                oldValues: {},
+                newValues: {
+                    notification_type: 'SPATIAL_CLUSTER_ALERT',
+                    recipient_role: ROLES.ADMIN,
+                    recipient_barangay: trimmedBarangay,
+                    recipient_count: recipientRows.length,
+                    note: trimmedNote
+                },
+                metadata: {
+                    sender_name: actorName,
+                    sender_user_id: req.user?.id || null,
+                    barangay: trimmedBarangay,
+                    cluster_summary: clusterSummary || null
+                },
+                req
+            });
+        } catch (auditError) {
+            console.warn('[Spatial Notify Audit] Failed to write audit event:', auditError.message);
+        }
+
+        res.json({
+            success: true,
+            created: rows.length,
+            recipients: recipientRows.length
+        });
+    } catch (error) {
+        console.error('[POST /api/spatial/notify-admin]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Unable to send notification.'
         });
     }
 });

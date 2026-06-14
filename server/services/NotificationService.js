@@ -27,9 +27,9 @@ class NotificationService {
     }
 
     _requireNotificationReader(actor = {}) {
-        const allowed = [ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN];
+        const allowed = [ROLES.MIDWIFE, ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.BHW];
         if (!allowed.includes(actor.role)) {
-            const error = new Error('Forbidden: notification access is limited to Midwife, Admin, and Super Admin roles.');
+            const error = new Error('Forbidden: notification access is limited to Midwife, Admin, Super Admin, and BHW roles.');
             error.status = 403;
             throw error;
         }
@@ -51,7 +51,9 @@ class NotificationService {
                 recipient_user_id,
                 recipient_role,
                 recipient_barangay,
+                sender_user_id,
                 notification_type,
+                action_type,
                 title,
                 message,
                 payload,
@@ -91,7 +93,9 @@ class NotificationService {
                 recipient_user_id,
                 recipient_role,
                 recipient_barangay,
+                sender_user_id,
                 notification_type,
+                action_type,
                 title,
                 message,
                 payload,
@@ -108,6 +112,172 @@ class NotificationService {
         }
 
         return row;
+    }
+
+    async createNotification({
+        recipientUserId,
+        recipientRole,
+        recipientBarangay,
+        senderUserId = null,
+        notificationType,
+        actionType,
+        title,
+        message,
+        payload = {}
+    }) {
+        const id = uuidv4();
+        await this.db.execute(`
+            INSERT INTO notifications (
+                id,
+                recipient_user_id,
+                recipient_role,
+                recipient_barangay,
+                sender_user_id,
+                notification_type,
+                action_type,
+                title,
+                message,
+                payload
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            id,
+            recipientUserId,
+            recipientRole,
+            this._normalizeBarangay(recipientBarangay),
+            senderUserId,
+            notificationType,
+            actionType,
+            title,
+            message,
+            JSON.stringify(payload)
+        ]);
+
+        return id;
+    }
+
+    async createDeploymentAssignedNotification({ assignment, staff, adminUser }) {
+        return this.createNotification({
+            recipientUserId: staff.id,
+            recipientRole: staff.role,
+            recipientBarangay: assignment.barangay,
+            senderUserId: adminUser.id,
+            notificationType: 'DEPLOYMENT_ASSIGNED',
+            actionType: 'DEPLOYMENT_ASSIGNED',
+            title: 'New Field Deployment Area Assigned',
+            message: `You have been assigned to Priority Area ${assignment.cluster_label} in ${assignment.barangay}.`,
+            payload: {
+                assignment_id: assignment.id,
+                cluster_label: assignment.cluster_label,
+                barangay: assignment.barangay
+            }
+        });
+    }
+
+    async createDeploymentReportSubmittedNotification({ report, midwifeUser }) {
+        const [admins] = await this.db.execute(`
+            SELECT id, role, assigned_barangay
+            FROM users
+            WHERE role = ?
+              AND is_active = TRUE
+              AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+        `, [ROLES.ADMIN, report.barangay]);
+
+        for (const admin of admins) {
+            await this.createNotification({
+                recipientUserId: admin.id,
+                recipientRole: ROLES.ADMIN,
+                recipientBarangay: report.barangay,
+                senderUserId: midwifeUser.id,
+                notificationType: 'DEPLOYMENT_REPORT_SUBMITTED',
+                actionType: 'DEPLOYMENT_REPORT_SUBMITTED',
+                title: 'Deployment Report Submitted',
+                message: `Midwife ${midwifeUser.full_name || midwifeUser.name || 'Staff'} has submitted a deployment report for cluster ${report.cluster_label || ''}.`,
+                payload: {
+                    report_id: report.id,
+                    assignment_id: report.assignment_id,
+                    barangay: report.barangay,
+                    cluster_label: report.cluster_label
+                }
+            });
+        }
+    }
+
+    async createDeploymentReportValidatedNotification({ report, adminUser }) {
+        const [midwifeRows] = await this.db.execute('SELECT id, role, assigned_barangay FROM users WHERE id = ?', [report.submitted_by]);
+        const midwife = midwifeRows[0];
+        if (midwife) {
+            await this.createNotification({
+                recipientUserId: midwife.id,
+                recipientRole: midwife.role,
+                recipientBarangay: midwife.assigned_barangay,
+                senderUserId: adminUser.id,
+                notificationType: 'DEPLOYMENT_REPORT_VALIDATED',
+                actionType: 'DEPLOYMENT_REPORT_VALIDATED',
+                title: 'Deployment Report Validated',
+                message: `Your deployment report for cluster ${report.cluster_label || ''} has been validated and closed by Admin ${adminUser.full_name || adminUser.name}.`,
+                payload: {
+                    report_id: report.id,
+                    assignment_id: report.assignment_id,
+                    barangay: report.barangay,
+                    cluster_label: report.cluster_label
+                }
+            });
+        }
+    }
+
+    async createDeploymentReportRejectedNotification({ report, adminUser, validationNotes }) {
+        const [midwifeRows] = await this.db.execute('SELECT id, role, assigned_barangay FROM users WHERE id = ?', [report.submitted_by]);
+        const midwife = midwifeRows[0];
+        if (midwife) {
+            await this.createNotification({
+                recipientUserId: midwife.id,
+                recipientRole: midwife.role,
+                recipientBarangay: midwife.assigned_barangay,
+                senderUserId: adminUser.id,
+                notificationType: 'DEPLOYMENT_REPORT_REJECTED',
+                actionType: 'DEPLOYMENT_REPORT_REJECTED',
+                title: 'Deployment Report Rejected',
+                message: `Your deployment report for cluster ${report.cluster_label || ''} was rejected by Admin ${adminUser.full_name || adminUser.name}. Notes: ${validationNotes || 'No notes provided.'}`,
+                payload: {
+                    report_id: report.id,
+                    assignment_id: report.assignment_id,
+                    barangay: report.barangay,
+                    cluster_label: report.cluster_label,
+                    validation_notes: validationNotes
+                }
+            });
+        }
+    }
+
+    async createFieldVisitLoggedNotification({ log, bhwUser }) {
+        const [midwives] = await this.db.execute(`
+            SELECT id, role, assigned_barangay
+            FROM users
+            WHERE role = ?
+              AND is_active = TRUE
+              AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+        `, [ROLES.MIDWIFE, log.barangay]);
+
+        for (const midwife of midwives) {
+            await this.createNotification({
+                recipientUserId: midwife.id,
+                recipientRole: ROLES.MIDWIFE,
+                recipientBarangay: log.barangay,
+                senderUserId: bhwUser.id,
+                notificationType: 'FIELD_VISIT_LOGGED',
+                actionType: 'FIELD_VISIT_LOGGED',
+                title: 'BHW Field Visit Logged',
+                message: `BHW ${bhwUser.full_name || bhwUser.name || 'Staff'} logged a visit for infant ${log.infant_name || 'Unknown'}. Outcome: ${log.outcome}`,
+                payload: {
+                    log_id: log.id,
+                    infant_id: log.infant_id,
+                    infant_name: log.infant_name || 'Unknown',
+                    outcome: log.outcome,
+                    barangay: log.barangay
+                }
+            });
+        }
     }
 
     async createTransferNotification({

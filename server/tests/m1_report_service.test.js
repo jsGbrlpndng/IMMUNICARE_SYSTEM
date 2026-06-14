@@ -4,7 +4,7 @@ const M1ReportService = require('../services/M1ReportService');
 
 const buildMockDb = (handler) => ({
     execute: jest.fn(async (sql, params) => {
-        if (sql.includes('m1_monthly_actual_populations')) {
+        if (sql.includes('m1_monthly_actual_populations') || sql.includes('COUNT(i.id)::int AS actual_population')) {
             if (sql.includes('b.id AS barangay_id')) {
                 return [[{ barangay_id: 'barangay-1', actual_population: 0 }]];
             }

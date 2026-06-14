@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CheckCheck, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/apiClient';
+import { useAuth } from '../contexts/AuthContext';
 
 const formatDate = (value) => {
     if (!value) return '';
@@ -15,6 +17,8 @@ const formatDate = (value) => {
 };
 
 const NotificationBell = ({ visible = false }) => {
+    const { user } = useAuth();
+    const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [notifications, setNotifications] = useState([]);
@@ -91,6 +95,58 @@ const NotificationBell = ({ visible = false }) => {
         }
     };
 
+    const handleNotificationClick = async (notification) => {
+        if (!notification.is_read) {
+            await markAsRead(notification.id);
+        }
+        setIsOpen(false);
+
+        const payload = typeof notification.payload === 'string'
+            ? JSON.parse(notification.payload)
+            : (notification.payload || {});
+
+        if (notification.notification_type === 'DEPLOYMENT_ASSIGNED' && payload.assignment_id) {
+            navigate('/clinical/map', {
+                state: {
+                    initialMode: 'priority',
+                    focusCluster: {
+                        id: payload.assignment_id
+                    }
+                }
+            });
+        } else if (notification.notification_type === 'DEPLOYMENT_REPORT_SUBMITTED' && payload.assignment_id) {
+            navigate('/admin/spatial-analysis', {
+                state: {
+                    initialTab: 'validation',
+                    reportId: payload.report_id,
+                    assignmentId: payload.assignment_id
+                }
+            });
+        } else if ((notification.notification_type === 'DEPLOYMENT_REPORT_VALIDATED' || notification.notification_type === 'DEPLOYMENT_REPORT_REJECTED') && payload.assignment_id) {
+            navigate('/clinical/map', {
+                state: {
+                    initialMode: 'priority',
+                    focusCluster: {
+                        id: payload.assignment_id
+                    }
+                }
+            });
+        } else if (notification.notification_type === 'FIELD_VISIT_LOGGED' && payload.infant_id) {
+            // If midwife is notified, redirect them to the clinical map Priority mode
+            navigate('/clinical/map', {
+                state: {
+                    initialMode: 'priority'
+                }
+            });
+        } else if (notification.notification_type === 'FOLLOW_UP_DELEGATED') {
+            if (user?.role === 'BHW') {
+                navigate('/bhw/follow-ups');
+            } else {
+                navigate('/clinical/follow-ups');
+            }
+        }
+    };
+
     if (!visible) return null;
 
     return (
@@ -115,7 +171,9 @@ const NotificationBell = ({ visible = false }) => {
                         <div className="flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Notifications</p>
-                                <h3 className="text-sm font-black text-slate-900">Transfer Handoff Notices</h3>
+                                <h3 className="text-sm font-black text-slate-900 font-sans">
+                                    System Notifications
+                                </h3>
                             </div>
                             {loading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : null}
                         </div>
@@ -130,12 +188,13 @@ const NotificationBell = ({ visible = false }) => {
 
                         {!loading && notifications.length === 0 ? (
                             <div className="px-4 py-8 text-center text-xs font-bold text-slate-500">
-                                No transfer handoff notices right now.
+                                No notifications right now.
                             </div>
                         ) : notifications.map((notification) => (
                             <article
                                 key={notification.id}
-                                className={`border-b border-slate-100 px-4 py-3 ${notification.is_read ? 'bg-white' : 'bg-emerald-50/60'}`}
+                                onClick={() => handleNotificationClick(notification)}
+                                className={`cursor-pointer border-b border-slate-100 px-4 py-3 transition hover:bg-slate-50/80 ${notification.is_read ? 'bg-white' : 'bg-emerald-50/60'}`}
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0 flex-1">
@@ -148,7 +207,10 @@ const NotificationBell = ({ visible = false }) => {
                                     {!notification.is_read ? (
                                         <button
                                             type="button"
-                                            onClick={() => markAsRead(notification.id)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                markAsRead(notification.id);
+                                            }}
                                             className="flex items-center gap-1 border border-emerald-700 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700 hover:bg-emerald-700 hover:text-white"
                                         >
                                             <CheckCheck className="h-3.5 w-3.5" />
@@ -164,7 +226,7 @@ const NotificationBell = ({ visible = false }) => {
 
                     {unreadNotifications.length > 0 ? (
                         <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold text-slate-500">
-                            {unreadNotifications.length} unread handoff notice{unreadNotifications.length === 1 ? '' : 's'}
+                            {unreadNotifications.length} unread notification{unreadNotifications.length === 1 ? '' : 's'}
                         </div>
                     ) : null}
                 </div>

@@ -124,9 +124,11 @@ router.get('/urgent-actions', async (req, res) => {
 // GET /api/dashboard/hotspot-summary
 router.get('/hotspot-summary', async (req, res) => {
     try {
+        const rawEps1 = parseInt(req.query.eps, 10);
+        const clampedEps1 = Number.isFinite(rawEps1) && rawEps1 >= 100 && rawEps1 <= 500 ? rawEps1 : 300;
         const spatialData = await infantService.getSpatialTriage({
             barangay: req.query.barangay || null,
-            eps: req.query.eps || 300,
+            eps: clampedEps1,
             minPts: req.query.minPts || 3,
             scope: 'defaulter'
         });
@@ -157,9 +159,11 @@ router.get('/hotspot-summary', async (req, res) => {
 // GET /api/dashboard/dbscan-alerts
 router.get('/dbscan-alerts', async (req, res) => {
     try {
+        const rawEps2 = parseInt(req.query.eps, 10);
+        const clampedEps2 = Number.isFinite(rawEps2) && rawEps2 >= 100 && rawEps2 <= 500 ? rawEps2 : 300;
         const spatialData = await infantService.getSpatialTriage({
             barangay: req.query.barangay || null,
-            eps: req.query.eps || 300,
+            eps: clampedEps2,
             minPts: req.query.minPts || 3,
             scope: 'defaulter'
         });
@@ -307,9 +311,11 @@ router.get('/superadmin/spatial-analysis', requireSuperAdminOnly, async (req, re
             ? req.query.barangay
             : null;
 
+        const rawEps3 = parseInt(req.query.eps, 10);
+        const clampedEps3 = Number.isFinite(rawEps3) && rawEps3 >= 100 && rawEps3 <= 500 ? rawEps3 : 300;
         const spatialData = await infantService.getSpatialTriage({
             barangay: targetBarangay,
-            eps: req.query.eps || 300,
+            eps: clampedEps3,
             minPts: req.query.minPts || 3,
             scope: req.query.scope || 'defaulter',
             ageGroup: req.query.ageGroup || null,

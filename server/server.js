@@ -27,6 +27,7 @@ const geoRouter = require('./routes/geo');
 const spatialRouter = require('./routes/spatial');
 const spatialDssRouter = require('./routes/spatialDss');
 const notificationsRouter = require('./routes/notifications');
+const deploymentReportsRouter = require('./routes/deploymentReports');
 const { adminSpatialDeploymentRouter, adminDeploymentRouter, bhwDeploymentRouter, clinicalDeploymentRouter } = require('./routes/deployments');
 const clinicalAuth = require('./middleware/clinicalAuth');
 
@@ -95,6 +96,7 @@ app.use('/api/geo', geoRouter);
 app.use('/api/spatial', spatialDssRouter);
 app.use('/api/spatial', spatialRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api', deploymentReportsRouter);
 
 // Health check
 app.get('/', (req, res) => {

@@ -22,6 +22,7 @@ import {
     YAxis
 } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import apiClient from '../../services/apiClient';
 import { formatAuditAction, formatAuditTarget } from '../../utils/auditFormatter';
 
@@ -81,6 +82,7 @@ const isEnterOrSpace = (event) => event.key === 'Enter' || event.key === ' ';
 const PublicHealthDashboard = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { selectedBarangay } = useBarangayFilter();
     const [sessionUser, setSessionUser] = useState(user);
     const [liveTimestamp, setLiveTimestamp] = useState(() => new Date());
     const [scope, setScope] = useState(DEFAULT_SCOPE);
@@ -149,14 +151,19 @@ const PublicHealthDashboard = () => {
 
     const requestOptions = useMemo(() => {
         const headers = {};
-        const barangay = sessionUser?.assigned_barangay || scope.barangay;
-        const barangayId = sessionUser?.barangay_id || scope.barangay_id;
+        const barangay = sessionUser?.assigned_barangay;
+        const barangayId = sessionUser?.barangay_id;
 
-        if (barangay) headers['x-admin-barangay'] = barangay;
+        if (barangay) {
+            headers['x-admin-barangay'] = barangay;
+        } else if (sessionUser?.role === 'Super Admin' && selectedBarangay && selectedBarangay !== 'all') {
+            headers['x-admin-barangay'] = selectedBarangay;
+        }
+
         if (barangayId) headers['x-admin-barangay-id'] = String(barangayId);
 
         return Object.keys(headers).length > 0 ? { headers } : {};
-    }, [scope.barangay, scope.barangay_id, sessionUser?.assigned_barangay, sessionUser?.barangay_id]);
+    }, [sessionUser?.assigned_barangay, sessionUser?.barangay_id, sessionUser?.role, selectedBarangay]);
 
     const mergeScope = (payload) => {
         const payloadScope = payload?.scope || {};

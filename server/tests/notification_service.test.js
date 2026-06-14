@@ -151,4 +151,60 @@ describe('NotificationService transfer handoff notices', () => {
             is_read: true
         }));
     });
+
+    test('lists unread notifications and marks them as read for BHW', async () => {
+        const db = {
+            execute: jest.fn(async (sql, params) => {
+                if (sql.includes('FROM notifications') && sql.includes('COUNT(*)::int AS unread_count')) {
+                    return [[{ unread_count: 1 }]];
+                }
+                if (sql.includes('FROM notifications')) {
+                    expect(params).toEqual(['bhw-1', 10]);
+                    return [[{
+                        id: 'notif-2',
+                        recipient_user_id: 'bhw-1',
+                        recipient_role: 'BHW',
+                        recipient_barangay: 'United Bayanihan',
+                        notification_type: 'FOLLOW_UP_DELEGATED',
+                        title: 'Urgent home visit requested',
+                        message: 'Urgent: Midwife requests a home visit for Maria Nicole Santos.',
+                        payload: { infant_name: 'Maria Nicole Santos' },
+                        is_read: false,
+                        read_at: null,
+                        created_at: '2026-06-08T08:00:00.000Z'
+                    }]];
+                }
+                if (sql.includes('UPDATE notifications')) {
+                    expect(params).toEqual(['notif-2', 'bhw-1']);
+                    return [[{
+                        id: 'notif-2',
+                        recipient_user_id: 'bhw-1',
+                        recipient_role: 'BHW',
+                        is_read: true,
+                        read_at: '2026-06-08T09:00:00.000Z'
+                    }]];
+                }
+                return [[]];
+            })
+        };
+
+        const service = new NotificationService(db);
+        const listResult = await service.listNotifications({
+            id: 'bhw-1',
+            role: 'BHW'
+        }, { limit: 10 });
+
+        expect(listResult.unread_count).toBe(1);
+        expect(listResult.notifications).toHaveLength(1);
+
+        const readResult = await service.markAsRead('notif-2', {
+            id: 'bhw-1',
+            role: 'BHW'
+        });
+
+        expect(readResult).toEqual(expect.objectContaining({
+            id: 'notif-2',
+            is_read: true
+        }));
+    });
 });

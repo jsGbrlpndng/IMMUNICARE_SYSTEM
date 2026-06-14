@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart2, FileText, LayoutDashboard, Map as MapIcon, Menu, Users, Layers, Settings } from 'lucide-react';
 import SidebarNav from './SidebarNav';
+import { useAuth } from '../contexts/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const adminNavigation = [
     {
@@ -19,6 +21,7 @@ const adminNavigation = [
 ];
 
 const AdminLayout = ({ children }) => {
+    const { user } = useAuth();
     const location = useLocation();
     const [isCollapsed, setIsCollapsed] = useState(() => {
         const saved = localStorage.getItem('admin-sidebar-collapsed');
@@ -64,6 +67,10 @@ const AdminLayout = ({ children }) => {
                         <p className="text-sm text-slate-400 font-medium">
                             Admin Portal <span className="text-slate-700 font-bold">/ {pageName}</span>
                         </p>
+                    </div>
+
+                    <div className="ml-auto flex items-center gap-3">
+                        <NotificationBell visible={user?.role === 'Admin'} />
                     </div>
                 </nav>
 

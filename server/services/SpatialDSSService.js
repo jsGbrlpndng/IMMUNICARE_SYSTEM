@@ -41,7 +41,7 @@ class SpatialDSSService {
             ? `${reportYear + 1}-01-01`
             : `${reportYear}-${String(reportMonth + 1).padStart(2, '0')}-01`;
 
-        const params = [reportYear, reportYear, reportMonth, startDate, endDate];
+        const params = [reportYear, endDate, startDate, endDate];
         const barangayFilterClause = scopedBarangay
             ? `WHERE UPPER(TRIM(base.barangay)) = UPPER(TRIM(?))`
             : '';
@@ -72,11 +72,15 @@ class SpatialDSSService {
                 actual_population_rows AS (
                     SELECT
                         UPPER(TRIM(b.name)) AS barangay,
-                        map.actual_population
-                    FROM m1_monthly_actual_populations map
-                    JOIN barangays b ON b.id = map.barangay_id
-                    WHERE map.report_year = ?
-                      AND map.report_month = ?
+                        COUNT(i.id)::int AS actual_population
+                    FROM barangays b
+                    LEFT JOIN infants i
+                      ON UPPER(TRIM(i.barangay)) = UPPER(TRIM(b.name))
+                     AND i.status = 'Active'
+                     AND i.registration_status = 'APPROVED'
+                     AND i.dob < ?::date
+                    WHERE COALESCE(b.is_active, TRUE) = TRUE
+                    GROUP BY b.name
                 ),
                 accomplishment_rows AS (
                     SELECT

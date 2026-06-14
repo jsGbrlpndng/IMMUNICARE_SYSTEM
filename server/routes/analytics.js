@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { performance } = require('perf_hooks');
 const db = require('../db');
 const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
 const DBSCANService = require('../services/DBSCANService');
@@ -434,11 +435,16 @@ router.get('/surveillance-stats', async (req, res) => {
 // Unified source of truth for the Midwife Follow-Up Map
 router.get('/map-data', async (req, res) => {
     try {
-        const { eps = 300, minPts = 3, scope = 'overdue' } = req.query;
+        const rawEps = parseInt(req.query.eps, 10);
+        const eps = Number.isFinite(rawEps) && rawEps >= 100 && rawEps <= 500 ? rawEps : 300;
+        const { minPts = 3, scope = 'overdue' } = req.query;
         // clinicalAuth injects req.query.barangay for non-Super Admins.
         // For Super Admins, this will be the requested filter, or undefined for a Municipal Overview.
         const targetBarangay = req.query.barangay || null;
+        const start = performance.now();
         const spatialData = await infantService.getSpatialTriage({ eps, minPts, barangay: targetBarangay, scope });
+        const end = performance.now();
+        console.log(`[PERF] ID-110 Spatial Triage executed in: ${(end - start).toFixed(2)}ms`);
         
         const counts = spatialData.counts || {};
         const computedDefaulters = (spatialData.all_infants || [])

@@ -9,12 +9,14 @@ import {
     Shield
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLocation } from 'react-router-dom';
 import apiClient from '../../services/apiClient';
 
 // Sub-components
 import HeatmapSidePanel from './HeatmapSidePanel';
 import HeatmapMap from './HeatmapMap';
 import ErrorBoundary from '../../components/common/ErrorBoundary';
+import DeploymentReportModal from '../../components/DeploymentReportModal';
 // Validation Logic
 import { getBarangayCenter } from '../../utils/barangayConfig';
 import { getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
@@ -23,7 +25,13 @@ import { formatFullNameFromObject } from '../../utils/formatFullName';
 // --- Main Orchestrator ---
 export default function Heatmap() {
     const { user } = useAuth();
-    const [mode, setMode] = useState('all'); // 'all' (Individual) or 'priority' (Priority Areas)
+    const location = useLocation();
+    const navState = location.state || {};
+    const isMidwife = user?.role === 'Midwife';
+    const canAdjustEpsilon = ['Admin', 'Super Admin'].includes(user?.role);
+    const [eps, setEps] = useState(300);
+    const [mode, setMode] = useState(navState.initialMode || 'all'); // 'all' (Individual) or 'priority' (Priority Areas)
+    const [pendingFocus, setPendingFocus] = useState(navState.focusCluster || null);
     const [activeFilters, setActiveFilters] = useState({
         // All 4 independent clinical states enabled by default.
         // Toggling one in the legend HUD only affects its own group.
@@ -41,6 +49,38 @@ export default function Heatmap() {
     const [selectedClusterId, setSelectedClusterId] = useState(null);
     const [resetViewFlag, setResetViewFlag] = useState(0);
     const [clusterDeploymentRows, setClusterDeploymentRows] = useState([]);
+    const [activeReport, setActiveReport] = useState(null);
+    const [loadingReport, setLoadingReport] = useState(false);
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+    const selectedCluster = useMemo(() => {
+        if (!mapState?.clusters || !selectedClusterId) return null;
+        return mapState.clusters.find(c => (c.clusterId || c.id) === selectedClusterId);
+    }, [mapState?.clusters, selectedClusterId]);
+
+    useEffect(() => {
+        if (selectedClusterId && mode === 'priority') {
+            setLoadingReport(true);
+            apiClient.get(`/clinical/deployments/${selectedClusterId}/report`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.report) {
+                        setActiveReport(data.report);
+                    } else {
+                        setActiveReport(null);
+                    }
+                })
+                .catch(err => {
+                    console.error('[FETCH_REPORT_ERR]', err);
+                    setActiveReport(null);
+                })
+                .finally(() => {
+                    setLoadingReport(false);
+                });
+        } else {
+            setActiveReport(null);
+        }
+    }, [selectedClusterId, mode]);
     const markerRefsRef = useRef({});  // holds per-infant Leaflet marker refs
     const markerRefsCallback = useCallback((refsObj) => { markerRefsRef.current = refsObj.current; }, []);
     const assignedBarangay = user?.assigned_barangay || mapState?.barangay || null;
@@ -62,7 +102,7 @@ export default function Heatmap() {
         setLoading(true);
         try {
             const [res, deploymentsRes] = await Promise.all([
-                apiClient.get('/analytics/map-data?scope=census&eps=300&minPts=3'),
+                apiClient.get('/analytics/map-data?scope=census&eps=' + eps + '&minPts=3'),
                 apiClient.get('/clinical/deployments')
             ]);
 
@@ -133,11 +173,31 @@ export default function Heatmap() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [eps]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Auto-focus cluster when navigated from deployment banner
+    useEffect(() => {
+        if (pendingFocus && mapState && !loading) {
+            const cluster = pendingFocus;
+            if (cluster.id) {
+                setSelectedClusterId(cluster.id);
+            }
+            if (Number.isFinite(cluster.lat) && Number.isFinite(cluster.lng)) {
+                setMapTarget({
+                    lat: cluster.lat,
+                    lng: cluster.lng,
+                    bounds: cluster.bounds
+                });
+            }
+            setPendingFocus(null);
+            // Clear ephemeral router state so browser back/forward doesn't re-trigger
+            window.history.replaceState({}, document.title);
+        }
+    }, [pendingFocus, mapState, loading]);
 
     useEffect(() => {
         const handleFollowUpUpdate = () => fetchData();
@@ -503,8 +563,41 @@ export default function Heatmap() {
                             allMarkersForMode={allMarkersForMode}
                             handleFocusInfant={handleFocusInfant}
                             clusterDeploymentRows={clusterDeploymentRows}
+                            activeReport={activeReport}
+                            loadingReport={loadingReport}
+                            onSubmitReport={() => setIsReportModalOpen(true)}
                         />
                     </ErrorBoundary>
+                    {canAdjustEpsilon ? (
+                        <div className="flex flex-col gap-1.5 p-4 border-t border-slate-200">
+                            <div className="flex items-center justify-between text-xs font-black text-slate-700 uppercase">
+                                <span>Cluster Radius (Epsilon)</span>
+                                <span className="text-emerald-700">{eps}m</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="100"
+                                max="500"
+                                step="50"
+                                value={eps}
+                                onChange={(e) => {
+                                    if (!canAdjustEpsilon) return;
+                                    setEps(Number(e.target.value));
+                                }}
+                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-700"
+                            />
+                            <p className="text-[9px] text-slate-400 font-semibold mt-1">
+                                ⚠️ Exploration only. Deployments always use 300m standard.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 p-4 border-t border-slate-200 bg-slate-50">
+                            <Shield size={14} className="text-emerald-700" />
+                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                                Cluster Radius Locked: 300m (DOH Standard)
+                            </span>
+                        </div>
+                    )}
                 </div>
 
             </div>
@@ -514,6 +607,17 @@ export default function Heatmap() {
                 <span className="text-emerald-400 text-[10px] font-mono tracking-widest">STATUS: LIVE SYNC ACTIVE</span>
                 <span className="text-slate-400 text-[10px] font-mono tracking-widest">DATABASE: SECURE | LAST UPDATED: JUST NOW</span>
             </div>
+
+            {isReportModalOpen && selectedCluster && (
+                <DeploymentReportModal
+                    cluster={selectedCluster}
+                    onClose={() => setIsReportModalOpen(false)}
+                    onSubmitSuccess={(newReport) => {
+                        fetchData();
+                        setActiveReport(newReport);
+                    }}
+                />
+            )}
 
         </div>
     );

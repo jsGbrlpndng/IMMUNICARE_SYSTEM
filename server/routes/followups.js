@@ -7,6 +7,7 @@ const { ROLES } = require('../constants/domain');
 const { performAuditLog } = require('../utils/auditLogger');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
+const DefaulterService = require('../services/DefaulterService');
 
 router.use(clinicalAuth);
 
@@ -65,8 +66,12 @@ const normalizeFollowUpRow = (row) => ({
     dob: row.dob,
     barangay: row.barangay,
     purok: row.purok,
+    sitio: row.sitio || row.purok || null,
     current_address: row.current_address,
     exact_address: row.exact_address,
+    street: row.street_address || row.exact_address || null,
+    street_address: row.street_address || row.exact_address || null,
+    landmark: row.landmark || null,
     caregiver_phone: row.caregiver_phone,
     caregiver_relationship: row.caregiver_relationship,
     registration_status: row.registration_status,
@@ -91,7 +96,11 @@ const normalizeFollowUpRow = (row) => ({
     cluster_assignment_id: row.cluster_assignment_id || null,
     cluster_label: row.cluster_label || null,
     cluster_status: row.cluster_status || null,
-    assigned_cluster_bhw_id: row.assigned_cluster_bhw_id || null
+    assigned_cluster_bhw_id: row.assigned_cluster_bhw_id || null,
+    days_overdue: Number(row.days_overdue || 0),
+    assigned_cluster_bhw_role: row.assigned_cluster_bhw_role || null,
+    assigned_cluster_bhw_name: row.assigned_cluster_bhw_name || null,
+    is_midwife_delegated: Boolean(row.assigned_by_midwife_id)
 });
 
 /**
@@ -109,155 +118,9 @@ router.get('/', async (req, res) => {
         const scopedBarangay = getScopedBarangay(req);
         await refreshScheduleFollowUpStatuses(scopedBarangay);
 
-        const params = [];
-        const filters = [
-            `
-            EXISTS (
-                SELECT 1
-                FROM infant_schedules sx
-                LEFT JOIN vaccinations vx
-                  ON vx.schedule_id = sx.id
-                  OR (
-                    vx.infant_id = sx.infant_id
-                    AND vx.vaccine_code = sx.vaccine_code
-                    AND vx.dose_number = sx.dose_number
-                    AND vx.validation_status = 'VALIDATED'
-                  )
-                WHERE sx.infant_id = i.id
-                  AND sx.status IN ('DEFAULTER', 'DUE_SOON')
-                  AND vx.id IS NULL
-            )
-            `
-            ,
-            `COALESCE(i.status, '') != 'Archived'`
-        ];
-
-        if (req.user.role === ROLES.BHW) {
-            filters.push('UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))');
-            params.push(req.user.assigned_barangay);
-        } else if (scopedBarangay) {
-            filters.push('UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))');
-            params.push(scopedBarangay);
-        }
-
-        const clusterAssignmentRestriction = req.user.role === ROLES.BHW
-            ? 'AND ca.assigned_bhw_id = ?'
-            : '';
-        const clusterAssignmentParams = req.user.role === ROLES.BHW ? [req.user.id] : [];
-
-        const [rows] = await db.execute(
-            `
-            WITH schedule_urgency AS (
-                SELECT
-                    i.id AS infant_id,
-                    i.reference_id,
-                    i.first_name,
-                    i.middle_name,
-                    i.last_name,
-                    i.dob,
-                    i.barangay,
-                    i.purok,
-                    i.current_address,
-                    i.exact_address,
-                    i.caregiver_phone,
-                    i.caregiver_relationship,
-                    i.registration_status,
-                    CASE
-                        WHEN MAX(CASE WHEN s.status = 'DEFAULTER' THEN 2 WHEN s.status = 'DUE_SOON' THEN 1 ELSE 0 END) = 2 THEN 'DEFAULTER'
-                        ELSE 'DUE_SOON'
-                    END AS follow_up_status,
-                    MIN(s.recommended_date) AS earliest_recommended_date,
-                    COUNT(DISTINCT s.id)::int AS due_vaccine_count,
-                    STRING_AGG(DISTINCT COALESCE(s.vaccine_name, s.vaccine_code), ', ') AS due_vaccines,
-                    (ARRAY_AGG(s.id ORDER BY CASE s.status WHEN 'DEFAULTER' THEN 0 ELSE 1 END, s.recommended_date ASC))[1] AS missing_schedule_id,
-                    (ARRAY_AGG(s.vaccine_code ORDER BY CASE s.status WHEN 'DEFAULTER' THEN 0 ELSE 1 END, s.recommended_date ASC))[1] AS missing_vaccine_code,
-                    (ARRAY_AGG(COALESCE(s.vaccine_name, s.vaccine_code) ORDER BY CASE s.status WHEN 'DEFAULTER' THEN 0 ELSE 1 END, s.recommended_date ASC))[1] AS missing_vaccine_name,
-                    (ARRAY_AGG(s.dose_number ORDER BY CASE s.status WHEN 'DEFAULTER' THEN 0 ELSE 1 END, s.recommended_date ASC))[1] AS missing_dose_number
-                FROM infants i
-                LEFT JOIN infant_schedules s ON s.infant_id = i.id
-                LEFT JOIN vaccinations v
-                  ON v.schedule_id = s.id
-                  OR (
-                    v.infant_id = s.infant_id
-                    AND v.vaccine_code = s.vaccine_code
-                    AND v.dose_number = s.dose_number
-                    AND v.validation_status = 'VALIDATED'
-                  )
-                WHERE ${filters.join(' AND ')}
-                  AND s.status IN ('DEFAULTER', 'DUE_SOON')
-                  AND v.id IS NULL
-                GROUP BY
-                    i.id,
-                    i.reference_id,
-                    i.first_name,
-                    i.middle_name,
-                    i.last_name,
-                    i.dob,
-                    i.barangay,
-                    i.purok,
-                    i.current_address,
-                    i.exact_address,
-                    i.caregiver_phone,
-                    i.caregiver_relationship,
-                    i.registration_status
-            ),
-            latest_logs AS (
-                SELECT DISTINCT ON (infant_id)
-                    infant_id,
-                    visit_date AS last_visit_date,
-                    outcome AS last_visit_outcome,
-                    notes AS latest_log_notes
-                FROM follow_up_logs
-                ORDER BY infant_id, created_at DESC
-            )
-            SELECT
-                su.*,
-                bhw.id AS assigned_bhw_id,
-                bhw.full_name AS assigned_bhw_name,
-                bhw.assigned_barangay AS assigned_bhw_barangay,
-                ll.last_visit_date,
-                ll.last_visit_outcome,
-                ll.latest_log_notes,
-                cluster_assignment.id AS cluster_assignment_id,
-                cluster_assignment.cluster_label,
-                cluster_assignment.status AS cluster_status,
-                cluster_assignment.assigned_bhw_id AS assigned_cluster_bhw_id
-            FROM schedule_urgency su
-            LEFT JOIN LATERAL (
-                SELECT id, full_name, assigned_barangay
-                FROM users
-                WHERE role = 'BHW'
-                  AND is_active = TRUE
-                  AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(su.barangay))
-                ORDER BY full_name ASC, id ASC
-                LIMIT 1
-            ) bhw ON TRUE
-            LEFT JOIN latest_logs ll ON ll.infant_id = su.infant_id
-            LEFT JOIN LATERAL (
-                SELECT
-                    ca.id,
-                    ca.cluster_label,
-                    ca.status,
-                    ca.assigned_bhw_id
-                FROM cluster_assignment_members cam
-                JOIN cluster_assignments ca ON ca.id = cam.assignment_id
-                WHERE cam.infant_id = su.infant_id
-                  AND ca.status IN ('Pending', 'In Progress')
-                  AND UPPER(TRIM(ca.barangay)) = UPPER(TRIM(su.barangay))
-                  ${clusterAssignmentRestriction}
-                ORDER BY ca.updated_at DESC
-                LIMIT 1
-            ) cluster_assignment ON TRUE
-            ORDER BY
-                CASE WHEN cluster_assignment.id IS NOT NULL THEN 0 ELSE 1 END,
-                CASE su.follow_up_status WHEN 'DEFAULTER' THEN 0 ELSE 1 END,
-                su.earliest_recommended_date ASC,
-                su.last_name ASC,
-                su.first_name ASC
-            LIMIT ?
-            `,
-            [...params, ...clusterAssignmentParams, Number(req.query.limit) || 250]
-        );
+        const bhwId = req.user.role === ROLES.BHW ? req.user.id : null;
+        const limit = Number(req.query.limit) || 250;
+        const rows = await DefaulterService.getDefaulterList(scopedBarangay, bhwId, limit);
 
         const followUps = rows.map(normalizeFollowUpRow);
 
@@ -386,6 +249,16 @@ router.post('/:infantId/logs', async (req, res) => {
             ]
         );
 
+        await db.execute(
+            `
+            UPDATE follow_up_tasks
+            SET status = 'COMPLETED_PENDING_REVIEW', updated_at = CURRENT_TIMESTAMP
+            WHERE infant_id = ?
+              AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
+            `,
+            [req.params.infantId]
+        );
+
         await performAuditLog(req.user.id, 'FOLLOW_UP_VISIT_LOGGED', 'follow_up_logs', logId, {
             infant_id: req.params.infantId,
             target_name: infantTargetName(infantRows[0]),
@@ -408,6 +281,23 @@ router.post('/:infantId/logs', async (req, res) => {
             },
             req
         });
+
+        try {
+            const NotificationService = require('../services/NotificationService');
+            const notificationService = new NotificationService(db);
+            await notificationService.createFieldVisitLoggedNotification({
+                log: {
+                    id: logId,
+                    infant_id: req.params.infantId,
+                    infant_name: infantTargetName(infantRows[0]),
+                    outcome: req.body.outcome,
+                    barangay: req.user.assigned_barangay
+                },
+                bhwUser: req.user
+            });
+        } catch (notifErr) {
+            console.warn('[Field Visit Notification] Failed to send notification:', notifErr.message);
+        }
 
         res.status(201).json({ success: true, id: logId });
     } catch (error) {
@@ -474,6 +364,144 @@ router.put('/:infantId/archive', async (req, res) => {
     } catch (error) {
         console.error('[FOLLOW_UP_ARCHIVE]', error);
         res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/bhws', async (req, res) => {
+    try {
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Forbidden: Only midwives, nurses, or admins can retrieve BHW list.' });
+        }
+
+        const barangay = getScopedBarangay(req);
+        if (!barangay) {
+            return res.status(400).json({ success: false, error: 'Barangay scope is required.' });
+        }
+
+        const [bhws] = await db.execute(
+            `SELECT id, full_name 
+             FROM users 
+             WHERE role = 'BHW' 
+               AND is_active = TRUE 
+               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+             ORDER BY full_name ASC`,
+            [barangay]
+        );
+
+        res.json({ success: true, bhws });
+    } catch (error) {
+        console.error('[GET_BHWS_ERROR]', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/:infantId/delegate', async (req, res) => {
+    try {
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Forbidden: Only Midwife, Nurse, or Super Admin can delegate follow-up tasks.' });
+        }
+
+        const [infantRows] = await db.execute(
+            `SELECT id, first_name, middle_name, last_name, barangay FROM infants WHERE id = ? AND COALESCE(status, '') != 'Archived' LIMIT 1`,
+            [req.params.infantId]
+        );
+        const infant = infantRows[0];
+        if (!infant) {
+            return res.status(404).json({ success: false, error: 'Infant record not found' });
+        }
+
+        // Enforce barangay-level tenant boundaries for midwives
+        if (req.user.role !== ROLES.SUPER_ADMIN && infant.barangay !== req.user.assigned_barangay) {
+            return res.status(403).json({ success: false, error: 'Forbidden: Infant belongs to another barangay.' });
+        }
+
+        const { bhwId, notes } = req.body;
+        if (!bhwId) {
+            return res.status(400).json({ success: false, error: 'BHW ID is required for delegation.' });
+        }
+
+        // Validate that the selected BHW belongs to the infant's barangay
+        const [bhwRows] = await db.execute(
+            `SELECT id, full_name, assigned_barangay FROM users WHERE id = ? AND role = 'BHW' AND is_active = TRUE LIMIT 1`,
+            [bhwId]
+        );
+        const bhw = bhwRows[0];
+        if (!bhw) {
+            return res.status(400).json({ success: false, error: 'Selected BHW is inactive or does not exist.' });
+        }
+
+        if (bhw.assigned_barangay?.trim().toUpperCase() !== infant.barangay?.trim().toUpperCase()) {
+            return res.status(400).json({ success: false, error: "Cross-tenant assignment error: Selected BHW is not assigned to the infant's barangay." });
+        }
+
+        const taskNotes = notes?.trim() || `Urgent midwife request for home visit.`;
+
+        // Ensure a follow-up task exists or is created in follow_up_tasks table
+        const [existingTasks] = await db.execute(
+            `SELECT id FROM follow_up_tasks WHERE infant_id = ? AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'COMPLETED_PENDING_REVIEW', 'OVERDUE') LIMIT 1`,
+            [infant.id]
+        );
+
+        let taskId;
+        if (existingTasks.length > 0) {
+            taskId = existingTasks[0].id;
+            await db.execute(
+                `UPDATE follow_up_tasks SET assigned_to_bhw_id = ?, task_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [bhw.id, taskNotes, taskId]
+            );
+        } else {
+            taskId = uuidv4();
+            await db.execute(
+                `INSERT INTO follow_up_tasks (id, infant_id, barangay, assigned_to_bhw_id, assigned_by_midwife_id, target_completion_date, task_notes, status) 
+                 VALUES (?, ?, ?, ?, ?, CURRENT_DATE + INTERVAL '7 days', ?, 'ASSIGNED')`,
+                [taskId, infant.id, infant.barangay, bhw.id, req.user.id, taskNotes]
+            );
+        }
+
+        // PUSH Notification via NotificationService
+        const NotificationService = require('../services/NotificationService');
+        const notificationService = new NotificationService(db);
+        const infantFullName = [infant.first_name, infant.middle_name, infant.last_name].filter(Boolean).join(' ');
+        
+        await notificationService.createNotification({
+            recipientUserId: bhw.id,
+            recipientRole: ROLES.BHW,
+            recipientBarangay: infant.barangay,
+            senderUserId: req.user.id,
+            notificationType: 'FOLLOW_UP_DELEGATED',
+            actionType: 'FOLLOW_UP_DELEGATED',
+            title: 'Urgent home visit requested',
+            message: `Urgent: Midwife requests a home visit for ${infantFullName}`,
+            payload: {
+                infant_id: infant.id,
+                infant_name: infantFullName,
+                task_id: taskId
+            }
+        });
+
+        // AUDIT: Record event in ledger
+        await safeRecordAuditEvent({
+            actor: req.user,
+            action: 'FOLLOW_UP_DELEGATED',
+            targetEntity: 'follow_up_tasks',
+            targetRecordId: taskId,
+            targetName: infantFullName,
+            barangay: infant.barangay,
+            oldValues: {},
+            newValues: {
+                infant_id: infant.id,
+                assigned_to_bhw_id: bhw.id,
+                assigned_by_midwife_id: req.user.id,
+                task_id: taskId,
+                task_notes: taskNotes
+            },
+            req
+        });
+
+        res.status(200).json({ success: true, taskId, bhwName: bhw.full_name });
+    } catch (err) {
+        console.error('[DELEGATION_ERR]', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

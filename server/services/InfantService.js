@@ -1,4 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
+const { performance } = require('perf_hooks');
 const ValidationService = require('./ValidationService');
 const CPABCalculator = require('./CPABCalculator');
 const EnhancedNIPScheduleEngine = require('./EnhancedNIPScheduleEngine');
@@ -1349,8 +1350,11 @@ class InfantService {
         }
 
         // 4. Run DBSCAN
+        const dbscanStart = performance.now();
         const dbscan = new DBSCANService(epsilonMeters, safeMinPts);
         const rawClusters = dssDataset.length >= safeMinPts ? dbscan.cluster(dssDataset) : [];
+        const dbscanEnd = performance.now();
+        console.log(`[PERF] ID-110 DBSCAN Clustering executed in: ${(dbscanEnd - dbscanStart).toFixed(2)}ms`);
 
         // 5. Build Clusters
         const clusteredPointIds = new Set();

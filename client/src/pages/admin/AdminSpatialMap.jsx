@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, GeoJSON, Polygon, Popup, ScaleControl, useMap } from 'react-leaflet';
 import { ClipboardList, MapPinned, ShieldCheck, UserRoundCheck } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
@@ -136,6 +137,14 @@ const FlyToCluster = ({ cluster }) => {
 
 export default function AdminSpatialMap() {
     const { user } = useAuth();
+    const location = useLocation();
+    const initState = location.state || {};
+    const [activeTab, setActiveTab] = useState(initState.initialTab || 'deployments');
+    const [activeReport, setActiveReport] = useState(null);
+    const [loadingReport, setLoadingReport] = useState(false);
+    const [validationNotes, setValidationNotes] = useState('');
+    const [validating, setValidating] = useState(false);
+
     const [spatialData, setSpatialData] = useState({
         barangay: '',
         cluster_count: 0,
@@ -152,6 +161,7 @@ export default function AdminSpatialMap() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
+    const clusters = spatialData.clusters || [];
     const assignedBarangay = normalizeBarangay(spatialData.barangay || user?.assigned_barangay || user?.assignedBarangay || user?.barangay || user?.locality);
     const barangayCenter = getBarangayCenter(assignedBarangay);
     const barangayBoundaryData = getBarangayBoundaryGeoJson(assignedBarangay);
@@ -205,6 +215,115 @@ export default function AdminSpatialMap() {
         };
     }, []);
 
+    useEffect(() => {
+        if (initState.assignmentId) {
+            setSelectedClusterId(initState.assignmentId);
+            // clear the state
+            window.history.replaceState({}, document.title);
+        }
+    }, [initState.assignmentId]);
+
+    useEffect(() => {
+        if (selectedClusterId) {
+            const cluster = clusters.find((c, index) => getClusterId(c, index) === selectedClusterId);
+            if (cluster && cluster.status === 'In Progress') {
+                setLoadingReport(true);
+                apiClient.get(`/clinical/deployments/${cluster.id}/report`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.report) {
+                            setActiveReport(data.report);
+                        } else {
+                            setActiveReport(null);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('[FETCH_REPORT_ERR]', err);
+                        setActiveReport(null);
+                    })
+                    .finally(() => {
+                        setLoadingReport(false);
+                    });
+            } else {
+                setActiveReport(null);
+            }
+        } else {
+            setActiveReport(null);
+        }
+    }, [selectedClusterId, clusters]);
+
+    const handleValidateReport = async (reportId) => {
+        if (!reportId) return;
+        setValidating(true);
+        try {
+            const response = await apiClient.put(`/admin/deployments/reports/${reportId}/validate`, {
+                validationNotes
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to validate report.');
+            }
+            // Refresh data
+            const refreshRes = await apiClient.get('/admin/spatial/deployments');
+            if (refreshRes.ok) {
+                const payload = await refreshRes.json();
+                const updatedClusters = Array.isArray(payload?.deployments)
+                    ? payload.deployments
+                    : (Array.isArray(payload?.clusters) ? payload.clusters : []);
+                setSpatialData(prev => ({
+                    ...prev,
+                    clusters: updatedClusters
+                }));
+                // Clear selection or select next
+                const remaining = updatedClusters.filter(c => c.status === 'In Progress');
+                setSelectedClusterId(remaining[0]?.id || null);
+            }
+            setActiveReport(null);
+            setValidationNotes('');
+        } catch (err) {
+            console.error('[VALIDATE_REPORT_ERR]', err);
+            alert(err.message || 'Failed to validate report');
+        } finally {
+            setValidating(false);
+        }
+    };
+
+    const handleRejectReport = async (reportId) => {
+        if (!reportId) return;
+        setValidating(true);
+        try {
+            const response = await apiClient.put(`/admin/deployments/reports/${reportId}/reject`, {
+                validationNotes
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to reject report.');
+            }
+            // Refresh data
+            const refreshRes = await apiClient.get('/admin/spatial/deployments');
+            if (refreshRes.ok) {
+                const payload = await refreshRes.json();
+                const updatedClusters = Array.isArray(payload?.deployments)
+                    ? payload.deployments
+                    : (Array.isArray(payload?.clusters) ? payload.clusters : []);
+                setSpatialData(prev => ({
+                    ...prev,
+                    clusters: updatedClusters
+                }));
+                // Clear selection or select next
+                const remaining = updatedClusters.filter(c => c.status === 'In Progress');
+                setSelectedClusterId(remaining[0]?.id || null);
+            }
+            setActiveReport(null);
+            setValidationNotes('');
+        } catch (err) {
+            console.error('[REJECT_REPORT_ERR]', err);
+            alert(err.message || 'Failed to reject report');
+        } finally {
+            setValidating(false);
+        }
+    };
+
     const saveAssignment = async (assignmentId) => {
         const staffId = pendingAssignments[assignmentId];
         if (!assignmentId || !staffId) return;
@@ -254,7 +373,6 @@ export default function AdminSpatialMap() {
         }
     };
 
-    const clusters = spatialData.clusters || [];
     const selectedCluster = useMemo(
         () => clusters.find((cluster, index) => getClusterId(cluster, index) === selectedClusterId) || null,
         [clusters, selectedClusterId]
@@ -284,166 +402,325 @@ export default function AdminSpatialMap() {
             </section>
 
             <section className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-                <aside className="border border-slate-200 bg-white shadow-sm">
-                    <div className="border-b border-slate-200 px-6 py-5">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-emerald-50 text-emerald-700">
-                                <ClipboardList className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Field Deployment & Triage</p>
-                                <h2 className="text-base font-black text-slate-950">Priority Outreach Areas</h2>
-                            </div>
-                        </div>
+                <aside className="border border-slate-200 bg-white shadow-sm flex flex-col max-h-[780px] h-[780px] overflow-hidden">
+                    <div className="border-b border-slate-200 bg-slate-50 flex flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setActiveTab('deployments');
+                                const firstDep = clusters[0];
+                                if (firstDep) setSelectedClusterId(getClusterId(firstDep, 0));
+                            }}
+                            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all outline-none ${
+                                activeTab === 'deployments'
+                                    ? 'border-emerald-800 text-emerald-800 bg-white font-black'
+                                    : 'border-transparent text-slate-500 hover:text-slate-800 font-bold'
+                            }`}
+                        >
+                            Deployments
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setActiveTab('validation');
+                                const inProgress = clusters.filter(c => c.status === 'In Progress');
+                                if (inProgress[0]) {
+                                    setSelectedClusterId(inProgress[0].id);
+                                } else {
+                                    setSelectedClusterId(null);
+                                }
+                            }}
+                            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all relative outline-none ${
+                                activeTab === 'validation'
+                                    ? 'border-emerald-800 text-emerald-800 bg-white font-black'
+                                    : 'border-transparent text-slate-500 hover:text-slate-800 font-bold'
+                            }`}
+                        >
+                            Validation
+                            {clusters.filter(c => c.status === 'In Progress').length > 0 && (
+                                <span className="absolute top-2 right-4 flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-455 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                                </span>
+                            )}
+                        </button>
                     </div>
 
-                    <div className="space-y-5 px-6 py-6">
-                        <div className="flex items-start gap-3 border border-emerald-200 bg-emerald-50 p-4">
-                            <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-800" />
-                            <div>
-                                <p className="text-xs font-black uppercase tracking-wider text-emerald-900">
-                                    Standardized Cluster Detection (Min. 3 Infants)
-                                </p>
-                                <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">
-                                    System-wide detection rules are locked for consistent field planning.
-                                </p>
+                    {activeTab === 'deployments' ? (
+                        <div className="flex-1 overflow-y-auto space-y-5 px-6 py-6">
+                            <div className="flex items-start gap-3 border border-emerald-200 bg-emerald-50 p-4">
+                                <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-800" />
+                                <div>
+                                    <p className="text-xs font-black uppercase tracking-wider text-emerald-900 font-sans">
+                                        Standardized Cluster Detection (Min. 3 Infants)
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">
+                                        System-wide detection rules are locked for consistent field planning.
+                                    </p>
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="border border-slate-200 bg-slate-50 p-4">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Active Areas</p>
-                                <p className="mt-2 text-2xl font-black text-slate-950">{loading ? '...' : clusters.length}</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Active Areas</p>
+                                    <p className="mt-2 text-2xl font-black text-slate-950">{loading ? '...' : clusters.length}</p>
+                                </div>
+                                <div className="border border-slate-200 bg-slate-50 p-4">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Defaulters</p>
+                                    <p className="mt-2 text-2xl font-black text-slate-950">{loading ? '...' : totalInfants}</p>
+                                </div>
                             </div>
-                            <div className="border border-slate-200 bg-slate-50 p-4">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Defaulters</p>
-                                <p className="mt-2 text-2xl font-black text-slate-950">{loading ? '...' : totalInfants}</p>
-                            </div>
-                        </div>
 
-                        <div className="space-y-3">
-                            {loading ? (
-                                <p className="border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
-                                    Loading active field areas...
-                                </p>
-                            ) : error ? (
-                                <p className="border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm font-bold text-rose-700">
-                                    {error}
-                                </p>
-                            ) : clusters.length === 0 ? (
-                                <p className="border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
-                                    No priority outreach areas detected.
-                                </p>
-                            ) : (
-                                clusters.map((cluster, index) => {
-                                    const clusterId = getClusterId(cluster, index);
-                                    const active = clusterId === selectedClusterId;
-                                    const count = getClusterCount(cluster);
-                                    const status = getClusterStatus(cluster);
-                                    const currentAssignedStaffId = cluster?.assigned_bhw_id || '';
-                                    const pendingStaffId = pendingAssignments[cluster.id] ?? currentAssignedStaffId;
-                                    const assignmentChanged = pendingStaffId && pendingStaffId !== currentAssignedStaffId;
-                                    const message = assignmentMessages[cluster.id];
+                            <div className="space-y-3">
+                                {loading ? (
+                                    <p className="border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
+                                        Loading active field areas...
+                                    </p>
+                                ) : error ? (
+                                    <p className="border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm font-bold text-rose-700">
+                                        {error}
+                                    </p>
+                                ) : clusters.length === 0 ? (
+                                    <p className="border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
+                                        No priority outreach areas detected.
+                                    </p>
+                                ) : (
+                                    clusters.map((cluster, index) => {
+                                        const clusterId = getClusterId(cluster, index);
+                                        const active = clusterId === selectedClusterId;
+                                        const count = getClusterCount(cluster);
+                                        const status = getClusterStatus(cluster);
+                                        const currentAssignedStaffId = cluster?.assigned_bhw_id || '';
+                                        const pendingStaffId = pendingAssignments[cluster.id] ?? currentAssignedStaffId;
+                                        const assignmentChanged = pendingStaffId && pendingStaffId !== currentAssignedStaffId;
+                                        const message = assignmentMessages[cluster.id];
 
-                                    return (
-                                        <div
-                                            key={clusterId}
-                                            className={`w-full border text-left transition ${
-                                                active
-                                                    ? 'border-emerald-800 bg-emerald-50'
-                                                    : 'border-slate-200 bg-white hover:border-emerald-700 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedClusterId(clusterId)}
-                                                className="w-full px-4 py-4 text-left"
+                                        return (
+                                            <div
+                                                key={clusterId}
+                                                className={`w-full border text-left transition ${
+                                                    active
+                                                        ? 'border-emerald-800 bg-emerald-50'
+                                                        : 'border-slate-200 bg-white hover:border-emerald-700 hover:bg-slate-50'
+                                                }`}
                                             >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div>
-                                                    <p className="text-sm font-black text-slate-950">
-                                                        {cluster?.cluster_label || cluster?.locality || `Priority Area ${index + 1}`}
-                                                    </p>
-                                                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                                                        {count} defaulters in this area
-                                                    </p>
-                                                </div>
-                                                <span className={`shrink-0 rounded-sm px-2 py-1 text-[10px] font-black uppercase tracking-wider ${
-                                                    status === 'Requires Intervention'
-                                                        ? 'bg-rose-50 text-rose-700'
-                                                        : 'bg-amber-50 text-amber-700'
-                                                }`}>
-                                                    {status}
-                                                </span>
-                                            </div>
-                                            </button>
-                                            <div className="mx-4 mb-4 border-t border-slate-200 pt-3">
-                                            <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-500">
-                                                <UserRoundCheck className="h-4 w-4 text-emerald-700" />
-                                                Assigned: {cluster?.assigned_user_name || cluster?.assigned_bhw_name || 'Pending assignment'}
-                                                {cluster?.assigned_user_role ? ` (${cluster.assigned_user_role})` : ''}
-                                            </div>
-                                            <select
-                                                value={pendingStaffId}
-                                                disabled={Boolean(assigningIds[cluster.id]) || activeStaffCount === 0}
-                                                onChange={(event) => {
-                                                    setPendingAssignments((prev) => ({
-                                                        ...prev,
-                                                        [cluster.id]: event.target.value
-                                                    }));
-                                                    setAssignmentMessages((prev) => ({
-                                                        ...prev,
-                                                        [cluster.id]: ''
-                                                    }));
-                                                }}
-                                                className="w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition focus:border-emerald-800 disabled:bg-slate-100 disabled:text-slate-400"
-                                            >
-                                                <option value="">
-                                                    {activeStaffCount ? 'Select deployment staff' : 'No active staff available'}
-                                                </option>
-                                                {activeBhws.length > 0 && (
-                                                    <optgroup label="Assign BHW (Mobilization)">
-                                                        {activeBhws.map((bhw) => (
-                                                            <option key={bhw.id} value={bhw.id}>
-                                                                {bhw.full_name || bhw.id}
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                )}
-                                                {activeMidwives.length > 0 && (
-                                                    <optgroup label="Deploy Midwife (Mobile Clinic)">
-                                                        {activeMidwives.map((midwife) => (
-                                                            <option key={midwife.id} value={midwife.id}>
-                                                                {midwife.full_name || midwife.id}
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                )}
-                                            </select>
-                                            <div className="mt-3 flex flex-col gap-2">
                                                 <button
                                                     type="button"
-                                                    disabled={!pendingStaffId || !assignmentChanged || Boolean(assigningIds[cluster.id])}
-                                                    onClick={() => saveAssignment(cluster.id)}
-                                                    className="inline-flex w-full items-center justify-center rounded-sm bg-[#084C39] px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                                                    onClick={() => setSelectedClusterId(clusterId)}
+                                                    className="w-full px-4 py-4 text-left"
                                                 >
-                                                    {assigningIds[cluster.id] ? 'Saving Assignment...' : 'Save Assignment'}
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-black text-slate-950">
+                                                                {cluster?.cluster_label || cluster?.locality || `Priority Area ${index + 1}`}
+                                                            </p>
+                                                            <p className="mt-1 text-xs font-semibold text-slate-500">
+                                                                {count} defaulters in this area
+                                                            </p>
+                                                        </div>
+                                                        <span className={`shrink-0 rounded-sm px-2 py-1 text-[10px] font-black uppercase tracking-wider ${
+                                                            status === 'Requires Intervention'
+                                                                ? 'bg-rose-50 text-rose-700'
+                                                                : 'bg-amber-50 text-amber-700'
+                                                        }`}>
+                                                            {status}
+                                                        </span>
+                                                    </div>
                                                 </button>
-                                                {message && (
-                                                    <p className={`text-[10px] font-black uppercase tracking-[0.12em] ${
-                                                        message === 'Assignment Saved' ? 'text-emerald-800' : 'text-rose-700'
-                                                    }`}>
-                                                        {message}
+                                                <div className="mx-4 mb-4 border-t border-slate-200 pt-3">
+                                                    <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-500">
+                                                        <UserRoundCheck className="h-4 w-4 text-emerald-700 animate-in fade-in duration-300" />
+                                                        Assigned: {cluster?.assigned_user_name || cluster?.assigned_bhw_name || 'Pending assignment'}
+                                                        {cluster?.assigned_user_role ? ` (${cluster.assigned_user_role})` : ''}
+                                                    </div>
+                                                    <select
+                                                        value={pendingStaffId}
+                                                        disabled={Boolean(assigningIds[cluster.id]) || activeStaffCount === 0}
+                                                        onChange={(event) => {
+                                                            setPendingAssignments((prev) => ({
+                                                                ...prev,
+                                                                [cluster.id]: event.target.value
+                                                            }));
+                                                            setAssignmentMessages((prev) => ({
+                                                                ...prev,
+                                                                [cluster.id]: ''
+                                                            }));
+                                                        }}
+                                                        className="w-full rounded-sm border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition focus:border-emerald-800 disabled:bg-slate-100 disabled:text-slate-400"
+                                                    >
+                                                        <option value="">
+                                                            {activeStaffCount ? 'Select deployment staff' : 'No active staff available'}
+                                                        </option>
+                                                        {activeBhws.length > 0 && (
+                                                            <optgroup label="Assign BHW (Mobilization)">
+                                                                {activeBhws.map((bhw) => (
+                                                                    <option key={bhw.id} value={bhw.id}>
+                                                                        {bhw.full_name || bhw.id}
+                                                                    </option>
+                                                                ))}
+                                                            </optgroup>
+                                                        )}
+                                                        {activeMidwives.length > 0 && (
+                                                            <optgroup label="Deploy Midwife (Mobile Clinic)">
+                                                                {activeMidwives.map((midwife) => (
+                                                                    <option key={midwife.id} value={midwife.id}>
+                                                                        {midwife.full_name || midwife.id}
+                                                                    </option>
+                                                                ))}
+                                                            </optgroup>
+                                                        )}
+                                                    </select>
+                                                    <div className="mt-3 flex flex-col gap-2">
+                                                        <button
+                                                            type="button"
+                                                            disabled={!pendingStaffId || !assignmentChanged || Boolean(assigningIds[cluster.id])}
+                                                            onClick={() => saveAssignment(cluster.id)}
+                                                            className="inline-flex w-full items-center justify-center rounded-sm bg-[#084C39] px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 shadow-sm"
+                                                        >
+                                                            {assigningIds[cluster.id] ? 'Saving Assignment...' : 'Save Assignment'}
+                                                        </button>
+                                                        {message && (
+                                                            <p className={`text-[10px] font-black uppercase tracking-[0.12em] ${
+                                                                message === 'Assignment Saved' ? 'text-emerald-800' : 'text-rose-700'
+                                                            }`}>
+                                                                {message}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto space-y-5 px-6 py-6">
+                            <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 p-4">
+                                <ClipboardList className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-800 animate-in zoom-in duration-300" />
+                                <div>
+                                    <p className="text-xs font-black uppercase tracking-wider text-amber-900 font-sans">
+                                        Pending Field Reports
+                                    </p>
+                                    <p className="mt-1 text-xs font-semibold leading-5 text-amber-700">
+                                        Verify outcomes submitted by midwives and close or reject deployments.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                {clusters.filter(c => c.status === 'In Progress').length === 0 ? (
+                                    <p className="border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm font-bold text-slate-500">
+                                        No pending reports to validate.
+                                    </p>
+                                ) : (
+                                    clusters.filter(c => c.status === 'In Progress').map((cluster, index) => {
+                                        const clusterId = getClusterId(cluster, index);
+                                        const active = clusterId === selectedClusterId;
+
+                                        return (
+                                            <div key={clusterId} className="space-y-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedClusterId(clusterId)}
+                                                    className={`w-full border text-left px-4 py-3.5 transition hover:border-emerald-700 ${
+                                                        active
+                                                            ? 'border-emerald-800 bg-emerald-50'
+                                                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    <p className="text-sm font-black text-slate-900">
+                                                        {cluster?.cluster_label || cluster?.locality || `Priority Area ${index + 1}`}
                                                     </p>
+                                                    <p className="mt-1 text-[11px] font-bold text-slate-500">
+                                                        Assigned Staff: {cluster?.assigned_user_name || cluster?.assigned_bhw_name}
+                                                    </p>
+                                                </button>
+
+                                                {active && (
+                                                    loadingReport ? (
+                                                        <div className="border border-emerald-800/10 bg-slate-50 p-6 text-center text-xs font-bold text-slate-400">
+                                                            Loading submitted report details...
+                                                        </div>
+                                                    ) : activeReport ? (
+                                                        <div className="border border-emerald-800/20 bg-white p-4 space-y-4 rounded-b-lg shadow-inner animate-in fade-in duration-300">
+                                                            <div className="text-[10px] text-slate-400 font-bold uppercase">
+                                                                Submitted by: {activeReport.submitted_by_name || 'Staff'} &bull; {new Date(activeReport.submitted_at).toLocaleDateString()}
+                                                            </div>
+
+                                                            <div className="space-y-2">
+                                                                <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Infant Outcomes</span>
+                                                                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                                                    {(activeReport.outcomes || []).map(o => (
+                                                                        <div key={o.id} className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg text-xs">
+                                                                            <div className="flex justify-between font-bold text-slate-800">
+                                                                                <span>{o.first_name} {o.last_name}</span>
+                                                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                                                    o.outcome === 'Fully Vaccinated' ? 'bg-emerald-50 text-emerald-800 font-sans' :
+                                                                                    o.outcome === 'Partially Vaccinated' ? 'bg-emerald-50 text-emerald-800 font-sans' :
+                                                                                    o.outcome === 'Refused' ? 'bg-rose-50 text-rose-800 font-sans' :
+                                                                                    'bg-slate-100 text-slate-700 font-sans'
+                                                                                }`}>{o.outcome}</span>
+                                                                            </div>
+                                                                            {o.notes && <p className="mt-1 text-[11px] text-slate-500 italic">"{o.notes}"</p>}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+
+                                                            {activeReport.summary_notes && (
+                                                                <div className="bg-slate-50 p-3 border border-slate-200 text-xs rounded-lg">
+                                                                    <span className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Summary Notes</span>
+                                                                    <p className="text-slate-700 leading-normal italic">"{activeReport.summary_notes}"</p>
+                                                                </div>
+                                                            )}
+
+                                                            <div className="space-y-2 border-t border-slate-100 pt-3">
+                                                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                                    Review / Validation Notes
+                                                                </label>
+                                                                <textarea
+                                                                    value={validationNotes}
+                                                                    onChange={(e) => setValidationNotes(e.target.value)}
+                                                                    placeholder="Add validation feedback or rejection reason..."
+                                                                    rows={2}
+                                                                    className="w-full px-3 py-2 border border-slate-350 bg-white text-xs outline-none focus:border-emerald-800 transition"
+                                                                    disabled={validating}
+                                                                />
+                                                            </div>
+
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRejectReport(activeReport.id)}
+                                                                    disabled={validating}
+                                                                    className="flex-1 bg-rose-600 hover:bg-rose-750 text-white text-[10px] font-black uppercase tracking-widest py-2 rounded transition-colors disabled:opacity-50"
+                                                                >
+                                                                    Reject Report
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleValidateReport(activeReport.id)}
+                                                                    disabled={validating}
+                                                                    className="flex-1 bg-[#084C39] hover:bg-[#07362A] text-white text-[10px] font-black uppercase tracking-widest py-2 rounded transition-colors disabled:opacity-50"
+                                                                >
+                                                                    Validate & Close
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="border border-rose-800/10 bg-rose-50 p-4 text-center text-xs font-bold text-rose-700">
+                                                            Unable to load report details.
+                                                        </div>
+                                                    )
                                                 )}
                                             </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
+                                        );
+                                    })
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </aside>
 
                 <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">

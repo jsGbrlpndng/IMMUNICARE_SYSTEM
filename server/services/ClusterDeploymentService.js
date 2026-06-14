@@ -274,6 +274,16 @@ class ClusterDeploymentService {
     async resolveUnmatchedAssignments(activeAssignments, matchedIds) {
         const unmatched = activeAssignments.filter((assignment) => !matchedIds.has(assignment.id));
         for (const assignment of unmatched) {
+            // Before auto-resolving, check if a report exists
+            const [reportRows] = await this.db.execute(
+                'SELECT id FROM deployment_reports WHERE assignment_id = ? LIMIT 1',
+                [assignment.id]
+            );
+            if (reportRows.length > 0) {
+                // Skip auto-resolution — this assignment has field activity
+                continue;
+            }
+
             await this.db.execute(
                 `
                 UPDATE cluster_assignments
@@ -285,6 +295,18 @@ class ClusterDeploymentService {
                 `,
                 [assignment.id]
             );
+
+            await safeRecordAuditEvent({
+                actor: { id: null, role: 'System', name: 'DBSCAN Auto-Resolver' },
+                action: 'CLUSTER_AUTO_RESOLVED',
+                targetEntity: 'cluster_assignments',
+                targetRecordId: assignment.id,
+                targetName: assignment.cluster_label,
+                barangay: assignment.barangay,
+                oldValues: { status: assignment.status },
+                newValues: { status: 'Resolved' },
+                metadata: { reason: 'No matching DBSCAN cluster in latest run' }
+            });
         }
     }
 
@@ -338,6 +360,22 @@ class ClusterDeploymentService {
                 admin.full_name AS assigned_by_admin_name,
                 COUNT(DISTINCT cam.infant_id)::int AS infant_count,
                 COALESCE(
+                    SUM(CASE
+                        WHEN s.status IN ('OVERDUE', 'DEFAULTER')
+                         AND s.actual_date IS NULL
+                        THEN 1 ELSE 0
+                    END),
+                    0
+                )::int AS total_defaulter_doses,
+                COALESCE(
+                    SUM(CASE
+                        WHEN s.status IN ('DUE_TODAY', 'DUE_SOON')
+                         AND s.actual_date IS NULL
+                        THEN 1 ELSE 0
+                    END),
+                    0
+                )::int AS total_due_doses,
+                COALESCE(
                     JSON_AGG(DISTINCT cam.infant_id) FILTER (WHERE cam.infant_id IS NOT NULL),
                     '[]'::json
                 ) AS infant_ids,
@@ -364,6 +402,8 @@ class ClusterDeploymentService {
             LEFT JOIN users admin ON admin.id = ca.assigned_by_admin_id
             LEFT JOIN cluster_assignment_members cam ON cam.assignment_id = ca.id
             LEFT JOIN infants i ON i.id = cam.infant_id
+            LEFT JOIN infant_schedules s ON s.infant_id = i.id
+                AND s.status NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
             WHERE UPPER(TRIM(ca.barangay)) = UPPER(TRIM(?))
               AND ca.status IN ('Pending', 'In Progress')
             GROUP BY ca.id, assigned_user.full_name, assigned_user.role, admin.full_name
@@ -490,6 +530,18 @@ class ClusterDeploymentService {
             }
         });
 
+        try {
+            const NotificationService = require('./NotificationService');
+            const notificationService = new NotificationService(this.db);
+            await notificationService.createDeploymentAssignedNotification({
+                assignment,
+                staff: staffRows[0],
+                adminUser
+            });
+        } catch (notifErr) {
+            console.warn('[Deployment Assign Notification] Failed to send notification:', notifErr.message);
+        }
+
         return {
             assignment,
             staff: staffRows[0],
@@ -505,9 +557,25 @@ class ClusterDeploymentService {
                 ca.*,
                 assigned_user.full_name AS assigned_user_name,
                 assigned_user.role AS assigned_user_role,
-                COUNT(cam.infant_id)::int AS infant_count,
+                COUNT(DISTINCT cam.infant_id)::int AS infant_count,
                 COALESCE(
-                    JSON_AGG(cam.infant_id ORDER BY cam.created_at) FILTER (WHERE cam.infant_id IS NOT NULL),
+                    SUM(CASE
+                        WHEN s.status IN ('OVERDUE', 'DEFAULTER')
+                         AND s.actual_date IS NULL
+                        THEN 1 ELSE 0
+                    END),
+                    0
+                )::int AS total_defaulter_doses,
+                COALESCE(
+                    SUM(CASE
+                        WHEN s.status IN ('DUE_TODAY', 'DUE_SOON')
+                         AND s.actual_date IS NULL
+                        THEN 1 ELSE 0
+                    END),
+                    0
+                )::int AS total_due_doses,
+                COALESCE(
+                    JSON_AGG(DISTINCT cam.infant_id) FILTER (WHERE cam.infant_id IS NOT NULL),
                     '[]'::json
                 ) AS infant_ids,
                 COALESCE(
@@ -530,6 +598,8 @@ class ClusterDeploymentService {
             LEFT JOIN users assigned_user ON assigned_user.id = ca.assigned_bhw_id
             LEFT JOIN cluster_assignment_members cam ON cam.assignment_id = ca.id
             LEFT JOIN infants i ON i.id = cam.infant_id
+            LEFT JOIN infant_schedules s ON s.infant_id = i.id
+                AND s.status NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
             WHERE ca.assigned_bhw_id = ?
               AND ca.status IN ('Pending', 'In Progress')
               AND UPPER(TRIM(ca.barangay)) = UPPER(TRIM(?))

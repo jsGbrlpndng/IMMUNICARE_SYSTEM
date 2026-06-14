@@ -15,6 +15,7 @@ import {
     Settings
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationBell from '../components/NotificationBell';
 
 const BRAND = {
     green: '#0B6E4F',
@@ -324,6 +325,9 @@ const BHWLayout = () => {
                                     BHW Portal <span style={{ color: BRAND.text }} className="font-bold">/ {pageName}</span>
                                 </p>
                             </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <NotificationBell visible={user?.role === 'BHW'} />
                         </div>
                     </div>
                 </header>

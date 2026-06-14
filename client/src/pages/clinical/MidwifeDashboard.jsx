@@ -365,7 +365,17 @@ export default function MidwifeDashboard() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => navigate('/clinical/map')}
+                            onClick={() => navigate('/clinical/map', {
+                                state: {
+                                    initialMode: 'priority',
+                                    focusCluster: {
+                                        id: activeDeployments[0]?.id,
+                                        lat: parseFloat(activeDeployments[0]?.centroid_latitude),
+                                        lng: parseFloat(activeDeployments[0]?.centroid_longitude),
+                                        bounds: activeDeployments[0]?.bounds
+                                    }
+                                }
+                            })}
                             className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#084C39] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A]"
                         >
                             View Deployment Area

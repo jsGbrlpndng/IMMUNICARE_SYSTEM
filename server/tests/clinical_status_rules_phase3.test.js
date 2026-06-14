@@ -130,6 +130,7 @@ describe('Phase 3 clinical status rules', () => {
             batch_number: 'BATCH-1',
             site_of_injection: 'Left Arm',
             vaccinator_id: 'user-1',
+            vaccinator_name: 'Dr. Smith',
             administered_date: '2025-01-02'
         }, db);
 

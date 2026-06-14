@@ -214,7 +214,10 @@ const HeatmapSidePanel = ({
     handleFocusInfant,
     activeFilters,
     setActiveFilters,
-    clusterDeploymentRows = []
+    clusterDeploymentRows = [],
+    activeReport = null,
+    loadingReport = false,
+    onSubmitReport = null
 }) => {
     const clusters = mapState?.clusters || [];
     const selectedCluster = clusters.find(c => (c.clusterId || c.id) === selectedClusterId);
@@ -396,6 +399,54 @@ const HeatmapSidePanel = ({
                                     <span className="text-[11px] text-slate-500 font-medium leading-relaxed">{selectedCluster.area_justification || "Optimal deployment zone based on localized dose burden."}</span>
                                 </div>
                             </div>
+
+                            {/* Submission Feedback Loop Button */}
+                            {loadingReport ? (
+                                <div className="mt-4 p-3 bg-slate-100 rounded-xl text-center text-xs font-bold text-slate-400">
+                                    Loading report status...
+                                </div>
+                            ) : activeReport ? (
+                                activeReport.validation_status === 'Pending' ? (
+                                    <div className="mt-4 p-4 border border-amber-200 bg-amber-50 rounded-xl flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-2 text-amber-800 font-bold text-xs">
+                                            <ClipboardList size={14} /> Report Pending Validation
+                                        </div>
+                                        <p className="text-[11px] text-amber-700 leading-normal">
+                                            A field deployment report was submitted on {new Date(activeReport.submitted_at).toLocaleDateString()} and is currently awaiting administrator review.
+                                        </p>
+                                    </div>
+                                ) : activeReport.validation_status === 'Rejected' ? (
+                                    <div className="mt-4 p-4 border border-rose-200 bg-rose-50 rounded-xl flex flex-col gap-2">
+                                        <div className="flex items-center gap-2 text-rose-800 font-bold text-xs">
+                                            <AlertTriangle size={14} /> Report Rejected
+                                        </div>
+                                        <p className="text-[11px] text-rose-700 leading-normal">
+                                            <strong>Reason:</strong> {activeReport.validation_notes || 'No reason provided.'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => onSubmitReport && onSubmitReport(selectedCluster)}
+                                            className="w-full bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black uppercase tracking-widest py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                                        >
+                                            Revise & Resubmit Report
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="mt-4 p-4 border border-emerald-200 bg-emerald-50 rounded-xl flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                                            <ShieldCheck size={14} /> Report Validated
+                                        </div>
+                                    </div>
+                                )
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => onSubmitReport && onSubmitReport(selectedCluster)}
+                                    className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    <ClipboardList size={12} /> Submit Deployment Report
+                                </button>
+                            )}
                         </div>
 
                         <div className="px-2">

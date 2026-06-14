@@ -647,18 +647,21 @@ class M1ReportService {
         }
     }
 
-    async _loadActualPopulationMap({ year, month, barangay } = {}) {
-        const reportMonth = month === null || month === undefined || String(month).toUpperCase() === 'ALL'
-            ? null
-            : this._parseMonth(month);
-        const params = [year];
-        let monthClause = '';
-        let barangayClause = '';
-
-        if (reportMonth) {
-            monthClause = 'AND map.report_month = ?';
-            params.push(reportMonth);
+    _resolveActualPopulationEndDate(year, month) {
+        const reportYear = this._parseYear(year);
+        if (month === null || month === undefined || String(month).toUpperCase() === 'ALL') {
+            return `${reportYear + 1}-01-01`;
         }
+        const reportMonth = this._parseMonth(month);
+        return reportMonth === 12
+            ? `${reportYear + 1}-01-01`
+            : `${reportYear}-${String(reportMonth + 1).padStart(2, '0')}-01`;
+    }
+
+    async _loadActualPopulationMap({ year, month, barangay } = {}) {
+        const endDate = this._resolveActualPopulationEndDate(year, month);
+        const params = [endDate];
+        let barangayClause = '';
 
         if (barangay) {
             barangayClause = 'AND UPPER(TRIM(b.name)) = UPPER(TRIM(?))';
@@ -668,18 +671,18 @@ class M1ReportService {
         try {
             const [rows] = await this.db.execute(
                 `
-                SELECT DISTINCT ON (b.name)
+                SELECT
                     b.name AS barangay,
-                    map.report_month,
-                    map.actual_population
+                    COUNT(i.id)::int AS actual_population
                 FROM barangays b
-                LEFT JOIN m1_monthly_actual_populations map
-                  ON map.barangay_id = b.id
-                 AND map.report_year = ?
-                 ${monthClause}
+                LEFT JOIN infants i
+                  ON UPPER(TRIM(i.barangay)) = UPPER(TRIM(b.name))
+                 AND i.status = 'Active'
+                 AND i.registration_status = 'APPROVED'
+                 AND i.dob < ?::date
                 WHERE COALESCE(b.is_active, TRUE) = TRUE
                   ${barangayClause}
-                ORDER BY b.name, map.report_month DESC NULLS LAST
+                GROUP BY b.name
                 `,
                 params
             );
@@ -689,31 +692,31 @@ class M1ReportService {
                 toNumber(row.actual_population)
             ]));
         } catch (error) {
-            if (error?.code === '42P01') return new Map();
             throw error;
         }
     }
 
     async _loadActualPopulationRowsForConfig({ year, month } = {}) {
-        const reportMonth = this._parseMonth(month);
+        const endDate = this._resolveActualPopulationEndDate(year, month);
         try {
             const [rows] = await this.db.execute(
                 `
                 SELECT
                     b.id AS barangay_id,
-                    COALESCE(map.actual_population, 0)::int AS actual_population
+                    COUNT(i.id)::int AS actual_population
                 FROM barangays b
-                LEFT JOIN m1_monthly_actual_populations map
-                  ON map.barangay_id = b.id
-                 AND map.report_year = ?
-                 AND map.report_month = ?
+                LEFT JOIN infants i
+                  ON UPPER(TRIM(i.barangay)) = UPPER(TRIM(b.name))
+                 AND i.status = 'Active'
+                 AND i.registration_status = 'APPROVED'
+                 AND i.dob < ?::date
                 WHERE COALESCE(b.is_active, TRUE) = TRUE
+                GROUP BY b.id
                 `,
-                [year, reportMonth]
+                [endDate]
             );
             return new Map(rows.map((row) => [String(row.barangay_id), toNumber(row.actual_population)]));
         } catch (error) {
-            if (error?.code === '42P01') return new Map();
             throw error;
         }
     }
@@ -863,11 +866,7 @@ class M1ReportService {
                 ?? previous.eligible_population_13_23_months
                 ?? 0
             );
-            const actualPopulation = Number(
-                target.actual_population
-                ?? target.actualPopulation
-                ?? 0
-            );
+            const actualPopulation = 0;
             const pentaCumulativeTarget = Number(
                 target.penta_cumulative_target_population
                 ?? target.pentaCumulativeTargetPopulation
@@ -911,11 +910,7 @@ class M1ReportService {
                 error.status = 400;
                 throw error;
             }
-            if (!Number.isInteger(actualPopulation) || actualPopulation < 0) {
-                const error = new Error('actual_population must be a non-negative whole number.');
-                error.status = 400;
-                throw error;
-            }
+            // actual_population validation bypassed as it is auto-computed
             if (!Number.isInteger(pentaCumulativeTarget) || pentaCumulativeTarget < 0) {
                 const error = new Error('penta_cumulative_target_population must be a non-negative whole number.');
                 error.status = 400;
@@ -1064,34 +1059,7 @@ class M1ReportService {
                     ]
                 );
 
-                await connection.execute(
-                    `
-                    INSERT INTO m1_monthly_actual_populations (
-                        barangay_id,
-                        report_year,
-                        report_month,
-                        actual_population,
-                        created_by,
-                        updated_by,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
-                    ON CONFLICT (barangay_id, report_year, report_month)
-                    DO UPDATE SET
-                        actual_population = EXCLUDED.actual_population,
-                        updated_by = EXCLUDED.updated_by,
-                        updated_at = NOW()
-                    `,
-                    [
-                        row.barangay_id,
-                        reportYear,
-                        reportMonth,
-                        row.actual_population,
-                        user.id,
-                        user.id
-                    ]
-                );
+                // m1_monthly_actual_populations write removed: actual population is dynamic/read-only
             }
 
             await connection.commit();

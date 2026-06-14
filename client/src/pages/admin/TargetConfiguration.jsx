@@ -336,7 +336,10 @@ const TargetConfiguration = () => {
                                             </th>
                                         ))}
                                         <th className="border-r border-emerald-800 px-3 py-2 text-right text-[10px] font-black uppercase tracking-wider">
-                                            Actual Population ({MONTHS[month - 1]})
+                                            <div>Actual Population ({MONTHS[month - 1]})</div>
+                                            <div className="text-[8px] font-medium text-emerald-200 normal-case mt-0.5">
+                                                (Auto-calculated from live infant registry)
+                                            </div>
                                         </th>
                                         {chartFields.map(([, label]) => (
                                             <th key={label} className="border-r border-emerald-800 px-3 py-2 text-right text-[10px] font-black uppercase tracking-wider">
@@ -352,18 +355,27 @@ const TargetConfiguration = () => {
                                             <td className="border-b border-r border-slate-300 px-3 py-2 text-xs font-black uppercase text-slate-950">
                                                 {row?.barangay_name || 'Unassigned Barangay'}
                                             </td>
-                                            {[...annualFields, ['actual_population', 'Actual Population'], ...chartFields].map(([field, label]) => (
-                                                <td key={field} className="border-b border-r border-slate-300 px-3 py-1.5 text-right">
-                                                    <input
-                                                        type="text"
-                                                        inputMode="numeric"
-                                                        value={row?.[field] || ''}
-                                                        onChange={(event) => updateRow(row?.barangay_id, field, event.target.value)}
-                                                        className="h-8 w-36 border border-slate-300 bg-white px-2 text-right text-xs font-bold tabular-nums text-slate-950 outline-none focus:border-[#064E3B]"
-                                                        aria-label={`${row?.barangay_name || 'Barangay'} ${label}`}
-                                                    />
-                                                </td>
-                                            ))}
+                                            {[...annualFields, ['actual_population', 'Actual Population'], ...chartFields].map(([field, label]) => {
+                                                const isActualPop = field === 'actual_population';
+                                                return (
+                                                    <td key={field} className="border-b border-r border-slate-300 px-3 py-1.5 text-right">
+                                                        <input
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            value={row?.[field] || ''}
+                                                            onChange={(event) => updateRow(row?.barangay_id, field, event.target.value)}
+                                                            disabled={isActualPop}
+                                                            readOnly={isActualPop}
+                                                            className={`h-8 w-36 border border-slate-300 px-2 text-right text-xs font-bold tabular-nums outline-none ${
+                                                                isActualPop
+                                                                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                                                                    : 'bg-white text-slate-950 focus:border-[#064E3B]'
+                                                            }`}
+                                                            aria-label={`${row?.barangay_name || 'Barangay'} ${label}`}
+                                                        />
+                                                    </td>
+                                                );
+                                            })}
                                             <td className="border-b border-slate-300 px-3 py-1.5">
                                                 <div className="flex flex-wrap items-center gap-2">
                                                     {row?.cohort_target_status === 'COMPLETE' ? (
