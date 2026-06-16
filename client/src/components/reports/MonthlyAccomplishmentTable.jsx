@@ -14,6 +14,69 @@ const DISPLAY_GROUPS = [TARGET_GROUP, ...MONTHLY_GROUPS];
 
 const getCellValue = (row, column) => row?.[column.key];
 
+const BarangayFixedDohTable = ({ row, scopeLabel }) => {
+    const safeRow = row || {};
+    const metricColumns = DISPLAY_GROUPS.flatMap((group) => (
+        group.columns
+            .filter((column) => column && column.key)
+            .map((column) => ({
+                ...column,
+                group: group.label
+            }))
+    ));
+
+    return (
+        <div className="w-full overflow-x-auto border border-slate-300">
+            <table className="min-w-[2400px] w-full border-collapse bg-white text-left text-xs">
+                <thead>
+                    <tr className="bg-[#064E3B] text-white">
+                        <th
+                            rowSpan={2}
+                            className="sticky left-0 z-20 min-w-48 border-r border-slate-300 bg-[#064E3B] px-3 py-2 text-left text-[10px] font-black uppercase tracking-wider text-white"
+                        >
+                            Barangay
+                        </th>
+                        {DISPLAY_GROUPS.map((group) => (
+                            <th
+                                key={group.label}
+                                colSpan={group.columns.length}
+                                className="border border-[#043828] px-2 py-2 text-center text-[10px] font-black uppercase tracking-wider text-white"
+                            >
+                                {group.label}
+                            </th>
+                        ))}
+                    </tr>
+                    <tr className="bg-emerald-950 text-white">
+                        {metricColumns.map((column) => (
+                            <th
+                                key={`${column.group}-${column.key}`}
+                                className="min-w-24 border border-[#043828] px-2 py-2 text-right text-[10px] font-black uppercase tracking-wider text-white"
+                            >
+                                {column.label}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr className="bg-white">
+                        <td className="sticky left-0 z-10 min-w-48 border-r border-slate-300 bg-white px-3 py-3 text-xs font-black uppercase text-slate-950">
+                            {safeRow.barangay || scopeLabel || 'Assigned Barangay'}
+                        </td>
+                        {metricColumns.map((column) => (
+                            <td
+                                key={`${column.group}-${column.key}`}
+                                className="border border-slate-300 px-2.5 py-3 text-right text-xs font-semibold tabular-nums text-slate-800"
+                            >
+                                {formatCount(getCellValue(safeRow, column))}
+                            </td>
+                        ))}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
 const DenseDohTable = ({ rows, scopeLabel, firstColumnLabel = 'Barangay' }) => {
     const safeRows = Array.isArray(rows) ? rows : [];
     const displayRows = safeRows.length ? safeRows : [{}];
@@ -113,11 +176,18 @@ const MonthlyAccomplishmentTable = ({ report, mode = 'master', title }) => {
                     {scopeLabel} - {periodLabel}
                 </p>
             </div>
-            <DenseDohTable
-                rows={rows}
-                scopeLabel={scopeLabel}
-                firstColumnLabel={mode === 'master' ? 'Barangay' : 'Barangay'}
-            />
+            {mode === 'barangay' ? (
+                <BarangayFixedDohTable
+                    row={rows[0] || {}}
+                    scopeLabel={scopeLabel}
+                />
+            ) : (
+                <DenseDohTable
+                    rows={rows}
+                    scopeLabel={scopeLabel}
+                    firstColumnLabel={mode === 'master' ? 'Barangay' : 'Barangay'}
+                />
+            )}
         </section>
     );
 };

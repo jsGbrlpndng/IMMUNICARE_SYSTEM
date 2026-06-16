@@ -343,6 +343,7 @@ class M1ReportService {
         );
         const columns = new Set(rows.map((row) => row.column_name));
         this._targetSchema = {
+            hasPopulation: columns.has('population'),
             hasTotalPopulation: columns.has('total_population'),
             hasEligiblePopulation: columns.has('eligible_population'),
             hasEligiblePopulation011: columns.has('eligible_population_0_11_months'),
@@ -1475,18 +1476,30 @@ class M1ReportService {
         const utilizationTargetConfigExpr = targetSchema.hasUtilizationCumulativeTarget
             ? `COALESCE(NULLIF(mt.utilization_cumulative_target_population, 0), ${targetEligible012}, 0)`
             : targetEligible012;
+        const rawPopulationExpr = targetSchema.hasPopulation
+            ? 'COALESCE(mt.population, 0)'
+            : targetSchema.hasTotalPopulation
+                ? 'COALESCE(mt.total_population, 0)'
+                : '0';
+        const monthlyTarget011Expr = targetSchema.hasMonthlyTarget011
+            ? `COALESCE(NULLIF(mt.monthly_target_0_11_months, 0), ${targetSchema.hasMonthlyTarget ? 'NULLIF(mt.monthly_target, 0),' : ''} ${pentaTargetConfigExpr}, 0)`
+            : targetSchema.hasMonthlyTarget
+                ? `COALESCE(NULLIF(mt.monthly_target, 0), ${pentaTargetConfigExpr}, 0)`
+                : pentaTargetConfigExpr;
 
-        const targetCte = targetSchema.hasTotalPopulation || targetSchema.hasEligiblePopulation011 || targetSchema.hasEligiblePopulation || targetSchema.hasAnnualTarget
+        const targetCte = targetSchema.hasPopulation || targetSchema.hasTotalPopulation || targetSchema.hasEligiblePopulation011 || targetSchema.hasEligiblePopulation || targetSchema.hasAnnualTarget
             ? `
             target AS (
                 SELECT
                     ?::int AS report_year,
+                    COALESCE(SUM(${rawPopulationExpr}), 0)::int AS base_population,
                     COALESCE(SUM(${targetEligible011}), 0)::int AS eligible_population,
                     COALESCE(SUM(${targetEligible011}), 0)::int AS eligible_population_0_11_months,
                     COALESCE(SUM(${targetEligible012}), 0)::int AS eligible_population_0_12_months,
                     COALESCE(SUM(${pentaTargetConfigExpr}), 0)::int AS penta_target_config,
                     COALESCE(SUM(${mcvTargetConfigExpr}), 0)::int AS mcv_target_config,
                     COALESCE(SUM(${utilizationTargetConfigExpr}), 0)::int AS utilization_target_config,
+                    COALESCE(SUM(${monthlyTarget011Expr}), 0)::numeric AS monthly_target_0_11_months,
                     COUNT(mt.id)::int AS target_rows_found
                 FROM barangays b
                 LEFT JOIN m1_immunization_targets mt
@@ -1500,12 +1513,14 @@ class M1ReportService {
             target AS (
                 SELECT
                     ?::int AS report_year,
+                    0::int AS base_population,
                     0::int AS eligible_population,
                     0::int AS eligible_population_0_11_months,
                     0::int AS eligible_population_0_12_months,
                     0::int AS penta_target_config,
                     0::int AS mcv_target_config,
                     0::int AS utilization_target_config,
+                    0::numeric AS monthly_target_0_11_months,
                     0::int AS target_rows_found
                 FROM barangays b
                 WHERE COALESCE(b.is_active, TRUE) = TRUE
@@ -1535,12 +1550,14 @@ class M1ReportService {
                 SELECT
                     t.report_year,
                     m.report_month,
+                    COALESCE(t.base_population, 0)::int AS base_population,
                     COALESCE(t.eligible_population, 0)::int AS eligible_population,
                     COALESCE(t.eligible_population_0_11_months, 0)::int AS eligible_population_0_11_months,
                     COALESCE(t.eligible_population_0_12_months, 0)::int AS eligible_population_0_12_months,
                     COALESCE(t.penta_target_config, 0)::int AS penta_target_config,
                     COALESCE(t.mcv_target_config, 0)::int AS mcv_target_config,
                     COALESCE(t.utilization_target_config, 0)::int AS utilization_target_config,
+                    COALESCE(t.monthly_target_0_11_months, 0)::numeric AS monthly_target_0_11_months,
                     COALESCE(ma.penta1_count, 0)::int AS penta1_count,
                     COALESCE(ma.penta3_count, 0)::int AS penta3_count,
                     COALESCE(ma.mcv1_count, 0)::int AS mcv1_count,
@@ -1554,12 +1571,14 @@ class M1ReportService {
                 SELECT
                     report_year,
                     report_month,
+                    COALESCE(base_population, 0)::int AS base_population,
                     COALESCE(eligible_population, 0)::int AS eligible_population,
                     COALESCE(eligible_population_0_11_months, 0)::int AS eligible_population_0_11_months,
                     COALESCE(eligible_population_0_12_months, 0)::int AS eligible_population_0_12_months,
                     COALESCE(penta_target_config, 0)::int AS penta_target_config,
                     COALESCE(mcv_target_config, 0)::int AS mcv_target_config,
                     COALESCE(utilization_target_config, 0)::int AS utilization_target_config,
+                    COALESCE(monthly_target_0_11_months, 0)::numeric AS monthly_target_0_11_months,
                     (COALESCE(penta_target_config, 0) * report_month)::numeric AS cumulative_target_population,
                     COALESCE(penta1_count, 0)::int AS penta1_count,
                     COALESCE(penta3_count, 0)::int AS penta3_count,
@@ -1591,12 +1610,14 @@ class M1ReportService {
             SELECT
                 report_year,
                 report_month,
+                base_population,
                 eligible_population,
                 eligible_population_0_11_months,
                 eligible_population_0_12_months,
                 penta_target_config,
                 mcv_target_config,
                 utilization_target_config,
+                monthly_target_0_11_months,
                 cumulative_target_population,
                 penta1_count,
                 penta3_count,
@@ -1637,12 +1658,14 @@ class M1ReportService {
             report_year: toNumber(row.report_year),
             report_month: toNumber(row.report_month),
             month_label: MONTH_LABELS[toNumber(row.report_month) - 1],
+            base_population: toNumber(row.base_population),
             eligible_population: toNumber(row.eligible_population),
             eligible_population_0_11_months: toNumber(row.eligible_population_0_11_months),
             eligible_population_0_12_months: toNumber(row.eligible_population_0_12_months),
             penta_target_config: toNumber(row.penta_target_config),
             mcv_target_config: toNumber(row.mcv_target_config),
             utilization_target_config: toNumber(row.utilization_target_config),
+            monthly_target_0_11_months: Number(row.monthly_target_0_11_months || row.penta_target_config || 0),
             penta_cumulative_target_population: toNumber(row.penta_target_config),
             mcv_cumulative_target_population: toNumber(row.mcv_target_config),
             utilization_cumulative_target_population: toNumber(row.utilization_target_config),
@@ -2247,6 +2270,19 @@ class M1ReportService {
         const report = await this.getMonitoringChartForUser({ year, requestedBarangay, user });
         const selectedMonth = this._parseMonth(month);
         const selected = report.rows.find((row) => row.report_month === selectedMonth) || report.rows[0] || {};
+        const basePopulation = Number(selected.base_population || 0);
+        const monthlyTargetPopulation = Number(selected.monthly_target_0_11_months || selected.penta_target_config || 0);
+        const currentFinalDoseCount = toNumber(selected.penta3_count);
+        const operationalTargetGap = Math.max(0, basePopulation - currentFinalDoseCount);
+        const monthlySeries = report.rows.map((row) => ({
+            ...row,
+            month: row.month_label,
+            month_key: `${row.report_year}-${String(row.report_month).padStart(2, '0')}`,
+            penta_target_cumulative: Number(row.cumulative_target_population || 0),
+            penta_dropout_rate: Number(row.dropout_rate || 0),
+            penta_utilization_rate: percent(row.penta3_cumulative, row.cumulative_target_population)
+        }));
+
         return {
             success: true,
             report_type: 'COVERAGE_DASHBOARD',
@@ -2255,22 +2291,34 @@ class M1ReportService {
             period: { year: report.period.year, month: selectedMonth, month_label: MONTH_LABELS[selectedMonth - 1] },
             target_status: report.target_status,
             kpis: {
-                target_population: Number(selected.cumulative_target_population || 0),
-                dose1_count: toNumber(selected.penta1_cumulative),
-                final_dose_count: toNumber(selected.penta3_cumulative),
-                dropout_count: toNumber(selected.dropout_count),
+                target_population: basePopulation,
+                base_population: basePopulation,
+                monthly_target_population: monthlyTargetPopulation,
+                cumulative_target_population: Number(selected.cumulative_target_population || 0),
+                operational_target_gap: operationalTargetGap,
+                dose1_count: toNumber(selected.penta1_count),
+                final_dose_count: currentFinalDoseCount,
+                dose1_cumulative: toNumber(selected.penta1_cumulative),
+                final_dose_cumulative: toNumber(selected.penta3_cumulative),
+                dropout_count: Math.max(0, toNumber(selected.penta1_count) - currentFinalDoseCount),
                 dropout_rate: Number(selected.dropout_rate || 0),
-                utilization_rate: percent(selected.penta3_cumulative, selected.cumulative_target_population),
+                utilization_rate: percent(currentFinalDoseCount, monthlyTargetPopulation),
                 penta: {
-                    target_population: Number(selected.cumulative_target_population || 0),
-                    dose1_count: toNumber(selected.penta1_cumulative),
-                    final_dose_count: toNumber(selected.penta3_cumulative),
-                    dropout_count: toNumber(selected.dropout_count),
+                    target_population: basePopulation,
+                    base_population: basePopulation,
+                    monthly_target_population: monthlyTargetPopulation,
+                    cumulative_target_population: Number(selected.cumulative_target_population || 0),
+                    operational_target_gap: operationalTargetGap,
+                    dose1_count: toNumber(selected.penta1_count),
+                    final_dose_count: currentFinalDoseCount,
+                    dose1_cumulative: toNumber(selected.penta1_cumulative),
+                    final_dose_cumulative: toNumber(selected.penta3_cumulative),
+                    dropout_count: Math.max(0, toNumber(selected.penta1_count) - currentFinalDoseCount),
                     dropout_rate: Number(selected.dropout_rate || 0),
-                    utilization_rate: percent(selected.penta3_cumulative, selected.cumulative_target_population)
+                    utilization_rate: percent(currentFinalDoseCount, monthlyTargetPopulation)
                 }
             },
-            monthlySeries: report.rows
+            monthlySeries
         };
     }
 }

@@ -14,7 +14,7 @@ VALUES
 ON CONFLICT (id) DO UPDATE SET assigned_locality = EXCLUDED.assigned_locality;
 
 -- 3. LOCALITY 1: Genesis Subdivision (Test DBSCAN Clustered Overdue)
-INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, geom, status, registration_status, barangay)
+INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, location, status, registration_status, barangay)
 VALUES 
     ('inf-gen-01', 'LG-2024-001', 'Baby A', 'Genesis', '2024-01-10', 'M', 'Genesis Subdivision', 14.3562, 121.0530, ST_SetSRID(ST_MakePoint(121.0530, 14.3562), 4326), 'Active', 'VALIDATED', 'Langgam'),
     ('inf-gen-02', 'LG-2024-002', 'Baby B', 'Genesis', '2024-01-12', 'F', 'Genesis Subdivision', 14.3563, 121.0531, ST_SetSRID(ST_MakePoint(121.0531, 14.3563), 4326), 'Active', 'VALIDATED', 'Langgam'),
@@ -29,7 +29,7 @@ VALUES
     ('inf-gen-04', 'BCG', CURRENT_DATE - INTERVAL '1 month', 'MISSED', false);
 
 -- 4. LOCALITY 2: St. Joseph Village (Test Scattered Due Today)
-INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, geom, status, registration_status, barangay)
+INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, location, status, registration_status, barangay)
 VALUES 
     ('inf-sj-01', 'LG-2024-005', 'Baby E', 'Joseph', '2024-03-01', 'M', 'St. Joseph Village', 14.3555, 121.0515, ST_SetSRID(ST_MakePoint(121.0515, 14.3555), 4326), 'Active', 'VALIDATED', 'Langgam'),
     ('inf-sj-02', 'LG-2024-006', 'Baby F', 'Joseph', '2024-03-05', 'F', 'St. Joseph Village', 14.3540, 121.0500, ST_SetSRID(ST_MakePoint(121.0500, 14.3540), 4326), 'Active', 'VALIDATED', 'Langgam'),
@@ -42,7 +42,7 @@ VALUES
     ('inf-sj-03', 'DPT-HepB-Hib 1', CURRENT_DATE, 'PENDING', false);
 
 -- 5. LOCALITY 3: Filinvest (Test Normal Coverage)
-INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, geom, status, registration_status, barangay)
+INSERT INTO infants (id, reference_id, first_name, last_name, dob, sex, exact_address, latitude, longitude, location, status, registration_status, barangay)
 VALUES 
     ('inf-fil-01', 'LG-2024-008', 'Baby H', 'Filinvest', '2023-12-01', 'M', 'Filinvest', 14.3540, 121.0545, ST_SetSRID(ST_MakePoint(121.0545, 14.3540), 4326), 'Active', 'VALIDATED', 'Langgam'),
     ('inf-fil-02', 'LG-2024-009', 'Baby I', 'Filinvest', '2023-12-05', 'F', 'Filinvest', 14.3541, 121.0546, ST_SetSRID(ST_MakePoint(121.0546, 14.3541), 4326), 'Active', 'VALIDATED', 'Langgam');

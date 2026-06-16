@@ -1,0 +1,246 @@
+Project erd_08_reports_audit_backup {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 8: Reports, Audit Trail, and Backup/Recovery.
+  Logical only; FK not enforced: audit_trail.user_id/entity_id, audit_logs.target_record_id, system_audit_logs.target_id, m1_doh_monitoring_data.barangay, and spatial_dss_monthly_snapshots.barangay.
+  approval_audit and authorization_audit are included because they are audit/approval-related tables with physical links to core records.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table barangays {
+  id uuid [pk]
+  name varchar
+  code varchar
+  city varchar
+  province varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table report_exports {
+  id uuid [pk]
+  generated_by varchar
+  report_type varchar
+  format varchar
+  filter_params jsonb
+  generated_by_role varchar
+  file_path text
+  generated_at timestamptz
+}
+
+Table backup_runs {
+  id uuid [pk]
+  initiated_by varchar
+  backup_type varchar
+  status varchar
+  storage_location text
+  started_at timestamptz
+  completed_at timestamptz
+  error_message text
+}
+
+Table audit_logs {
+  id uuid [pk]
+  actor_user_id varchar
+  barangay_id uuid
+  actor_role varchar
+  actor_name varchar
+  action varchar
+  target_entity varchar
+  target_record_id varchar
+  target_name varchar
+  scope_type varchar
+  barangay_name varchar
+  old_values jsonb
+  new_values jsonb
+  metadata jsonb
+  created_at timestamptz
+}
+
+Table audit_trail {
+  id varchar [pk]
+  entity_type varchar
+  entity_id varchar
+  action_type varchar
+  user_id varchar
+  user_role varchar
+  old_values jsonb
+  new_values jsonb
+  description text
+  created_at timestamptz
+}
+
+Table system_audit_logs {
+  id bigint [pk]
+  user_id varchar
+  action_type varchar
+  target_entity varchar
+  target_id varchar
+  before_value text
+  after_value text
+  details jsonb
+  ip_address varchar
+  timestamp timestamptz
+}
+
+Table system_settings {
+  setting_key varchar [pk]
+  updated_by varchar
+  setting_value text
+  value_type varchar
+  category varchar
+  description text
+  updated_at timestamptz
+}
+
+Table approval_audit {
+  id varchar [pk]
+  registration_id varchar
+  infant_id varchar
+  action varchar
+  approver_id varchar
+  approver_role varchar
+  remarks text
+  timestamp timestamptz
+}
+
+Table infant_registrations {
+  id varchar [pk]
+  created_by varchar
+  reviewed_by varchar
+  promoted_infant_id varchar
+  reference_id varchar
+  status varchar
+  barangay varchar
+  submitted_at timestamptz
+  reviewed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  created_by varchar
+  approved_registration_id varchar
+  reference_id varchar
+  barangay varchar
+  registration_status varchar
+  immunization_status varchar
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table authorization_audit {
+  audit_id varchar [pk]
+  infant_id varchar
+  midwife_id varchar
+  vaccine_name varchar
+  action_type varchar
+  override_type varchar
+  clinical_justification text
+  is_immutable boolean
+  created_at timestamptz
+}
+
+Table m1_immunization_targets {
+  id uuid [pk]
+  barangay_id uuid
+  created_by varchar
+  updated_by varchar
+  report_year int
+  total_population int
+  eligible_population_0_11_months int
+  eligible_population_0_12_months int
+  eligible_population_13_23_months int
+  monthly_target numeric
+  monthly_target_is_manual boolean
+  ep_percent numeric
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table m1_monthly_actual_populations {
+  id uuid [pk]
+  barangay_id uuid
+  created_by varchar
+  updated_by varchar
+  report_year int
+  report_month int
+  actual_population int
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table m1_municipal_targets {
+  id uuid [pk]
+  created_by varchar
+  updated_by varchar
+  report_year int
+  municipality_name varchar
+  total_population int
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table m1_doh_monitoring_data {
+  id uuid [pk]
+  report_year int
+  report_month int
+  month_label varchar
+  scope_type varchar
+  barangay varchar
+  chart_type varchar
+  cummulative_target_population numeric
+  dropout_count int
+  dropout_rate numeric
+  imported_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table spatial_dss_monthly_snapshots {
+  id uuid [pk]
+  snapshot_month date
+  barangay varchar
+  metric_type varchar
+  metric_value numeric
+  age_group varchar
+  vaccine_type varchar
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Ref: report_exports.generated_by > users.id
+Ref: backup_runs.initiated_by > users.id
+Ref: audit_logs.actor_user_id > users.id
+Ref: audit_logs.barangay_id > barangays.id
+Ref: system_audit_logs.user_id > users.id
+Ref: system_settings.updated_by > users.id
+Ref: infant_registrations.created_by > users.id
+Ref: infant_registrations.reviewed_by > users.id
+Ref: infant_registrations.promoted_infant_id > infants.id
+Ref: infants.created_by > users.id
+Ref: infants.approved_registration_id > infant_registrations.id
+Ref: approval_audit.registration_id > infant_registrations.id
+Ref: approval_audit.infant_id > infants.id
+Ref: authorization_audit.midwife_id > users.id
+Ref: authorization_audit.infant_id > infants.id
+Ref: m1_immunization_targets.barangay_id > barangays.id
+Ref: m1_immunization_targets.created_by > users.id
+Ref: m1_immunization_targets.updated_by > users.id
+Ref: m1_monthly_actual_populations.barangay_id > barangays.id
+Ref: m1_monthly_actual_populations.created_by > users.id
+Ref: m1_monthly_actual_populations.updated_by > users.id
+Ref: m1_municipal_targets.created_by > users.id
+Ref: m1_municipal_targets.updated_by > users.id

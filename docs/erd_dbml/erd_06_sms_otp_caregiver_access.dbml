@@ -1,0 +1,109 @@
+Project erd_06_sms_otp_caregiver_access {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 6: SMS Reminder and OTP Caregiver Access.
+  Logical only; FK not enforced: otp_records.mobile_number, sms_logs.mobile_number, and infants.caregiver_phone correspond to caregiver phone numbers by application logic.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table caregivers {
+  id uuid [pk]
+  enrolled_by varchar
+  full_name varchar
+  mobile_number varchar
+  relationship varchar
+  is_portal_enrolled boolean
+  enrolled_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  caregiver_id uuid
+  created_by varchar
+  reference_id varchar
+  first_name varchar
+  last_name varchar
+  caregiver_phone varchar
+  caregiver_relationship varchar
+  barangay varchar
+  immunization_status varchar
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table sms_logs {
+  id uuid [pk]
+  infant_id varchar
+  caregiver_id uuid
+  sent_by varchar
+  mobile_number varchar
+  message_type varchar
+  message_body text
+  provider varchar
+  provider_message_id varchar
+  delivery_status varchar
+  failure_reason text
+  sent_at timestamptz
+  delivered_at timestamptz
+}
+
+Table otp_records {
+  id uuid [pk]
+  caregiver_id uuid
+  mobile_number varchar
+  otp_hash varchar
+  purpose varchar
+  expires_at timestamptz
+  consumed_at timestamptz
+  attempt_count int
+  created_at timestamptz
+}
+
+Table infant_schedules {
+  id varchar [pk]
+  infant_id varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  recommended_date date
+  status varchar
+  created_at timestamptz
+}
+
+Table vaccinations {
+  id varchar [pk]
+  infant_id varchar
+  schedule_id varchar
+  recorded_by varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  administered_date timestamptz
+  validation_status varchar
+  recorded_at timestamptz
+}
+
+Ref: caregivers.enrolled_by > users.id
+Ref: infants.caregiver_id > caregivers.id
+Ref: infants.created_by > users.id
+Ref: sms_logs.infant_id > infants.id
+Ref: sms_logs.caregiver_id > caregivers.id
+Ref: sms_logs.sent_by > users.id
+Ref: otp_records.caregiver_id > caregivers.id
+Ref: infant_schedules.infant_id > infants.id
+Ref: vaccinations.infant_id > infants.id
+Ref: vaccinations.schedule_id > infant_schedules.id
+Ref: vaccinations.recorded_by > users.id
+

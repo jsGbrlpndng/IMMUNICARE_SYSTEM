@@ -1,0 +1,110 @@
+Project erd_05_defaulter_followup {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 5: Defaulter Tracking and Follow-Up Management.
+  The actual schedule table is infant_schedules, not vaccination_schedules.
+  Logical only; FK not enforced: infants.barangay, follow_up_tasks.barangay, follow_up_logs.barangay, users.assigned_barangay, and notifications.recipient_barangay refer to barangay names by application convention.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  created_by varchar
+  reference_id varchar
+  first_name varchar
+  last_name varchar
+  caregiver_phone varchar
+  barangay varchar
+  immunization_status varchar
+  next_due_vaccine varchar
+  next_due_date date
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table infant_schedules {
+  id varchar [pk]
+  infant_id varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  recommended_date date
+  latest_allowed_date date
+  actual_date date
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table follow_up_tasks {
+  id uuid [pk]
+  infant_id varchar
+  schedule_id varchar
+  assigned_to_bhw_id varchar
+  assigned_by_midwife_id varchar
+  reviewed_by varchar
+  barangay varchar
+  target_completion_date date
+  task_notes text
+  status varchar
+  outcome varchar
+  outcome_notes text
+  acknowledged_at timestamptz
+  completed_at timestamptz
+  reviewed_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table follow_up_logs {
+  id uuid [pk]
+  infant_id varchar
+  schedule_id varchar
+  bhw_id varchar
+  barangay varchar
+  visit_date date
+  parent_contact varchar
+  outcome varchar
+  notes text
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table notifications {
+  id uuid [pk]
+  recipient_user_id varchar
+  sender_user_id varchar
+  recipient_role varchar
+  recipient_barangay varchar
+  notification_type varchar
+  action_type varchar
+  title text
+  message text
+  is_read boolean
+  read_at timestamptz
+  created_at timestamptz
+}
+
+Ref: infants.created_by > users.id
+Ref: infant_schedules.infant_id > infants.id
+Ref: follow_up_tasks.infant_id > infants.id
+Ref: follow_up_tasks.schedule_id > infant_schedules.id
+Ref: follow_up_tasks.assigned_to_bhw_id > users.id
+Ref: follow_up_tasks.assigned_by_midwife_id > users.id
+Ref: follow_up_tasks.reviewed_by > users.id
+Ref: follow_up_logs.infant_id > infants.id
+Ref: follow_up_logs.schedule_id > infant_schedules.id
+Ref: follow_up_logs.bhw_id > users.id
+Ref: notifications.recipient_user_id > users.id
+Ref: notifications.sender_user_id > users.id
+

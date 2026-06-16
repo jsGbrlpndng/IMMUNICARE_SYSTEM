@@ -269,4 +269,4 @@
 .clinical-card-elevated:hover {
   @apply shadow-xl border-slate-200;
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08);
-}
+}

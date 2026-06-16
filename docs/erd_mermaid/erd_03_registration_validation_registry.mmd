@@ -1,0 +1,76 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+    }
+
+    infant_registrations {
+        varchar id PK
+        varchar reference_id
+        varchar status
+        varchar created_by FK
+        varchar reviewed_by FK
+        varchar promoted_infant_id FK
+        timestamptz submitted_at
+        timestamptz reviewed_at
+    }
+
+    registration_validation_events {
+        uuid id PK
+        varchar registration_id FK
+        varchar event_type
+        varchar reviewer_user_id FK
+        timestamptz created_at
+    }
+
+    infants {
+        varchar id PK
+        varchar reference_id
+        varchar approved_registration_id FK
+        varchar registration_status
+        varchar status
+        timestamptz created_at
+    }
+
+    approval_audit {
+        varchar id PK
+        varchar registration_id FK
+        varchar infant_id FK
+        varchar action
+        varchar approver_id
+        varchar approver_role
+        timestamptz timestamp
+    }
+
+    audit_trail {
+        varchar id PK
+        varchar entity_type
+        varchar entity_id
+        varchar action_type
+        varchar user_id
+        varchar user_role
+        timestamptz created_at
+    }
+
+    users ||--o{ infant_registrations : "created_by"
+    users ||--o{ infant_registrations : "reviewed_by"
+    infant_registrations ||--o{ registration_validation_events : "registration_id"
+    users ||--o{ registration_validation_events : "reviewer_user_id"
+    infant_registrations ||--o| infants : "promoted_infant_id"
+    infant_registrations ||--o{ infants : "approved_registration_id"
+    infant_registrations ||--o{ approval_audit : "registration_id"
+    infants ||--o{ approval_audit : "infant_id"

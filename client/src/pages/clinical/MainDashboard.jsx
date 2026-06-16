@@ -448,8 +448,15 @@ export default function MainDashboard() {
                                         className="z-0"
                                     >
                                         <TileLayer
-                                            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                                            attribution='&copy; CARTO'
+                                            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                            attribution="Tiles &copy; Esri"
+                                            maxZoom={19}
+                                        />
+                                        <TileLayer
+                                            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                                            attribution="&copy; CARTO"
+                                            maxZoom={19}
+                                            zIndex={650}
                                         />
                                         <Circle 
                                             center={[hotspot.data.lat, hotspot.data.lng]} 

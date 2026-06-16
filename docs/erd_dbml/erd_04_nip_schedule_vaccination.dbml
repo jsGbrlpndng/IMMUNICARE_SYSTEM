@@ -1,0 +1,159 @@
+Project erd_04_nip_schedule_vaccination {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 4: NIP Schedule and Vaccination Recording.
+  The actual schedule table is infant_schedules, not vaccination_schedules.
+  Logical only; FK not enforced: infant_schedules.vaccine_code and vaccinations.vaccine_code correspond to doh_compliance_rules.vaccine_code by application logic.
+  Logical only; FK not enforced: schedule_overrides.midwife_id and schedule_deferrals.deferred_by reference users by application convention.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  created_by varchar
+  reference_id varchar
+  first_name varchar
+  last_name varchar
+  dob date
+  sex varchar
+  barangay varchar
+  immunization_status varchar
+  next_due_vaccine varchar
+  next_due_date date
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table doh_compliance_rules {
+  rule_id varchar [pk]
+  created_by varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  min_age_days int
+  max_age_days int
+  min_interval_days int
+  allowed_early_days int
+  justification_required boolean
+  effective_date date
+  expiry_date date
+  created_at timestamptz
+}
+
+Table infant_schedules {
+  id varchar [pk]
+  infant_id varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  recommended_date date
+  earliest_allowed_date date
+  latest_allowed_date date
+  actual_date date
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table vaccinations {
+  id varchar [pk]
+  infant_id varchar
+  schedule_id varchar
+  recorded_by varchar
+  validated_by_id varchar
+  correction_of_vaccination_id varchar
+  vaccine_code varchar
+  vaccine_name varchar
+  dose_number int
+  batch_number varchar
+  lot_number varchar
+  brand varchar
+  site_of_injection varchar
+  vaccinator_id varchar
+  vaccinator_name varchar
+  administered_date timestamptz
+  validation_status varchar
+  is_early_override boolean
+  is_external boolean
+  recorded_by_role varchar
+  validated_at timestamptz
+  recorded_at timestamptz
+}
+
+Table schedule_deferrals {
+  id varchar [pk]
+  infant_id varchar
+  schedule_id varchar
+  vaccine_name varchar
+  original_due_date date
+  new_due_date date
+  defer_type varchar
+  reason text
+  deferred_by varchar
+  deferred_at timestamptz
+  resolved_at timestamptz
+}
+
+Table schedule_overrides {
+  id varchar [pk]
+  infant_id varchar
+  schedule_id varchar
+  vaccine_name varchar
+  original_due_date date
+  new_due_date date
+  clinical_reason text
+  midwife_id varchar
+  authorization_status varchar
+  compliance_metadata jsonb
+  created_at timestamptz
+}
+
+Table authorization_sessions {
+  session_id varchar [pk]
+  midwife_id varchar
+  infant_id varchar
+  session_start timestamptz
+  session_end timestamptz
+  authorization_count int
+}
+
+Table authorization_audit {
+  audit_id varchar [pk]
+  infant_id varchar
+  midwife_id varchar
+  vaccine_name varchar
+  action_type varchar
+  override_type varchar
+  clinical_justification text
+  compliance_status jsonb
+  session_metadata jsonb
+  is_immutable boolean
+  created_at timestamptz
+}
+
+Ref: infants.created_by > users.id
+Ref: doh_compliance_rules.created_by > users.id
+Ref: infant_schedules.infant_id > infants.id
+Ref: vaccinations.infant_id > infants.id
+Ref: vaccinations.schedule_id > infant_schedules.id
+Ref: vaccinations.recorded_by > users.id
+Ref: vaccinations.validated_by_id > users.id
+Ref: vaccinations.correction_of_vaccination_id > vaccinations.id
+Ref: schedule_deferrals.infant_id > infants.id
+Ref: schedule_deferrals.schedule_id > infant_schedules.id
+Ref: schedule_overrides.infant_id > infants.id
+Ref: schedule_overrides.schedule_id > infant_schedules.id
+Ref: authorization_sessions.midwife_id > users.id
+Ref: authorization_sessions.infant_id > infants.id
+Ref: authorization_audit.midwife_id > users.id
+Ref: authorization_audit.infant_id > infants.id

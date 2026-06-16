@@ -290,42 +290,33 @@ class AuditLogService {
             throw error;
         }
 
-        if (filters.actor) {
-            where.push('(al.actor_user_id ILIKE ? OR al.actor_name ILIKE ? OR u.full_name ILIKE ?)');
-            params.push(`%${filters.actor}%`, `%${filters.actor}%`, `%${filters.actor}%`);
-        }
-
-        if (filters.action) {
-            where.push('al.action = ?');
-            params.push(filters.action);
-        }
-
         if (filters.targetEntity) {
             where.push('al.target_entity = ?');
             params.push(filters.targetEntity);
         }
 
-        if (filters.infantName) {
+        if (filters.search) {
+            const pattern = `%${filters.search}%`;
             where.push(`(
-                al.new_values->>'infant_name' ILIKE ?
+                al.actor_user_id::text ILIKE ?
+                OR al.actor_name ILIKE ?
+                OR u.full_name ILIKE ?
+                OR al.action ILIKE ?
+                OR al.target_entity ILIKE ?
+                OR al.target_record_id::text ILIKE ?
+                OR al.target_name ILIKE ?
+                OR COALESCE(al.barangay_name, u.assigned_barangay, '') ILIKE ?
+                OR al.new_values->>'infant_name' ILIKE ?
                 OR al.old_values->>'infant_name' ILIKE ?
+                OR al.metadata->>'infant_name' ILIKE ?
                 OR al.new_values->>'name' ILIKE ?
                 OR al.old_values->>'name' ILIKE ?
-                OR al.metadata->>'infant_name' ILIKE ?
-            )`);
-            params.push(...Array(5).fill(`%${filters.infantName}%`));
-        }
-
-        if (filters.bhwName) {
-            where.push(`(
-                al.actor_name ILIKE ?
-                OR u.full_name ILIKE ?
-                OR al.new_values->>'bhw_name' ILIKE ?
-                OR al.old_values->>'bhw_name' ILIKE ?
                 OR al.metadata->>'bhw_name' ILIKE ?
                 OR al.metadata->>'assigned_bhw_name' ILIKE ?
+                OR al.new_values->>'bhw_name' ILIKE ?
+                OR al.old_values->>'bhw_name' ILIKE ?
             )`);
-            params.push(...Array(6).fill(`%${filters.bhwName}%`));
+            params.push(...Array(17).fill(pattern));
         }
 
         if (filters.startDate) {
@@ -424,16 +415,18 @@ class AuditLogService {
     }
 
     async getDashboardSummary({ user } = {}) {
-        if (user?.role !== ROLES.ADMIN) {
-            const error = new Error('Forbidden: dashboard audit summary is limited to Admin users.');
+        if (![ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(user?.role)) {
+            const error = new Error('Forbidden: dashboard audit summary is limited to Admin and Super Admin users.');
             error.status = 403;
             throw error;
         }
 
         const params = [];
         const where = [];
-        await this._appendAdminScope(where, params, user);
-        const whereSql = `WHERE ${where.join(' AND ')}`;
+        if (user?.role === ROLES.ADMIN) {
+            await this._appendAdminScope(where, params, user);
+        }
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
         const [summaryRows] = await this.db.execute(
             `
@@ -474,8 +467,8 @@ class AuditLogService {
             FROM audit_logs al
             LEFT JOIN users u ON u.id = al.actor_user_id
             ${whereSql}
-            ORDER BY al.created_at DESC
-            LIMIT 5
+            ORDER BY al.created_at DESC, al.id DESC
+            LIMIT 10
             `,
             params
         );

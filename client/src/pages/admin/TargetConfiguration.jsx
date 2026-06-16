@@ -214,7 +214,7 @@ const TargetConfiguration = () => {
     ];
 
     return (
-        <div className="w-full min-w-0 bg-slate-50 p-6 lg:p-8">
+        <div className="w-full min-w-0">
             <div className="mx-auto w-full max-w-7xl min-w-0 space-y-5">
                 <section className="border border-slate-300 bg-white p-5">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

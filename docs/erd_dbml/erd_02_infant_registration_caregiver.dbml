@@ -1,0 +1,105 @@
+Project erd_02_infant_registration_caregiver {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 2: Infant Registration and Caregiver Profiling.
+  Logical only; FK not enforced: users.assigned_barangay, infant_registrations.barangay, and infants.barangay refer to barangay names by application convention.
+  infant_registrations.registration_data is JSONB intake data; caregiver details inside it are not physical caregiver foreign keys.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  created_by_user_id varchar
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table barangays {
+  id uuid [pk]
+  name varchar
+  code varchar
+  city varchar
+  province varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table user_barangay_assignments {
+  id uuid [pk]
+  user_id varchar
+  barangay_id uuid
+  assigned_by varchar
+  is_active boolean
+  assigned_at timestamptz
+  revoked_at timestamptz
+}
+
+Table caregivers {
+  id uuid [pk]
+  enrolled_by varchar
+  full_name varchar
+  mobile_number varchar
+  relationship varchar
+  is_portal_enrolled boolean
+  enrolled_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table infant_registrations {
+  id varchar [pk]
+  created_by varchar
+  reviewed_by varchar
+  promoted_infant_id varchar
+  reference_id varchar
+  registration_data jsonb
+  barangay varchar
+  status varchar
+  submitted_at timestamptz
+  reviewed_at timestamptz
+  correction_notes text
+  rejection_reason text
+  rejection_notes text
+  correction_cycle_count int
+  review_history jsonb
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  caregiver_id uuid
+  created_by varchar
+  approved_registration_id varchar
+  reference_id varchar
+  first_name varchar
+  middle_name varchar
+  last_name varchar
+  dob date
+  sex varchar
+  caregiver_phone varchar
+  caregiver_relationship varchar
+  barangay varchar
+  registration_status varchar
+  immunization_status varchar
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Ref: users.created_by_user_id > users.id
+Ref: user_barangay_assignments.user_id > users.id
+Ref: user_barangay_assignments.barangay_id > barangays.id
+Ref: user_barangay_assignments.assigned_by > users.id
+Ref: caregivers.enrolled_by > users.id
+Ref: infant_registrations.created_by > users.id
+Ref: infant_registrations.reviewed_by > users.id
+Ref: infant_registrations.promoted_infant_id > infants.id
+Ref: infants.caregiver_id > caregivers.id
+Ref: infants.created_by > users.id
+Ref: infants.approved_registration_id > infant_registrations.id
+

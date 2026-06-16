@@ -673,7 +673,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
         searchDebounceRef.current = setTimeout(() => {
             runAddressSuggestionSearch(query);
-        }, 350);
+        }, 500);
     };
 
     const handleBlur = (e) => {

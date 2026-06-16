@@ -1,0 +1,65 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+        varchar assigned_barangay
+        boolean is_active
+        varchar created_by_user_id FK
+        timestamptz created_at
+    }
+
+    barangays {
+        uuid id PK
+        varchar name
+        varchar code
+        boolean is_active
+    }
+
+    user_barangay_assignments {
+        uuid id PK
+        varchar user_id FK
+        uuid barangay_id FK
+        varchar assigned_by FK
+        boolean is_active
+        timestamptz assigned_at
+    }
+
+    notifications {
+        uuid id PK
+        varchar recipient_user_id FK
+        varchar sender_user_id FK
+        varchar recipient_role
+        varchar notification_type
+        boolean is_read
+        timestamptz created_at
+    }
+
+    system_settings {
+        varchar setting_key PK
+        text setting_value
+        varchar category
+        varchar updated_by FK
+        timestamptz updated_at
+    }
+
+    users ||--o{ users : "created_by_user_id"
+    users ||--o{ user_barangay_assignments : "user_id"
+    users ||--o{ user_barangay_assignments : "assigned_by"
+    barangays ||--o{ user_barangay_assignments : "barangay_id"
+    users ||--o{ notifications : "recipient_user_id"
+    users ||--o{ notifications : "sender_user_id"
+    users ||--o{ system_settings : "updated_by"

@@ -1,0 +1,80 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+        varchar assigned_barangay
+    }
+
+    infants {
+        varchar id PK
+        varchar reference_id
+        varchar barangay
+        varchar immunization_status
+        varchar caregiver_phone
+    }
+
+    infant_schedules {
+        varchar id PK
+        varchar infant_id FK
+        varchar vaccine_code
+        date recommended_date
+        date latest_allowed_date
+        varchar status
+    }
+
+    follow_up_tasks {
+        uuid id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar assigned_to_bhw_id FK
+        varchar assigned_by_midwife_id FK
+        varchar reviewed_by FK
+        varchar status
+        varchar outcome
+        date target_completion_date
+    }
+
+    follow_up_logs {
+        uuid id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar bhw_id FK
+        varchar barangay
+        date visit_date
+        varchar outcome
+    }
+
+    notifications {
+        uuid id PK
+        varchar recipient_user_id FK
+        varchar sender_user_id FK
+        varchar notification_type
+        boolean is_read
+        timestamptz created_at
+    }
+
+    infants ||--o{ infant_schedules : "infant_id"
+    infants ||--o{ follow_up_tasks : "infant_id"
+    infant_schedules ||--o{ follow_up_tasks : "schedule_id"
+    users ||--o{ follow_up_tasks : "assigned_to_bhw_id"
+    users ||--o{ follow_up_tasks : "assigned_by_midwife_id"
+    users ||--o{ follow_up_tasks : "reviewed_by"
+    infants ||--o{ follow_up_logs : "infant_id"
+    infant_schedules ||--o{ follow_up_logs : "schedule_id"
+    users ||--o{ follow_up_logs : "bhw_id"
+    users ||--o{ notifications : "recipient_user_id"
+    users ||--o{ notifications : "sender_user_id"

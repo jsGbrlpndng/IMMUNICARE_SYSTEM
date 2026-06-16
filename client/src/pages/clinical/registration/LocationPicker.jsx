@@ -1,6 +1,7 @@
 import React from 'react';
-import { Loader2, MapPin, Search } from 'lucide-react';
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { Loader2, MapPin, Maximize2, Minimize2, Search } from 'lucide-react';
+import { GeoJSON, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
 import { InputWrapper, inputClasses } from './FormComponents';
 
 const SAN_PEDRO_CENTER = [14.3596, 121.0426];
@@ -79,6 +80,20 @@ const BarangayViewportController = ({ assignedBarangay, hasPinnedLocation }) => 
     return null;
 };
 
+const MapResizeInvalidator = ({ isExpanded }) => {
+    const map = useMap();
+
+    React.useEffect(() => {
+        const timer = window.setTimeout(() => {
+            map.invalidateSize({ animate: false });
+        }, 120);
+
+        return () => window.clearTimeout(timer);
+    }, [isExpanded, map]);
+
+    return null;
+};
+
 const LocationMapEvents = ({ latitude, longitude, onMapClick, onMarkerDragEnd }) => {
     useMapEvents({
         click(event) {
@@ -134,6 +149,23 @@ const LocationPicker = ({
 }) => {
     const safeMapCenter = getSafeCenter(mapCenter);
     const hasPinnedLocation = hasValidCoordinate(formData.latitude, formData.longitude);
+    const [isExpanded, setIsExpanded] = React.useState(false);
+    const boundaryBarangay = normalizeBarangay(assignedBarangay || formData.barangay);
+    const barangayBoundaryData = React.useMemo(
+        () => getBarangayBoundaryGeoJson(boundaryBarangay),
+        [boundaryBarangay]
+    );
+
+    React.useEffect(() => {
+        if (!isExpanded) return undefined;
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') setIsExpanded(false);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isExpanded]);
 
     return (
         <div className="col-span-full space-y-4">
@@ -162,16 +194,9 @@ const LocationPicker = ({
                             data-lpignore="true"
                             data-form-type="other"
                             placeholder="Type address, street, purok, or landmark"
-                            className={`${inputClasses} pl-10 pr-24`}
+                            className={`${inputClasses} pl-10 pr-10`}
                         />
-                        {isSearching && <Loader2 className="w-4 h-4 absolute right-20 animate-spin text-[#065f46]" />}
-                        <button
-                            type="submit"
-                            disabled={isReadOnly || isSearching || (formData.exact_address || '').trim().length < 3}
-                            className="absolute right-2 rounded-md bg-[#065f46] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                        >
-                            Search
-                        </button>
+                        {isSearching && <Loader2 className="w-4 h-4 absolute right-3 animate-spin text-[#065f46]" />}
                     </form>
                 </InputWrapper>
 
@@ -235,7 +260,13 @@ const LocationPicker = ({
                 </div>
             </InputWrapper>
 
-            <div className="relative h-[320px] rounded-md border border-slate-300 overflow-hidden shadow-inner z-10 mt-2">
+            <div
+                className={
+                    isExpanded
+                        ? 'fixed inset-0 z-[9999] h-screen w-screen overflow-hidden bg-slate-900'
+                        : 'relative h-[320px] rounded-md border border-slate-300 overflow-hidden shadow-inner z-10 mt-2'
+                }
+            >
                 {isReadOnly && (
                     <div className="absolute inset-0 z-[1100] bg-transparent cursor-not-allowed" aria-hidden="true" />
                 )}
@@ -250,9 +281,24 @@ const LocationPicker = ({
                     scrollWheelZoom={!isReadOnly}
                 >
                     <TileLayer
-                        attribution="&copy; OpenStreetMap contributors"
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution="Tiles &copy; Esri"
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        maxZoom={19}
                     />
+                    <TileLayer
+                        attribution="&copy; CARTO"
+                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                        maxZoom={19}
+                        zIndex={650}
+                    />
+                    {barangayBoundaryData && (
+                        <GeoJSON
+                            key={`location-picker-boundary-${boundaryBarangay}`}
+                            data={barangayBoundaryData}
+                            style={barangayBoundaryStyle}
+                        />
+                    )}
+                    <MapResizeInvalidator isExpanded={isExpanded} />
                     <LocationMapEvents
                         latitude={formData.latitude}
                         longitude={formData.longitude}
@@ -262,6 +308,15 @@ const LocationPicker = ({
                     <MapController center={safeMapCenter} hasPinnedLocation={hasPinnedLocation} />
                     <BarangayViewportController assignedBarangay={assignedBarangay || formData.barangay} hasPinnedLocation={hasPinnedLocation} />
                 </MapContainer>
+                <button
+                    type="button"
+                    onClick={() => setIsExpanded((value) => !value)}
+                    className="absolute top-2 left-2 z-[1000] inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white/95 text-slate-700 shadow-sm transition-colors hover:bg-white"
+                    aria-label={isExpanded ? 'Minimize map' : 'Maximize map'}
+                    title={isExpanded ? 'Minimize map' : 'Maximize map'}
+                >
+                    {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </button>
                 <div className="absolute top-2 right-2 z-[1000] bg-white/95 px-3 py-1.5 rounded-md text-[10px] font-semibold text-slate-600 shadow-sm pointer-events-none uppercase tracking-widest border border-slate-200">
                     Click Map or Drag Pin
                 </div>

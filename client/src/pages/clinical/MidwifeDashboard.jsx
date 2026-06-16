@@ -221,7 +221,7 @@ export default function MidwifeDashboard() {
         return (
             <div className="flex flex-col">
                 <span className="text-sm font-black text-slate-800 leading-none">{capitalized}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{referenceId}</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{referenceId}</span>
             </div>
         );
     };
@@ -401,7 +401,7 @@ export default function MidwifeDashboard() {
                             <div className={`p-3 rounded-sm ${kpi.bg} ${kpi.text} group-hover:scale-110 transition-transform`}>
                                 <kpi.icon size={20} />
                             </div>
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</span>
                         </div>
                         <div className="flex items-end justify-between mt-6">
                             <h3 className="text-4xl font-black text-slate-900 tracking-tighter">
@@ -430,7 +430,7 @@ export default function MidwifeDashboard() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <span className="text-[9px] font-black text-emerald-800 bg-white border border-emerald-800 px-3 py-1.5 rounded-sm uppercase tracking-widest">
+                                <span className="text-[10px] font-black text-emerald-800 bg-white border border-emerald-800 px-3 py-1.5 rounded-sm uppercase tracking-widest">
                                     {priorityFollowups.length + todayList.length} Tasks Pending
                                 </span>
                             </div>
@@ -439,12 +439,12 @@ export default function MidwifeDashboard() {
                         <div className="overflow-y-auto custom-scrollbar flex-1">
                             <div className="w-full flex flex-col">
                                 <div className="sticky top-0 bg-white z-20 grid grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_1.5fr] border-b border-slate-100 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
-                                    <div className="py-4 px-5 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Infant / Reference</div>
-                                    <div className="py-4 px-5 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Reason / Priority</div>
-                                    <div className="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Locality</div>
-                                    <div className="py-4 px-4 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Overdue</div>
-                                    <div className="py-4 px-5 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Risk Tier</div>
-                                    <div className="py-4 px-5 text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-end items-center">Recommended Action</div>
+                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Infant / Reference</div>
+                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Reason / Priority</div>
+                                    <div className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Locality</div>
+                                    <div className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Overdue</div>
+                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Risk Tier</div>
+                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-end items-center">Recommended Action</div>
                                 </div>
                                 <div className="divide-y divide-slate-50 flex flex-col">
                                     {sortedWorklist.length === 0 ? (
@@ -482,7 +482,7 @@ export default function MidwifeDashboard() {
                                                                 className="rounded-sm"
                                                             />
                                                             {inf.next_due_vaccine && (
-                                                                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter leading-tight max-w-[120px]">
+                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter leading-tight max-w-[120px]">
                                                                     {inf.next_due_vaccine.replace('Pending: ', '')}
                                                                 </span>
                                                             )}
@@ -503,13 +503,13 @@ export default function MidwifeDashboard() {
                                                     </div>
                                                     <div className="py-4 px-5 flex justify-center items-center">
                                                         {isDEFAULTED || inf.days_overdue > 365 ? (
-                                                            <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
+                                                            <span className="text-[10px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
                                                         ) : inf.days_overdue >= 30 ? (
-                                                            <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
+                                                            <span className="text-[10px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
                                                         ) : inf.days_overdue > 0 ? (
-                                                            <span className="text-[9px] font-bold text-amber-600 border border-amber-500 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 2 Elevated</span>
+                                                            <span className="text-[10px] font-bold text-amber-600 border border-amber-500 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 2 Elevated</span>
                                                         ) : (
-                                                            <span className="text-[9px] font-bold text-emerald-700 border border-emerald-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 3 Routine</span>
+                                                            <span className="text-[10px] font-bold text-emerald-700 border border-emerald-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 3 Routine</span>
                                                         )}
                                                     </div>
                                                     <div className="py-4 px-5 flex justify-end items-center">
@@ -566,7 +566,7 @@ export default function MidwifeDashboard() {
                                 <>
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-start">
-                                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-rose-700 bg-white px-2.5 py-1 rounded-sm border border-rose-600">
+                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-700 bg-white px-2.5 py-1 rounded-sm border border-rose-600">
                                                 Priority Area
                                             </span>
                                             <div className="p-2 bg-rose-50 rounded-sm">
@@ -622,13 +622,13 @@ export default function MidwifeDashboard() {
                             <div className="flex bg-slate-100 p-1 rounded-md gap-1">
                                 <button
                                     onClick={() => setTimeframe('today')}
-                                    className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'today' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'today' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                 >
                                     Today
                                 </button>
                                 <button
                                     onClick={() => setTimeframe('week')}
-                                    className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'week' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'week' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                 >
                                     This Week
                                 </button>
@@ -783,12 +783,12 @@ const FieldKitModal = ({ vaccine, onClose }) => {
                                         </span>
                                         <div className="flex items-center gap-1.5 mt-1">
                                             <MapPin size={10} className="text-emerald-600" />
-                                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
                                                 {inf.locality || 'Unspecified Sector'}
                                             </span>
                                         </div>
                                     </div>
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2 py-0.5 border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2 py-0.5 border border-slate-100">
                                         {inf.id}
                                     </span>
                                 </div>

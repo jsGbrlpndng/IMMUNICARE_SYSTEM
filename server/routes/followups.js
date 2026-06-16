@@ -116,7 +116,6 @@ router.get('/', async (req, res) => {
         }
 
         const scopedBarangay = getScopedBarangay(req);
-        await refreshScheduleFollowUpStatuses(scopedBarangay);
 
         const bhwId = req.user.role === ROLES.BHW ? req.user.id : null;
         const limit = Number(req.query.limit) || 250;

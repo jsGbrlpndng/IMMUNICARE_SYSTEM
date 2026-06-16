@@ -447,32 +447,6 @@ const ValidationPage = () => {
 
     return (
         <div className="min-h-screen bg-[#F4F7F9] flex flex-col font-sans antialiased text-slate-900">
-            {/* San Pedro Branding Header */}
-            <header className="sticky top-0 z-30 border-b border-emerald-900 bg-[#006B3F] px-4 py-3">
-                <div className="mx-auto flex w-full max-w-full items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="w-8 h-8 bg-emerald-500 rounded-sm flex items-center justify-center">
-                            <Shield className="text-white" size={18} />
-                        </div>
-                        <div>
-                            <h1 className="text-lg font-bold tracking-tight text-white uppercase leading-none">
-                                Clinical Record Validation
-                            </h1>
-                            <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-emerald-300/80">San Pedro City Health Office</span>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-6 h-8">
-                        <div className="flex items-center gap-4 border-l border-emerald-800/60 pl-6">
-                            <div className="flex flex-col items-end">
-                                <span className="text-[8px] font-bold text-emerald-300 uppercase tracking-widest">Pending Submissions</span>
-                                <span className="text-sm font-bold text-white leading-none">{pendingRegistrations?.length || 0}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
             <main className="mx-auto flex w-full max-w-full flex-1 gap-2 overflow-hidden px-2 py-2">
                 {/* Left: Validation Queue */}
                 <div className="w-80 flex flex-shrink-0 flex-col gap-2">
@@ -483,7 +457,7 @@ const ValidationPage = () => {
                                 <input 
                                     type="text" 
                                     placeholder="SEARCH QUEUE..."
-                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-none text-[9px] font-bold tracking-widest outline-none uppercase"
+                                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-none text-[10px] font-bold tracking-widest outline-none uppercase"
                                 />
                             </div>
                         </div>
@@ -491,13 +465,13 @@ const ValidationPage = () => {
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
                             {loading ? (
                                 <div className="p-10 flex flex-col items-center justify-center gap-2">
-                                    <div className="w-6 h-6 border-2 border-slate-200 border-t-[#006B3F] rounded-full animate-spin"></div>
-                                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Loading...</p>
+                                    <div className="w-6 h-6 border-2 border-slate-200 border-t-emerald-700 rounded-full animate-spin"></div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Loading...</p>
                                 </div>
                             ) : (!pendingRegistrations || pendingRegistrations.length === 0) ? (
                                 <div className="p-10 text-center">
                                     <Shield className="text-slate-100 mx-auto mb-2" size={24} />
-                                    <h3 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Queue Empty</h3>
+                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Queue Empty</h3>
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-100">
@@ -505,18 +479,18 @@ const ValidationPage = () => {
                                         <button 
                                             key={infant?.id}
                                             onClick={() => setSelectedId(infant?.id)}
-                                            className={`w-full p-4 text-left transition-all border-l-2 ${selectedId === infant?.id ? 'bg-emerald-50/40 border-l-[#006B3F]' : 'bg-white border-l-transparent hover:bg-slate-50'}`}
+                                            className={`w-full p-4 text-left transition-all border-l-2 ${selectedId === infant?.id ? 'bg-emerald-50/40 border-l-emerald-700' : 'bg-white border-l-transparent hover:bg-slate-50'}`}
                                         >
-                                            <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">{infant?.reference_id}</div>
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{infant?.reference_id}</div>
                                             <h4 className="text-xs font-bold text-slate-800 uppercase truncate mb-1">
                                                 {formatFullNameFromObject(infant)}
                                             </h4>
                                             <div className="flex flex-wrap items-center gap-2">
-                                                <span className="text-[8px] font-bold text-emerald-800 bg-emerald-100/50 px-1 py-0.5 uppercase">
+                                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/50 px-1 py-0.5 uppercase">
                                                     {infant?.barangay} / {infant?.purok}
                                                 </span>
                                                 {shouldShowSuperAdminBarangay && (
-                                                    <span className="text-[8px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 uppercase tracking-wider">
+                                                    <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 uppercase tracking-wider">
                                                         Barangay: {infant?.barangay || '--'}
                                                     </span>
                                                 )}
@@ -547,14 +521,14 @@ const ValidationPage = () => {
                                         <Baby className="text-emerald-400" size={20} />
                                     </div>
                                         <div>
-                                            <div className="text-[8px] font-bold text-emerald-400/60 uppercase tracking-widest mb-0.5">Clinical Review Case</div>
+                                            <div className="text-[10px] font-bold text-emerald-400/60 uppercase tracking-widest mb-0.5">Clinical Review Case</div>
                                             <h2 className="text-lg font-bold text-white uppercase tracking-tight leading-none">
                                             {formatFullNameFromObject(selectedRecord)}
                                             </h2>
                                         </div>
                                     </div>
                                 <div className="text-right">
-                                    <span className="text-[8px] font-bold text-white/30 uppercase tracking-widest block">Reference ID</span>
+                                    <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest block">Reference ID</span>
                                     <span className="text-sm font-mono font-bold text-white tracking-widest">{selectedRecord?.reference_id || '--'}</span>
                                 </div>
                             </div>
@@ -563,15 +537,15 @@ const ValidationPage = () => {
                             <div className="flex items-center justify-between border-b border-slate-300 bg-slate-50 px-4 py-2.5">
                                 <div className="flex items-center gap-4">
                                     <div className="flex items-center gap-1.5">
-                                        <User size={10} className="text-[#006B3F]" />
-                                        <span className="text-[9px] font-bold text-slate-600 uppercase">
+                                        <User size={10} className="text-emerald-700" />
+                                        <span className="text-[10px] font-bold text-slate-600 uppercase">
                                             ENCODED BY: <span className="text-slate-900 font-black">{selectedRecord?.submitted_by_name || 'BHW PERSONNEL'}</span>
                                         </span>
                                     </div>
                                     <div className="w-px h-3 bg-slate-300"></div>
                                     <div className="flex items-center gap-1.5">
-                                        <Clock size={10} className="text-[#006B3F]" />
-                                        <span className="text-[9px] font-bold text-slate-600 uppercase">
+                                        <Clock size={10} className="text-emerald-700" />
+                                        <span className="text-[10px] font-bold text-slate-600 uppercase">
                                             SUBMITTED: <span className="text-slate-900 font-black">{selectedRecord?.created_at ? new Date(selectedRecord.created_at).toLocaleString() : '--'}</span>
                                         </span>
                                     </div>
@@ -579,7 +553,7 @@ const ValidationPage = () => {
                             </div>
 
                             {detailLoading && (
-                                <div className="border-b border-slate-300 bg-emerald-50 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-[#006B3F]">
+                                <div className="border-b border-slate-300 bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
                                     Loading full validation chart...
                                 </div>
                             )}
@@ -588,7 +562,7 @@ const ValidationPage = () => {
                                 <div className="border-b border-amber-300 bg-amber-50 px-4 py-3">
                                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                         <div>
-                                            <div className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-800">Clinical Duplicate Alert</div>
+                                            <div className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-800">Clinical Duplicate Alert</div>
                                             <div className="mt-1 text-sm font-bold text-slate-900">
                                                 {duplicateAlertMessage}
                                             </div>
@@ -599,7 +573,7 @@ const ValidationPage = () => {
                                                             <div className="text-[10px] font-black uppercase tracking-wider text-slate-900">
                                                                 {formatFullNameFromObject(match)}
                                                             </div>
-                                                            <div className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                                            <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                                                 DOB: {match.dob ? new Date(match.dob).toLocaleDateString() : '--'} | Barangay: {match.barangay || '--'} | {String(match.status || 'MATCH').replace(/_/g, ' ')}
                                                             </div>
                                                         </div>
@@ -608,7 +582,7 @@ const ValidationPage = () => {
                                             )}
                                             {duplicateAlertStatus === 'TRANSFER_POSSIBLE' && (
                                                 <div className="mt-3 rounded border border-emerald-200 bg-white px-3 py-3">
-                                                    <div className="text-[9px] font-black uppercase tracking-[0.22em] text-[#006B3F]">
+                                                    <div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700">
                                                         Transfer Inquiry Notes
                                                     </div>
                                                     <div className="mt-2 text-[11px] font-bold leading-relaxed text-slate-900">
@@ -622,7 +596,7 @@ const ValidationPage = () => {
                                                 <button
                                                     onClick={handleMergeTransfer}
                                                     disabled={resolvingDuplicateAlert || processing}
-                                                    className="px-4 py-2 bg-[#006B3F] text-white text-[9px] font-black uppercase tracking-widest hover:bg-[#005231] disabled:opacity-50"
+                                                    className="px-4 py-2 bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-800 disabled:opacity-50"
                                                 >
                                                     Merge/Transfer Record
                                                 </button>
@@ -631,12 +605,12 @@ const ValidationPage = () => {
                                                 <button
                                                     onClick={handleIgnoreDuplicateAlert}
                                                     disabled={resolvingDuplicateAlert || processing}
-                                                    className="px-4 py-2 border border-amber-700 text-amber-800 text-[9px] font-black uppercase tracking-widest hover:bg-amber-100 disabled:opacity-50"
+                                                    className="px-4 py-2 border border-amber-700 text-amber-800 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 disabled:opacity-50"
                                                 >
                                                     Ignore/Confirm Unique
                                                 </button>
                                             ) : (
-                                                <div className="rounded border border-amber-300 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-amber-800">
+                                                <div className="rounded border border-amber-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-800">
                                                     Read Only Access: Validation restricted to assigned Midwife.
                                                 </div>
                                             )}
@@ -648,14 +622,14 @@ const ValidationPage = () => {
                             {/* Clinical Chart Grid */}
                             <div className="validation-chart-grid flex-1 overflow-y-auto p-0">
                                 {isRejectedRecord && (
-                                    <section className="clinical-rejection-summary border border-[#064E3B] border-l-4 border-l-[#064E3B] bg-[#F6FFFB]">
-                                        <div className="border-b border-[#064E3B] bg-[#ECFDF5] px-3 py-2">
-                                            <h3 className="text-[9px] font-black uppercase tracking-widest text-[#064E3B]">Clinical Rejection Summary</h3>
+                                    <section className="clinical-rejection-summary border border-emerald-800 border-l-4 border-l-emerald-800 bg-emerald-50/40">
+                                        <div className="border-b border-emerald-800 bg-emerald-50 px-3 py-2">
+                                            <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Clinical Rejection Summary</h3>
                                         </div>
                                         <div className="chart-grid chart-grid-single">
                                             <DataField label="Rejection Reason" value={rejectionReasonValue || '--'} highlight />
                                         </div>
-                                        <div className="chart-grid chart-grid-single border-t border-[#064E3B]">
+                                        <div className="chart-grid chart-grid-single border-t border-emerald-800">
                                             <DataField label="Reviewer Notes" value={rejectionNotesValue || '--'} />
                                         </div>
                                     </section>
@@ -664,7 +638,7 @@ const ValidationPage = () => {
                                 <div className="grid grid-cols-1 gap-0 xl:grid-cols-2">
                                 {/* Column 1: Identity & Locality */}
                                 <div className="space-y-0">
-                                    <ClinicalSection icon={<Baby size={12} className="text-[#006B3F]" />} title="Infant Demographics">
+                                    <ClinicalSection icon={<Baby size={12} className="text-emerald-700" />} title="Infant Demographics">
                                         <div className="chart-grid chart-grid-single">
                                             <DataField label="Legal Full Name" value={formatFullNameFromObject(selectedRecord)} />
                                         </div>
@@ -681,7 +655,7 @@ const ValidationPage = () => {
                                         </div>
                                     </ClinicalSection>
 
-                                    <ClinicalSection icon={<MapPin size={12} className="text-[#006B3F]" />} title="Address and Locality">
+                                    <ClinicalSection icon={<MapPin size={12} className="text-emerald-700" />} title="Address and Locality">
                                         <div className="chart-grid chart-grid-double">
                                             <DataField label="Barangay" value={selectedRecord?.barangay} />
                                             <DataField label="Purok / Sitio" value={selectedRecord?.purok || selectedRecord?.sitio || '--'} />
@@ -697,7 +671,7 @@ const ValidationPage = () => {
 
                                 {/* Column 2: Parent & Clinical */}
                                 <div className="space-y-0">
-                                    <ClinicalSection icon={<User size={12} className="text-[#006B3F]" />} title="Caregiver Profile">
+                                    <ClinicalSection icon={<User size={12} className="text-emerald-700" />} title="Caregiver Profile">
                                         <div className="chart-grid chart-grid-single">
                                             <DataField label="Mother's Maiden Name" value={selectedRecord?.mothers_maiden_name || selectedRecord?.mother_name || '--'} />
                                         </div>
@@ -710,7 +684,7 @@ const ValidationPage = () => {
                                         </div>
                                     </ClinicalSection>
 
-                                    <ClinicalSection icon={<Activity size={12} className="text-[#006B3F]" />} title="Maternal and Birth History">
+                                    <ClinicalSection icon={<Activity size={12} className="text-emerald-700" />} title="Maternal and Birth History">
                                         <div className="chart-grid chart-grid-double">
                                             <DataField label="Mother TT Status" value={selectedRecord?.mother_tt_status || 'Unknown'} highlight />
                                             <DataField label="Last TT Date" value={selectedRecord?.last_tt_date ? new Date(selectedRecord.last_tt_date).toLocaleDateString() : '--'} />
@@ -721,7 +695,7 @@ const ValidationPage = () => {
                                         </div>
                                     </ClinicalSection>
 
-                                    <ClinicalSection icon={<Info size={12} className="text-[#006B3F]" />} title="BHW Intake Notes">
+                                    <ClinicalSection icon={<Info size={12} className="text-emerald-700" />} title="BHW Intake Notes">
                                         <div className="chart-grid chart-grid-single">
                                             <DataField
                                                 label="Historical Context"
@@ -730,31 +704,31 @@ const ValidationPage = () => {
                                         </div>
                                     </ClinicalSection>
 
-                                    <ClinicalSection icon={<Shield size={12} className="text-[#006B3F]" />} title="At-Birth Immunization Entries">
+                                    <ClinicalSection icon={<Shield size={12} className="text-emerald-700" />} title="At-Birth Immunization Entries">
                                         <div className="chart-grid chart-grid-double">
                                             <div className={`min-h-[62px] border-0 p-3 ${getStatusBgClass(record.bcg_status)}`}>
-                                                <div className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-500">BCG Vaccine</div>
+                                                <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-500">BCG Vaccine</div>
                                                 <div className={`text-[10px] font-black uppercase ${getStatusColor(record.bcg_status)}`}>
                                                     {record.bcg_status || 'Pending'}
                                                 </div>
-                                                <div className="mt-1 text-[8px] font-bold uppercase text-slate-600">
+                                                <div className="mt-1 text-[10px] font-bold uppercase text-slate-600">
                                                     DATE: {['Not Given', 'Unknown', 'Pending'].includes(record.bcg_status) ? 'N/A' : record.bcg_date_given}
                                                 </div>
                                             </div>
 
                                             <div className={`min-h-[62px] border-0 p-3 ${getStatusBgClass(record.hepa_b_status)}`}>
-                                                <div className="mb-1 text-[8px] font-black uppercase tracking-widest text-slate-500">Hepatitis B</div>
+                                                <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-500">Hepatitis B</div>
                                                 <div className={`text-[10px] font-black uppercase ${getStatusColor(record.hepa_b_status)}`}>
                                                     {record.hepa_b_status || 'Pending'}
                                                 </div>
-                                                <div className="mt-1 text-[8px] font-bold uppercase text-slate-600">
+                                                <div className="mt-1 text-[10px] font-bold uppercase text-slate-600">
                                                     DATE: {['Not Given', 'Unknown', 'Pending'].includes(record.hepa_b_status) ? 'N/A' : record.hepa_b_date_given}
                                                 </div>
                                             </div>
                                         </div>
                                     </ClinicalSection>
 
-                                    <ClinicalSection icon={<Info size={12} className="text-[#006B3F]" />} title="Correction History">
+                                    <ClinicalSection icon={<Info size={12} className="text-emerald-700" />} title="Correction History">
                                         <div className="border-t border-slate-300 bg-white">
                                             {(selectedDetail?.correction_history || []).length === 0 ? (
                                                 <div className="bg-white px-3 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -764,7 +738,7 @@ const ValidationPage = () => {
                                                 selectedDetail.correction_history.map((item, index) => (
                                                     <div key={`${item.timestamp || item.created_at || index}-${index}`} className="grid grid-cols-[22px_1fr] gap-3 border-b border-slate-200 px-3 py-3 last:border-b-0">
                                                         <div className="flex flex-col items-center">
-                                                            <div className="mt-1 h-2.5 w-2.5 rounded-full bg-[#006B3F]"></div>
+                                                            <div className="mt-1 h-2.5 w-2.5 rounded-full bg-emerald-700"></div>
                                                             {index !== (selectedDetail.correction_history.length - 1) && (
                                                                 <div className="mt-1 w-px flex-1 bg-slate-300"></div>
                                                             )}
@@ -776,7 +750,7 @@ const ValidationPage = () => {
                                                                         {formatValidationEventLabel(item.action || item.event_type || item.status)}
                                                                     </div>
                                                                     {item.reason && (
-                                                                        <div className="mt-1 text-[9px] font-black uppercase tracking-wider text-slate-600">
+                                                                        <div className="mt-1 text-[10px] font-black uppercase tracking-wider text-slate-600">
                                                                             Reason: <span className="text-slate-900">{item.reason}</span>
                                                                         </div>
                                                                     )}
@@ -785,15 +759,15 @@ const ValidationPage = () => {
                                                                     </div>
                                                                 </div>
                                                                 <div className="shrink-0 text-right">
-                                                                    <div className="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                                                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                                                                         {item.reviewer_name || 'Clinic Staff'}
                                                                     </div>
-                                                                    <div className="text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                                                         {item.reviewer_role || item.role || '--'}
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="mt-2 text-[8px] font-bold uppercase tracking-wider text-slate-500">
+                                                            <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                                                 {item.timestamp || item.created_at ? new Date(item.timestamp || item.created_at).toLocaleString() : '--'}
                                                             </div>
                                                         </div>
@@ -814,7 +788,7 @@ const ValidationPage = () => {
                                             <button 
                                                 onClick={() => setShowRevisionModal(true)}
                                                 disabled={processing}
-                                                className="px-4 py-2 border border-amber-600 text-amber-700 text-[9px] font-black uppercase tracking-widest hover:bg-amber-50"
+                                                className="px-4 py-2 border border-amber-600 text-amber-700 text-[10px] font-black uppercase tracking-widest hover:bg-amber-50"
                                             >
                                                 <AlertCircle size={12} className="inline mr-1.5" /> Return for Correction
                                             </button>
@@ -824,7 +798,7 @@ const ValidationPage = () => {
                                                     setShowRejectionModal(true);
                                                 }}
                                                 disabled={processing}
-                                                className="px-4 py-2 border border-rose-600 text-rose-700 text-[9px] font-black uppercase tracking-widest hover:bg-rose-50"
+                                                className="px-4 py-2 border border-rose-600 text-rose-700 text-[10px] font-black uppercase tracking-widest hover:bg-rose-50"
                                             >
                                                 <XCircle size={12} className="inline mr-1.5" /> Reject Record
                                             </button>
@@ -833,13 +807,13 @@ const ValidationPage = () => {
                                         <button 
                                             onClick={() => setShowApprovalModal(true)}
                                             disabled={processing || approvalBlockedByDuplicate}
-                                            className="px-10 py-2.5 bg-[#006B3F] text-white text-[9px] font-black uppercase tracking-[0.3em] hover:bg-[#005231] transition-all disabled:opacity-50"
+                                            className="px-10 py-2.5 bg-emerald-700 text-white text-[10px] font-black uppercase tracking-[0.3em] hover:bg-emerald-800 transition-all disabled:opacity-50"
                                         >
                                             {approvalBlockedByDuplicate ? 'Resolve Duplicate Alert First' : processing ? 'Processing...' : 'Approve & Promote'}
                                         </button>
                                     </>
                                 ) : (
-                                    <div className="w-full rounded border border-slate-300 bg-slate-50 px-4 py-3 text-center text-[9px] font-black uppercase tracking-[0.22em] text-slate-600">
+                                    <div className="w-full rounded border border-slate-300 bg-slate-50 px-4 py-3 text-center text-[10px] font-black uppercase tracking-[0.22em] text-slate-600">
                                         {hasReadOnlyValidationAccess
                                             ? 'Read Only Access: Validation restricted to assigned Midwife.'
                                             : 'No review actions available for this record'}
@@ -862,7 +836,7 @@ const ValidationPage = () => {
                         </div>
                         <div className="p-4 space-y-4">
                             <div>
-                                <label className="mb-2 block text-[9px] font-black uppercase tracking-widest text-slate-700">
+                                <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-700">
                                     Rejection Reason
                                 </label>
                                 <select
@@ -880,7 +854,7 @@ const ValidationPage = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="mb-2 block text-[9px] font-black uppercase tracking-widest text-slate-700">
+                                <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-700">
                                     Rejection Notes
                                 </label>
                                 <textarea
@@ -904,11 +878,11 @@ const ValidationPage = () => {
                                         setShowRejectionModal(false);
                                         setRejectionError('');
                                     }}
-                                    className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400"
+                                    className="flex-1 py-2 text-[10px] font-bold uppercase text-slate-400"
                                 >
                                     Cancel
                                 </button>
-                                <button onClick={handleReject} disabled={processing} className="flex-1 py-2 bg-rose-700 text-white text-[9px] font-bold uppercase">Confirm</button>
+                                <button onClick={handleReject} disabled={processing} className="flex-1 py-2 bg-rose-700 text-white text-[10px] font-bold uppercase">Confirm</button>
                             </div>
                         </div>
                     </div>
@@ -931,8 +905,8 @@ const ValidationPage = () => {
                                 placeholder="Specify the correction needed before resubmission..."
                             ></textarea>
                             <div className="flex gap-2 mt-4">
-                                <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400">Cancel</button>
-                                <button onClick={handleNeedsRevision} disabled={!correctionNote || processing} className="flex-1 py-2 bg-amber-600 text-white text-[9px] font-bold uppercase">Return</button>
+                                <button onClick={() => setShowRevisionModal(false)} className="flex-1 py-2 text-[10px] font-bold uppercase text-slate-400">Cancel</button>
+                                <button onClick={handleNeedsRevision} disabled={!correctionNote || processing} className="flex-1 py-2 bg-amber-600 text-white text-[10px] font-bold uppercase">Return</button>
                             </div>
                         </div>
                     </div>
@@ -943,24 +917,24 @@ const ValidationPage = () => {
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                     <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowApprovalModal(false)}></div>
                     <div className="bg-white border border-emerald-200 w-full max-w-lg relative z-10 shadow-2xl">
-                        <div className="bg-[#006B3F] p-3 flex items-center gap-2">
+                        <div className="bg-emerald-700 p-3 flex items-center gap-2">
                             <CheckCircle className="text-white" size={16} />
                             <h3 className="text-[10px] font-bold text-white uppercase tracking-widest">Approve and Promote</h3>
                         </div>
                         <div className="p-4 space-y-4">
                             <div className="border border-slate-200 bg-slate-50 p-4 space-y-3">
                                 <div>
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-slate-500">Physical Address</div>
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Physical Address</div>
                                     <div className="mt-1 text-sm font-bold text-slate-900">{physicalAddressLabel}</div>
                                 </div>
                                 <div className="border-t border-slate-200 pt-3">
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-slate-500">FHSIS Assignment</div>
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">FHSIS Assignment</div>
                                     <div className="mt-1 text-sm font-bold text-slate-900">{fhsisAssignment}</div>
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => setShowApprovalModal(false)} className="flex-1 py-2 text-[9px] font-bold uppercase text-slate-400">Cancel</button>
-                                <button onClick={handleApprove} disabled={processing} className="flex-1 py-2 bg-[#006B3F] text-white text-[9px] font-bold uppercase">
+                                <button onClick={() => setShowApprovalModal(false)} className="flex-1 py-2 text-[10px] font-bold uppercase text-slate-400">Cancel</button>
+                                <button onClick={handleApprove} disabled={processing} className="flex-1 py-2 bg-emerald-700 text-white text-[10px] font-bold uppercase">
                                     {processing ? 'Processing...' : 'Confirm Approval'}
                                 </button>
                             </div>
@@ -1005,15 +979,15 @@ const ValidationPage = () => {
             )}
 
             {feedback.message && (
-                <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 border flex items-center gap-2 animate-in slide-in-from-bottom-2 ${feedback.type === 'success' ? 'bg-[#006B3F] border-emerald-900 text-white' : 'bg-rose-700 border-rose-900 text-white'}`}>
-                    <span className="text-[9px] font-bold uppercase tracking-widest">{feedback.message}</span>
+                <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 border flex items-center gap-2 animate-in slide-in-from-bottom-2 ${feedback.type === 'success' ? 'bg-emerald-700 border-emerald-900 text-white' : 'bg-rose-700 border-rose-900 text-white'}`}>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{feedback.message}</span>
                 </div>
             )}
 
             <style dangerouslySetInnerHTML={{ __html: `
                 .custom-scrollbar::-webkit-scrollbar { width: 3px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: #006B3F; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: #047857; }
                 .validation-chart-grid { width: 100%; max-width: 100%; }
                 .chart-grid {
                     display: grid;
@@ -1027,7 +1001,7 @@ const ValidationPage = () => {
                 .chart-grid-double { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 .clinical-rejection-summary {
                     margin: 0;
-                    box-shadow: inset 0 0 0 1px #064E3B;
+                    box-shadow: inset 0 0 0 1px #065f46;
                 }
             `}} />
         </div>
@@ -1038,7 +1012,7 @@ const ClinicalSection = ({ icon, title, children }) => (
     <section className="border border-slate-300 bg-white max-w-full">
         <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 px-3 py-2">
             {icon}
-            <h3 className="text-[9px] font-black uppercase tracking-widest text-slate-800">{title}</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">{title}</h3>
         </div>
         {children}
     </section>
@@ -1046,7 +1020,7 @@ const ClinicalSection = ({ icon, title, children }) => (
 
 const DataField = ({ label, value, highlight = false, icon = null }) => (
     <div className="min-h-[48px] max-w-full bg-white px-3 py-2">
-        <label className="mb-1 flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-slate-500">
+        <label className="mb-1 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
             {icon} {label}
         </label>
         <div className={`break-words text-[11px] font-black uppercase leading-snug ${highlight ? 'text-emerald-800' : 'text-slate-900'}`}>
@@ -1058,7 +1032,7 @@ const DataField = ({ label, value, highlight = false, icon = null }) => (
 const VaxCard = ({ label, isGiven, date }) => (
     <div className={`p-3 border ${isGiven ? 'bg-emerald-50/30 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
         <div className="text-[7px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</div>
-        <div className={`text-[9px] font-black uppercase ${isGiven ? 'text-emerald-800' : 'text-slate-400'}`}>
+        <div className={`text-[10px] font-black uppercase ${isGiven ? 'text-emerald-800' : 'text-slate-400'}`}>
             {isGiven ? 'ADMINISTERED' : 'NOT ADMINISTERED'}
         </div>
         {isGiven && date && (

@@ -30,11 +30,8 @@ const ROLE_OPTIONS = ['Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW'];
 const initialFilters = {
     barangay: 'all',
     actorRole: '',
-    actor: '',
-    action: '',
+    search: '',
     targetEntity: '',
-    infantName: '',
-    bhwName: '',
     startDate: '',
     endDate: ''
 };
@@ -279,7 +276,18 @@ const AuditLogs = () => {
             </section>
 
             <section className="border border-slate-300 bg-white p-4">
-                <div className="grid gap-3 lg:grid-cols-6">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))]">
+                    <Field label="Search Audit Ledger">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                            <input
+                                className={`${inputClass} w-full pl-9`}
+                                value={filters.search}
+                                onChange={(event) => handleFilter('search', event.target.value)}
+                                placeholder="Search staff, infant, BHW, activity, target area..."
+                            />
+                        </div>
+                    </Field>
                     {isSuperAdmin ? (
                         <>
                             <Field label="Barangay">
@@ -300,25 +308,7 @@ const AuditLogs = () => {
                                 </select>
                             </Field>
                         </>
-                    ) : (
-                        <>
-                            <Field label="Infant Name">
-                                <input className={`${inputClass} w-full`} value={filters.infantName} onChange={(event) => handleFilter('infantName', event.target.value)} placeholder="Search infant" />
-                            </Field>
-                            <Field label="BHW Name">
-                                <input className={`${inputClass} w-full`} value={filters.bhwName} onChange={(event) => handleFilter('bhwName', event.target.value)} placeholder="Search BHW" />
-                            </Field>
-                        </>
-                    )}
-                    <Field label="Staff">
-                        <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                            <input className={`${inputClass} w-full pl-8`} value={filters.actor} onChange={(event) => handleFilter('actor', event.target.value)} placeholder="Staff ID or name" />
-                        </div>
-                    </Field>
-                    <Field label="Activity">
-                        <input className={`${inputClass} w-full`} value={filters.action} onChange={(event) => handleFilter('action', event.target.value)} placeholder="Search activity type..." />
-                    </Field>
+                    ) : null}
                     <Field label="Start Date">
                         <input type="date" className={`${inputClass} w-full`} value={filters.startDate} onChange={(event) => handleFilter('startDate', event.target.value)} />
                     </Field>

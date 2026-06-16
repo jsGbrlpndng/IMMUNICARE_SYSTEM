@@ -745,8 +745,15 @@ export default function AdminSpatialMap() {
                             style={{ height: '100%', width: '100%' }}
                         >
                             <TileLayer
-                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                attribution="Tiles &copy; Esri"
+                                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                maxZoom={19}
+                            />
+                            <TileLayer
+                                attribution="&copy; CARTO"
+                                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                                maxZoom={19}
+                                zIndex={650}
                             />
                             <FlyToCluster cluster={selectedCluster} />
                             <ScaleControl position="bottomleft" />

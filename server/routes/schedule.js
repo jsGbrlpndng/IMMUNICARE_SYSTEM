@@ -20,6 +20,12 @@ const enhancedEngine = new EnhancedNIPScheduleEngine(db);
 const authController = new AuthorizationController(db);
 const nipScheduleService = new NIPScheduleService(db);
 
+const getScopedBarangay = (req) => (
+    req.user.role === 'Super Admin'
+        ? (req.query.barangay || null)
+        : req.user.assigned_barangay
+);
+
 const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
     .map((part) => String(part || '').trim())
     .filter(Boolean)
@@ -32,9 +38,7 @@ const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name
 router.get('/field-kit', async (req, res) => {
     try {
         const { timeframe = 'today' } = req.query;
-        const barangay = req.user.role === 'Super Admin'
-            ? (req.query.barangay || null)
-            : req.user.assigned_barangay;
+        const barangay = getScopedBarangay(req);
         console.log(`[SCHEDULE ROUTE] Fetching field kit for ${timeframe}${barangay ? ` in ${barangay}` : ''}...`);
         const data = await nipScheduleService.getFieldKitRequisition(timeframe, barangay);
         res.status(200).json(data);
@@ -48,9 +52,10 @@ router.get('/field-kit', async (req, res) => {
 // Verifies 100% match between Schedule and Map overdue populations
 router.get('/debug/reconciliation', async (req, res) => {
     try {
+        const scopedBarangay = getScopedBarangay(req);
         // We use the exact same engine method that both schedule and map call
-        const scheduleResult = await enhancedEngine.getApprovedInfantsWithSchedule({ urgency: 'overdue' }, 10000, 0);
-        const mapResult = await enhancedEngine.getApprovedInfantsWithSchedule({ urgency: 'overdue' }, 10000, 0);
+        const scheduleResult = await enhancedEngine.getApprovedInfantsWithSchedule({ urgency: 'overdue', barangay: scopedBarangay }, 10000, 0);
+        const mapResult = await enhancedEngine.getApprovedInfantsWithSchedule({ urgency: 'overdue', barangay: scopedBarangay }, 10000, 0);
 
         const scheduleIds = scheduleResult.infants.map(i => i.id).sort();
         const mapIds = mapResult.infants.map(i => i.id).sort();
@@ -83,16 +88,16 @@ router.get('/queue', async (req, res) => {
             offset = 0,
             urgency = 'all',
             search = '',
-            barangay = '',
             date_from = '',
             date_to = ''
         } = req.query;
+        const scopedBarangay = getScopedBarangay(req);
 
         // Build filters object
         const filters = {
             urgency: urgency !== 'all' ? urgency : null,
             search: search || null,
-            barangay: barangay || null,
+            barangay: scopedBarangay,
             date_from: date_from || null,
             date_to: date_to || null
         };
@@ -125,9 +130,10 @@ router.get('/queue', async (req, res) => {
 router.get('/urgent-actions', async (req, res) => {
     try {
         const { limit = 10, offset = 0 } = req.query;
+        const scopedBarangay = getScopedBarangay(req);
         // Re-use enhancedEngine's getApprovedInfantsWithSchedule logic but filter for overdue and due_today
         const queueData = await enhancedEngine.getApprovedInfantsWithSchedule(
-            { barangay: req.query.barangay || null }, // no strict single urgency filter, we'll filter below or we can modify the method.
+            { barangay: scopedBarangay }, // no strict single urgency filter, we'll filter below or we can modify the method.
             1000, // get a larger batch to filter
             0
         );
@@ -162,11 +168,12 @@ router.get('/urgent-actions', async (req, res) => {
 // GET /api/schedule/approved - Legacy alias for the canonical NIP queue
 router.get('/approved', async (req, res) => {
     try {
-        const { limit = 50, offset = 0, urgency = 'all', search = '', barangay = '' } = req.query;
+        const { limit = 50, offset = 0, urgency = 'all', search = '' } = req.query;
+        const scopedBarangay = getScopedBarangay(req);
         const filters = {
             urgency: urgency !== 'all' ? urgency : null,
             search: search || null,
-            barangay: barangay || null
+            barangay: scopedBarangay
         };
         Object.keys(filters).forEach(key => {
             if (filters[key] === null) delete filters[key];
@@ -194,7 +201,7 @@ router.get('/approved', async (req, res) => {
 router.get('/:infantId', async (req, res) => {
     try {
         const { infantId } = req.params;
-        const barangay = req.user.role === 'Super Admin' ? req.query.barangay : req.user.assigned_barangay;
+        const barangay = getScopedBarangay(req);
 
         // Use enhanced engine to get schedule with authorization status
         const enhancedSchedule = await enhancedEngine.getScheduleWithAuthorizationStatus(infantId, barangay);

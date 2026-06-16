@@ -1,0 +1,107 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+    }
+
+    barangays {
+        uuid id PK
+        varchar name
+        varchar code
+    }
+
+    infants {
+        varchar id PK
+        varchar reference_id
+        varchar barangay
+        numeric latitude
+        numeric longitude
+        geometry location
+        varchar immunization_status
+    }
+
+    dbscan_cluster_results {
+        uuid id PK
+        varchar run_scope
+        varchar barangay
+        int epsilon_meters
+        int min_points
+        varchar cluster_identifier
+        int infant_count
+        numeric centroid_latitude
+        numeric centroid_longitude
+        varchar generated_by FK
+    }
+
+    dbscan_cluster_members {
+        uuid cluster_result_id PK,FK
+        varchar infant_id PK,FK
+    }
+
+    cluster_assignments {
+        uuid id PK
+        uuid barangay_id FK
+        uuid cluster_result_id FK
+        varchar assigned_bhw_id FK
+        varchar assigned_by_admin_id FK
+        varchar status
+        timestamptz assigned_at
+    }
+
+    cluster_assignment_members {
+        uuid assignment_id PK,FK
+        varchar infant_id PK,FK
+    }
+
+    deployment_reports {
+        uuid id PK
+        uuid assignment_id FK
+        varchar submitted_by FK
+        varchar validated_by FK
+        varchar validation_status
+        varchar barangay
+    }
+
+    deployment_report_outcomes {
+        uuid id PK
+        uuid report_id FK
+        varchar infant_id FK
+        varchar outcome
+    }
+
+    spatial_dss_monthly_snapshots {
+        uuid id PK
+        date snapshot_month
+        varchar barangay
+        varchar metric_type
+        numeric metric_value
+    }
+
+    users ||--o{ dbscan_cluster_results : "generated_by"
+    dbscan_cluster_results ||--o{ dbscan_cluster_members : "cluster_result_id"
+    infants ||--o{ dbscan_cluster_members : "infant_id"
+    barangays ||--o{ cluster_assignments : "barangay_id"
+    dbscan_cluster_results ||--o{ cluster_assignments : "cluster_result_id"
+    users ||--o{ cluster_assignments : "assigned_bhw_id"
+    users ||--o{ cluster_assignments : "assigned_by_admin_id"
+    cluster_assignments ||--o{ cluster_assignment_members : "assignment_id"
+    infants ||--o{ cluster_assignment_members : "infant_id"
+    cluster_assignments ||--o{ deployment_reports : "assignment_id"
+    users ||--o{ deployment_reports : "submitted_by"
+    users ||--o{ deployment_reports : "validated_by"
+    deployment_reports ||--o{ deployment_report_outcomes : "report_id"
+    infants ||--o{ deployment_report_outcomes : "infant_id"

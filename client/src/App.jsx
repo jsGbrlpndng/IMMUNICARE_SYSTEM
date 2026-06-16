@@ -269,6 +269,14 @@ function App() {
                         }
                     />
                     <Route
+                        path="/admin/geospatial"
+                        element={
+                            <AdminRoute>
+                                <Navigate to="/admin/population-heatmap" replace />
+                            </AdminRoute>
+                        }
+                    />
+                    <Route
                         path="/admin/spatial-analysis"
                         element={
                             <AdminRoute>

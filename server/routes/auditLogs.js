@@ -13,11 +13,16 @@ router.use(clinicalAuth);
 const readFilters = (query = {}) => ({
     barangay: query.barangay || null,
     actorRole: query.actorRole || query.actor_role || null,
-    actor: query.actor || null,
-    action: query.action || null,
+    search: query.search
+        || query.q
+        || query.actor
+        || query.action
+        || query.infantName
+        || query.infant_name
+        || query.bhwName
+        || query.bhw_name
+        || null,
     targetEntity: query.targetEntity || query.target_entity || null,
-    infantName: query.infantName || query.infant_name || null,
-    bhwName: query.bhwName || query.bhw_name || null,
     startDate: query.startDate || query.start_date || null,
     endDate: query.endDate || query.end_date || null
 });

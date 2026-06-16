@@ -90,7 +90,10 @@ router.post('/check-duplicates', requireClinicalPrivilege, async (req, res) => {
 // GET /api/infants/recently-approved
 router.get('/recently-approved', requireClinicalPrivilege, async (req, res) => {
     try {
-        const { days = 7, barangay } = req.query;
+        const { days = 7 } = req.query;
+        const barangay = req.user.role === ROLES.SUPER_ADMIN
+            ? (req.query.barangay || null)
+            : req.user.assigned_barangay;
         const infants = await infantService.getRecentlyApproved(days, barangay);
         res.json({ success: true, infants, count: infants.length });
     } catch (error) {

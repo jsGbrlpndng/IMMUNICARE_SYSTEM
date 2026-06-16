@@ -84,6 +84,89 @@ const NavItem = ({ item, active, isCollapsed, onClick }) => {
     );
 };
 
+const NavGroupItem = ({ item, active, isCollapsed, currentPath, onClick }) => {
+    const [open, setOpen] = useState(active);
+    const [hovered, setHovered] = useState(false);
+    const Icon = item.icon;
+
+    useEffect(() => {
+        if (active) setOpen(true);
+    }, [active]);
+
+    if (isCollapsed) {
+        return (
+            <NavItem
+                item={{ ...item, path: item.children?.[0]?.path || item.path }}
+                active={active}
+                isCollapsed={isCollapsed}
+                onClick={onClick}
+            />
+        );
+    }
+
+    return (
+        <div>
+            <button
+                type="button"
+                onClick={() => setOpen((current) => !current)}
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
+                className={`
+                    relative mr-2 flex w-[calc(100%-0.5rem)] cursor-pointer items-center gap-3 rounded-r-lg border-l-4 py-[9px] pl-4 pr-3 text-left transition-all duration-150
+                    ${active
+                        ? 'border-emerald-800 border-y border-r border-slate-200 bg-emerald-50 shadow-sm'
+                        : 'border-transparent bg-transparent hover:bg-slate-100'}
+                `}
+            >
+                <Icon
+                    size={17}
+                    strokeWidth={active ? 2.5 : 1.8}
+                    style={{
+                        flexShrink: 0,
+                        color: active ? T.green : hovered ? T.greenDeep : '#94A3B8',
+                        transition: 'color 0.15s'
+                    }}
+                />
+                <span
+                    style={{
+                        flex: 1,
+                        fontSize: 13.5,
+                        fontWeight: active ? 600 : 500,
+                        color: active ? T.greenDeep : hovered ? T.greenDeep : T.textHeading,
+                        letterSpacing: '-0.01em',
+                        transition: 'color 0.15s, font-weight 0.15s'
+                    }}
+                >
+                    {item.name}
+                </span>
+                <ChevronDown
+                    size={15}
+                    strokeWidth={2.2}
+                    style={{
+                        color: active ? T.greenDeep : T.textMeta,
+                        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.16s ease, color 0.15s'
+                    }}
+                />
+            </button>
+
+            {open && (
+                <div className="ml-7 mt-1 flex flex-col gap-1 border-l border-slate-200 pl-2">
+                    {item.children.map((child) => (
+                        <NavItem
+                            key={child.name}
+                            item={child}
+                            active={currentPath === child.path}
+                            isCollapsed={false}
+                            onClick={onClick}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 /* ─── Dropdown row ───────────────────────────────────────────────── */
 const DropRow = ({ icon, label, onClick, danger }) => {
     const [h, setH] = useState(false);
@@ -131,6 +214,10 @@ const SidebarNav = ({
     const accountRef = useRef(null);
 
     const isActive = path => location.pathname === path;
+    const isItemActive = item => (
+        isActive(item.path) ||
+        (Array.isArray(item.children) && item.children.some(child => isActive(child.path)))
+    );
 
     useEffect(() => {
         const h = e => {
@@ -239,13 +326,24 @@ const SidebarNav = ({
                             {/* Items */}
                             <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
                                 {group.items.map(item => (
-                                    <NavItem
-                                        key={item.name}
-                                        item={item}
-                                        active={isActive(item.path)}
-                                        isCollapsed={isCollapsed}
-                                        onClick={() => setIsMobileOpen(false)}
-                                    />
+                                    Array.isArray(item.children) && item.children.length > 0 ? (
+                                        <NavGroupItem
+                                            key={item.name}
+                                            item={item}
+                                            active={isItemActive(item)}
+                                            isCollapsed={isCollapsed}
+                                            currentPath={location.pathname}
+                                            onClick={() => setIsMobileOpen(false)}
+                                        />
+                                    ) : (
+                                        <NavItem
+                                            key={item.name}
+                                            item={item}
+                                            active={isActive(item.path)}
+                                            isCollapsed={isCollapsed}
+                                            onClick={() => setIsMobileOpen(false)}
+                                        />
+                                    )
                                 ))}
                             </div>
                         </div>

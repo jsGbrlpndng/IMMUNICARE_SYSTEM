@@ -1,0 +1,138 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+        varchar assigned_barangay
+    }
+
+    barangays {
+        uuid id PK
+        varchar name
+        varchar code
+    }
+
+    report_exports {
+        uuid id PK
+        varchar report_type
+        varchar format
+        varchar generated_by FK
+        varchar generated_by_role
+        timestamptz generated_at
+    }
+
+    backup_runs {
+        uuid id PK
+        varchar backup_type
+        varchar status
+        varchar initiated_by FK
+        timestamptz started_at
+        timestamptz completed_at
+    }
+
+    audit_logs {
+        uuid id PK
+        varchar actor_user_id FK
+        uuid barangay_id FK
+        varchar action
+        varchar target_entity
+        varchar target_record_id
+        timestamptz created_at
+    }
+
+    audit_trail {
+        varchar id PK
+        varchar entity_type
+        varchar entity_id
+        varchar action_type
+        varchar user_id
+        timestamptz created_at
+    }
+
+    system_audit_logs {
+        bigint id PK
+        varchar user_id FK
+        varchar action_type
+        varchar target_entity
+        varchar target_id
+        timestamptz timestamp
+    }
+
+    system_settings {
+        varchar setting_key PK
+        text setting_value
+        varchar category
+        varchar updated_by FK
+    }
+
+    m1_immunization_targets {
+        uuid id PK
+        uuid barangay_id FK
+        int report_year
+        int total_population
+        varchar created_by FK
+        varchar updated_by FK
+    }
+
+    m1_monthly_actual_populations {
+        uuid id PK
+        uuid barangay_id FK
+        int report_year
+        int report_month
+        int actual_population
+        varchar created_by FK
+        varchar updated_by FK
+    }
+
+    m1_municipal_targets {
+        uuid id PK
+        int report_year
+        varchar municipality_name
+        int total_population
+        varchar created_by FK
+        varchar updated_by FK
+    }
+
+    m1_doh_monitoring_data {
+        uuid id PK
+        int report_year
+        int report_month
+        varchar barangay
+        varchar chart_type
+    }
+
+    spatial_dss_monthly_snapshots {
+        uuid id PK
+        date snapshot_month
+        varchar barangay
+        varchar metric_type
+        numeric metric_value
+    }
+
+    users ||--o{ report_exports : "generated_by"
+    users ||--o{ backup_runs : "initiated_by"
+    users ||--o{ audit_logs : "actor_user_id"
+    barangays ||--o{ audit_logs : "barangay_id"
+    users ||--o{ system_audit_logs : "user_id"
+    users ||--o{ system_settings : "updated_by"
+    barangays ||--o{ m1_immunization_targets : "barangay_id"
+    users ||--o{ m1_immunization_targets : "created_by"
+    users ||--o{ m1_immunization_targets : "updated_by"
+    barangays ||--o{ m1_monthly_actual_populations : "barangay_id"
+    users ||--o{ m1_monthly_actual_populations : "created_by"
+    users ||--o{ m1_monthly_actual_populations : "updated_by"
+    users ||--o{ m1_municipal_targets : "created_by"
+    users ||--o{ m1_municipal_targets : "updated_by"

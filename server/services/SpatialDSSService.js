@@ -135,7 +135,7 @@ class SpatialDSSService {
                     GREATEST(base.utilization_cumulative_target_population - base.utilization_actual, 0)::int AS utilization_gap
                 FROM base
                 ${barangayFilterClause}
-                ORDER BY base.barangay ASC
+                ORDER BY population_gap ASC, base.barangay ASC
                 `,
                 params
             );

@@ -8,11 +8,13 @@ const { ROLES, STAFF_ROLES } = require('../constants/domain');
 const M1ReportService = require('../services/M1ReportService');
 const InfantService = require('../services/InfantService');
 const AuditLogService = require('../services/AuditLogService');
+const SpatialDSSService = require('../services/SpatialDSSService');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
 const UserProfileService = require('../services/UserProfileService');
 const UserIdentityService = require('../services/UserIdentityService');
 
 const infantService = new InfantService(db);
+const spatialDssService = new SpatialDSSService(db);
 const userProfileService = new UserProfileService(db);
 const userIdentityService = new UserIdentityService(db);
 
@@ -50,6 +52,56 @@ const getAdminBarangayScope = async (req) => {
         barangay_id: barangayRows[0]?.id || null
     };
 };
+
+const normalizeDashboardBarangay = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized || normalized.toLowerCase() === 'all') return null;
+    return normalized;
+};
+
+const getDashboardScope = async (req) => {
+    if (req.user?.role === ROLES.SUPER_ADMIN) {
+        const requestedBarangay = normalizeDashboardBarangay(req.query.barangay || req.headers['x-admin-barangay']);
+        if (!requestedBarangay) {
+            return {
+                barangay: null,
+                barangay_id: null,
+                scope_type: 'MUNICIPAL',
+                scope: { type: 'MUNICIPAL', barangay: null, barangay_id: null, label: 'RHU 2 - All Barangays' }
+            };
+        }
+
+        const [barangayRows] = await db.execute(
+            `
+            SELECT id, name
+            FROM barangays
+            WHERE UPPER(TRIM(name)) = UPPER(TRIM(?))
+            LIMIT 1
+            `,
+            [requestedBarangay]
+        );
+
+        const barangayName = barangayRows[0]?.name || requestedBarangay;
+        return {
+            barangay: barangayName,
+            barangay_id: barangayRows[0]?.id || null,
+            scope_type: 'BARANGAY',
+            scope: { type: 'BARANGAY', barangay: barangayName, barangay_id: barangayRows[0]?.id || null }
+        };
+    }
+
+    const scope = await getAdminBarangayScope(req);
+    return {
+        ...scope,
+        scope_type: 'BARANGAY',
+        scope: { type: 'BARANGAY', barangay: scope.barangay, barangay_id: scope.barangay_id }
+    };
+};
+
+const scopedClause = (column, barangay) => ({
+    clause: barangay ? `AND UPPER(TRIM(${column})) = UPPER(TRIM(?))` : '',
+    params: barangay ? [barangay] : []
+});
 
 const requireSuperAdmin = (req, res) => {
     if (req.user?.role !== ROLES.SUPER_ADMIN) {
@@ -169,7 +221,10 @@ const buildCoverageTrend = async (barangay) => {
     return trend;
 };
 
-const getDashboardKpis = async (barangay) => {
+const getDashboardKpis = async (barangay, user) => {
+    const infantScope = scopedClause('barangay', barangay);
+    const registrationScope = scopedClause('barangay', barangay);
+    const defaulterScope = scopedClause('i.barangay', barangay);
     const [
         activeRows,
         pendingRows,
@@ -181,18 +236,18 @@ const getDashboardKpis = async (barangay) => {
             SELECT COUNT(*)::int AS count
             FROM infants
             WHERE status = 'Active'
-              AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+              ${infantScope.clause}
             `,
-            [barangay]
+            infantScope.params
         ),
         db.execute(
             `
             SELECT COUNT(*)::int AS count
             FROM infant_registrations
             WHERE status = 'PENDING_VALIDATION'
-              AND UPPER(TRIM(barangay)) = UPPER(TRIM(?))
+              ${registrationScope.clause}
             `,
-            [barangay]
+            registrationScope.params
         ),
         db.execute(
             `
@@ -200,23 +255,34 @@ const getDashboardKpis = async (barangay) => {
             FROM infants i
             JOIN infant_schedules s ON s.infant_id = i.id
             WHERE i.status = 'Active'
-              AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))
               AND s.status::text IN ('DEFAULTER', 'DEFAULTED', 'OVERDUE')
+              ${defaulterScope.clause}
             `,
-            [barangay]
+            defaulterScope.params
         ),
-        new M1ReportService(db).getCoverageDashboard({ barangay })
+        new M1ReportService(db).getCoverageDashboardForUser({
+            requestedBarangay: barangay || undefined,
+            user
+        })
     ]);
 
     const penta = coverageReport.kpis?.penta || {};
     const penta1Count = Number(penta.dose1_count || 0);
     const penta3Count = Number(penta.final_dose_count || 0);
+    const targetPopulation = Number(penta.base_population ?? penta.target_population ?? 0);
+    const actualPopulation = Number(activeRows[0][0]?.count || 0);
+    const operationalTargetGap = Math.max(0, targetPopulation - actualPopulation);
 
     return {
-        total_active_infants: Number(activeRows[0][0]?.count || 0),
+        total_active_infants: actualPopulation,
+        actual_population: actualPopulation,
         pending_midwife_validations: Number(pendingRows[0][0]?.count || 0),
         total_current_defaulters: Number(defaulterRows[0][0]?.count || 0),
-        target_population: Number(penta.target_population || 0),
+        target_population: targetPopulation,
+        base_population: targetPopulation,
+        monthly_target_population: Number(penta.monthly_target_population || 0),
+        cumulative_target_population: Number(penta.cumulative_target_population || 0),
+        operational_target_gap: operationalTargetGap,
         dropout_count: Number(penta.dropout_count || 0),
         dropout_rate: Number(penta.dropout_rate || 0),
         utilization_rate: Number(penta.utilization_rate || 0),
@@ -230,7 +296,46 @@ const getAuditSummary = async (user) => {
     return service.getDashboardSummary({ user });
 };
 
-const getUserSummary = async (barangay) => {
+const getUserSummary = async (barangay, user) => {
+    if (user?.role === ROLES.SUPER_ADMIN) {
+        const userScope = scopedClause('assigned_barangay', barangay);
+        const [adminRows] = await db.execute(
+            `
+            SELECT
+                id,
+                full_name,
+                role,
+                assigned_barangay,
+                is_active,
+                created_at,
+                created_by_user_id
+            FROM users
+            WHERE is_active = TRUE
+              AND role = 'Admin'
+              ${userScope.clause}
+            ORDER BY assigned_barangay ASC, full_name ASC
+            `,
+            userScope.params
+        );
+        const personnel = adminRows || [];
+        const managedBarangays = new Set(
+            personnel
+                .map((person) => String(person.assigned_barangay || '').trim())
+                .filter(Boolean)
+                .map((barangayName) => barangayName.toUpperCase())
+        );
+
+        return {
+            total_active_personnel: personnel.length,
+            bhw_count: 0,
+            midwife_count: 0,
+            admin_count: personnel.length,
+            managed_barangay_count: managedBarangays.size,
+            personnel
+        };
+    }
+
+    const userScope = scopedClause('assigned_barangay', barangay);
     const [personnelRows] = await db.execute(
         `
         SELECT
@@ -241,12 +346,12 @@ const getUserSummary = async (barangay) => {
             is_active,
             created_at
         FROM users
-        WHERE UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
-          AND is_active = TRUE
+        WHERE is_active = TRUE
           AND role IN ('BHW', 'Midwife', 'Nurse')
+          ${userScope.clause}
         ORDER BY role ASC, full_name ASC
         `,
-        [barangay]
+        userScope.params
     );
     const personnel = personnelRows || [];
 
@@ -256,6 +361,21 @@ const getUserSummary = async (barangay) => {
         midwife_count: personnel.filter((person) => ['Midwife', 'Nurse'].includes(person.role)).length,
         personnel
     };
+};
+
+const getActiveBarangayAdminCount = async (barangay) => {
+    const userScope = scopedClause('assigned_barangay', barangay);
+    const [rows] = await db.execute(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM users
+        WHERE role = 'Admin'
+          AND is_active = TRUE
+          ${userScope.clause}
+        `,
+        userScope.params
+    );
+    return Number(rows[0]?.count || 0);
 };
 
 const countMonthlyChange = async ({ table, dateColumn, whereClause = '', params = [] }) => {
@@ -582,10 +702,113 @@ router.get('/dashboard/dss-kpis', async (req, res) => {
 });
 
 // GET /api/admin/dashboard/kpis
+router.get('/dashboard/superadmin-summary', async (req, res) => {
+    try {
+        if (req.user?.role !== ROLES.SUPER_ADMIN) {
+            return res.status(403).json({
+                success: false,
+                error: 'Forbidden: Super Admin authority is required for municipal dashboard metrics.'
+            });
+        }
+
+        const scope = await getDashboardScope(req);
+        const [kpis, userSummary, spatialData, auditSummary] = await Promise.all([
+            getDashboardKpis(scope.barangay, req.user),
+            getUserSummary(scope.barangay, req.user),
+            infantService.getSpatialTriage({
+                barangay: scope.barangay,
+                eps: 300,
+                minPts: 3,
+                scope: 'defaulter'
+            }),
+            getAuditSummary(req.user)
+        ]);
+
+        const clusters = (spatialData?.clusters || [])
+            .slice()
+            .sort((a, b) => Number(b.total_infants || b.count || 0) - Number(a.total_infants || a.count || 0));
+
+        res.json({
+            success: true,
+            generated_at: new Date().toISOString(),
+            ...scope,
+            metrics: {
+                total_registered_infants: Number(kpis.total_active_infants || 0),
+                active_bhws: Number(userSummary.bhw_count || 0),
+                active_midwives: Number(userSummary.midwife_count || 0),
+                active_barangay_admins: Number(userSummary.admin_count || userSummary.total_active_personnel || 0),
+                managed_barangays: Number(userSummary.managed_barangay_count || 0),
+                overall_nip_compliance_rate: Number(kpis.utilization_rate || 0),
+                active_hotspots: Number(clusters.length || 0),
+                current_defaulters: Number(kpis.total_current_defaulters || 0),
+                pending_validations: Number(kpis.pending_midwife_validations || 0)
+            },
+            hotspots: clusters,
+            users: userSummary,
+            personnel: userSummary.personnel || [],
+            recent_audit_events: auditSummary.recent_events || []
+        });
+    } catch (error) {
+        console.error('[SUPERADMIN_DASHBOARD_SUMMARY_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/target-ranking
+router.get('/dashboard/target-ranking', async (req, res) => {
+    try {
+        const scope = await getDashboardScope(req);
+        const result = await spatialDssService.getPerformanceGap({
+            year: req.query.year,
+            month: req.query.month,
+            barangay: scope.barangay
+        });
+
+        const rows = (result.rows || []).map((row, index) => {
+            const target = Number(row.eligible_population_0_12_months || 0);
+            const actual = Number(row.actual_population || 0);
+            const gap = Math.max(0, target - actual);
+            const ratio = target > 0 ? gap / target : 0;
+
+            return {
+                rank: index + 1,
+                barangay: row.barangay,
+                target,
+                actual,
+                gap,
+                status: target <= 0
+                    ? 'Target Missing'
+                    : (ratio <= 0.1 ? 'On Track' : (ratio <= 0.3 ? 'Monitor' : 'Action Needed'))
+            };
+        });
+
+        res.json({
+            success: true,
+            ...scope,
+            rows,
+            summary: {
+                target: rows.reduce((sum, row) => sum + Number(row.target || 0), 0),
+                actual: rows.reduce((sum, row) => sum + Number(row.actual || 0), 0),
+                gap: rows.reduce((sum, row) => sum + Number(row.gap || 0), 0)
+            }
+        });
+    } catch (error) {
+        console.error('[ADMIN_DASHBOARD_TARGET_RANKING_ERROR]', error);
+        res.status(error.status || 500).json({
+            success: false,
+            error: error.message || 'Internal Server Error'
+        });
+    }
+});
+
+// GET /api/admin/dashboard/kpis
 router.get('/dashboard/kpis', async (req, res) => {
     try {
-        const scope = await getAdminBarangayScope(req);
-        const kpis = await getDashboardKpis(scope.barangay);
+        const scope = await getDashboardScope(req);
+        const kpis = await getDashboardKpis(scope.barangay, req.user);
         res.json({
             success: true,
             ...scope,
@@ -603,7 +826,7 @@ router.get('/dashboard/kpis', async (req, res) => {
 // GET /api/admin/dashboard/clusters
 router.get('/dashboard/clusters', async (req, res) => {
     try {
-        const scope = await getAdminBarangayScope(req);
+        const scope = await getDashboardScope(req);
         const spatialData = await infantService.getSpatialTriage({
             barangay: scope.barangay,
             eps: 300,
@@ -635,7 +858,7 @@ router.get('/dashboard/clusters', async (req, res) => {
 // GET /api/admin/dashboard/audit-summary
 router.get('/dashboard/audit-summary', async (req, res) => {
     try {
-        const scope = await getAdminBarangayScope(req);
+        const scope = await getDashboardScope(req);
         const audit = await getAuditSummary(req.user);
         res.json({
             success: true,
@@ -654,8 +877,8 @@ router.get('/dashboard/audit-summary', async (req, res) => {
 // GET /api/admin/dashboard/user-summary
 router.get('/dashboard/user-summary', async (req, res) => {
     try {
-        const scope = await getAdminBarangayScope(req);
-        const users = await getUserSummary(scope.barangay);
+        const scope = await getDashboardScope(req);
+        const users = await getUserSummary(scope.barangay, req.user);
         res.json({
             success: true,
             ...scope,
@@ -673,7 +896,7 @@ router.get('/dashboard/user-summary', async (req, res) => {
 // GET /api/admin/dashboard/trends
 router.get('/dashboard/trends', async (req, res) => {
     try {
-        const scope = await getAdminBarangayScope(req);
+        const scope = await getDashboardScope(req);
         const trends = await buildCoverageTrend(scope.barangay);
         res.json({
             success: true,

@@ -422,8 +422,10 @@ describe('M1ReportService DOH-aligned reporting', () => {
         const db = buildMockDb(async (sql, params) => {
             if (sql.includes('information_schema.columns')) {
                 return [[
+                    { column_name: 'total_population' },
                     { column_name: 'eligible_population_0_11_months' },
                     { column_name: 'eligible_population_0_12_months' },
+                    { column_name: 'monthly_target_0_11_months' },
                     { column_name: 'penta_cumulative_target_population' },
                     { column_name: 'mcv_cumulative_target_population' },
                     { column_name: 'utilization_cumulative_target_population' }
@@ -432,6 +434,8 @@ describe('M1ReportService DOH-aligned reporting', () => {
 
             expect(sql).toContain('SUM(COALESCE(penta1_count, 0)) OVER');
             expect(sql).toContain('SUM(COALESCE(penta3_count, 0)) OVER');
+            expect(sql).toContain('base_population');
+            expect(sql).toContain('monthly_target_0_11_months');
             expect(sql).toContain('(COALESCE(penta_target_config, 0) * report_month)::numeric AS cumulative_target_population');
             expect(sql).not.toContain('FROM m1_doh_monitoring_data');
             expect(params).toEqual([2026, 2026, '2026-01-01', '2027-01-01']);
@@ -439,12 +443,14 @@ describe('M1ReportService DOH-aligned reporting', () => {
                 {
                     report_year: 2026,
                     report_month: 2,
+                    base_population: 565,
                     eligible_population: 270,
                     eligible_population_0_11_months: 270,
                     eligible_population_0_12_months: 300,
                     penta_target_config: 55,
                     mcv_target_config: 60,
                     utilization_target_config: 60,
+                    monthly_target_0_11_months: 22.5,
                     cumulative_target_population: 110,
                     penta1_count: 5,
                     penta3_count: 3,
@@ -473,9 +479,11 @@ describe('M1ReportService DOH-aligned reporting', () => {
 
         expect(result.report_type).toBe('MONITORING_CHART');
         expect(february).toMatchObject({
+            base_population: 565,
             penta_target_config: 55,
             mcv_target_config: 60,
             utilization_target_config: 60,
+            monthly_target_0_11_months: 22.5,
             penta_cumulative_target_population: 55,
             mcv_cumulative_target_population: 60,
             utilization_cumulative_target_population: 60,
@@ -490,8 +498,10 @@ describe('M1ReportService DOH-aligned reporting', () => {
         const db = buildMockDb(async (sql, params) => {
             if (sql.includes('information_schema.columns')) {
                 return [[
+                    { column_name: 'total_population' },
                     { column_name: 'eligible_population_0_11_months' },
                     { column_name: 'eligible_population_0_12_months' },
+                    { column_name: 'monthly_target_0_11_months' },
                     { column_name: 'penta_cumulative_target_population' },
                     { column_name: 'mcv_cumulative_target_population' },
                     { column_name: 'utilization_cumulative_target_population' }
@@ -505,12 +515,14 @@ describe('M1ReportService DOH-aligned reporting', () => {
             return [[{
                 report_year: 2026,
                 report_month: 1,
+                base_population: 565,
                 eligible_population: 55,
                 eligible_population_0_11_months: 55,
                 eligible_population_0_12_months: 60,
                 penta_target_config: 55,
                 mcv_target_config: 60,
                 utilization_target_config: 60,
+                monthly_target_0_11_months: 55,
                 cumulative_target_population: 55,
                 penta1_count: 10,
                 penta3_count: 8,
@@ -536,11 +548,104 @@ describe('M1ReportService DOH-aligned reporting', () => {
         const result = await service.getMonitoringChart({ year: 2026, barangay: 'BARANGAY_A' });
 
         expect(result.rows[0]).toMatchObject({
+            base_population: 565,
             penta_target_config: 55,
+            monthly_target_0_11_months: 55,
             cumulative_target_population: 55,
             penta1_count: 10,
             penta1_cumulative: 10,
             penta3_cumulative: 8
+        });
+    });
+
+    test('coverage dashboard returns 12 normalized monthly rows for the Barangay Admin trend chart', async () => {
+        const monthlyRows = Array.from({ length: 12 }, (_, index) => {
+            const reportMonth = index + 1;
+            return {
+                report_year: 2026,
+                report_month: reportMonth,
+                base_population: 565,
+                eligible_population: 270,
+                eligible_population_0_11_months: 270,
+                eligible_population_0_12_months: 280,
+                penta_target_config: 10,
+                mcv_target_config: 12,
+                utilization_target_config: 12,
+                monthly_target_0_11_months: 10,
+                cumulative_target_population: reportMonth * 10,
+                penta1_count: reportMonth,
+                penta3_count: Math.max(0, reportMonth - 1),
+                mcv1_count: reportMonth,
+                mcv2_count: Math.max(0, reportMonth - 1),
+                penta1_cumulative: reportMonth * 2,
+                penta3_cumulative: reportMonth,
+                mcv1_cumulative: reportMonth * 2,
+                mcv2_cumulative: reportMonth,
+                dropout_count: reportMonth,
+                dropout_rate: '50',
+                mcv_dropout_count: reportMonth,
+                mcv_dropout_rate: '50',
+                utilization_dropout_count: 0,
+                utilization_dropout_rate: '0',
+                utilization_cumulative_dropout_count: reportMonth,
+                utilization_cumulative_dropout_rate: '50',
+                target_rows_found: 1
+            };
+        });
+        const db = buildMockDb(async (sql) => {
+            if (sql.includes('information_schema.columns')) {
+                return [[
+                    { column_name: 'total_population' },
+                    { column_name: 'eligible_population_0_11_months' },
+                    { column_name: 'eligible_population_0_12_months' },
+                    { column_name: 'monthly_target_0_11_months' },
+                    { column_name: 'penta_cumulative_target_population' },
+                    { column_name: 'mcv_cumulative_target_population' },
+                    { column_name: 'utilization_cumulative_target_population' }
+                ]];
+            }
+            return [monthlyRows];
+        });
+
+        const service = new M1ReportService(db);
+        const result = await service.getCoverageDashboardForUser({
+            year: 2026,
+            month: 2,
+            requestedBarangay: 'LANGGAM',
+            user: { role: 'Admin', assigned_barangay: 'LANGGAM' }
+        });
+
+        expect(result.report_type).toBe('COVERAGE_DASHBOARD');
+        expect(result.monthlySeries).toHaveLength(12);
+        expect(result.monthlySeries[1]).toMatchObject({
+            month: 'Feb',
+            month_key: '2026-02',
+            penta_target_cumulative: 20,
+            penta3_cumulative: 2,
+            penta_dropout_rate: 50,
+            penta_utilization_rate: 10
+        });
+        expect(result.kpis).toMatchObject({
+            target_population: 565,
+            base_population: 565,
+            monthly_target_population: 10,
+            cumulative_target_population: 20,
+            operational_target_gap: 564,
+            dose1_count: 2,
+            final_dose_count: 1,
+            dose1_cumulative: 4,
+            final_dose_cumulative: 2
+        });
+        expect(result.kpis.penta).toMatchObject({
+            target_population: 565,
+            base_population: 565,
+            monthly_target_population: 10,
+            cumulative_target_population: 20,
+            operational_target_gap: 564,
+            dose1_count: 2,
+            final_dose_count: 1,
+            dose1_cumulative: 4,
+            final_dose_cumulative: 2
         });
     });
 

@@ -1,0 +1,110 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+    }
+
+    infants {
+        varchar id PK
+        varchar reference_id
+        varchar immunization_status
+        varchar next_due_vaccine
+        date next_due_date
+    }
+
+    doh_compliance_rules {
+        varchar rule_id PK
+        varchar vaccine_code
+        int dose_number
+        int min_age_days
+        int min_interval_days
+        varchar created_by FK
+    }
+
+    infant_schedules {
+        varchar id PK
+        varchar infant_id FK
+        varchar vaccine_code
+        int dose_number
+        date recommended_date
+        date actual_date
+        varchar status
+    }
+
+    vaccinations {
+        varchar id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar vaccine_code
+        int dose_number
+        varchar recorded_by FK
+        varchar validated_by_id FK
+        varchar correction_of_vaccination_id FK
+        timestamptz administered_date
+    }
+
+    schedule_deferrals {
+        varchar id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar vaccine_name
+        date original_due_date
+        date new_due_date
+        varchar defer_type
+    }
+
+    schedule_overrides {
+        varchar id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar vaccine_name
+        varchar midwife_id
+        varchar authorization_status
+    }
+
+    authorization_sessions {
+        varchar session_id PK
+        varchar midwife_id FK
+        varchar infant_id FK
+        timestamptz session_start
+        timestamptz session_end
+    }
+
+    authorization_audit {
+        varchar audit_id PK
+        varchar infant_id FK
+        varchar midwife_id FK
+        varchar vaccine_name
+        varchar action_type
+        varchar override_type
+    }
+
+    users ||--o{ doh_compliance_rules : "created_by"
+    infants ||--o{ infant_schedules : "infant_id"
+    infants ||--o{ vaccinations : "infant_id"
+    infant_schedules ||--o{ vaccinations : "schedule_id"
+    users ||--o{ vaccinations : "recorded_by"
+    users ||--o{ vaccinations : "validated_by_id"
+    vaccinations ||--o{ vaccinations : "correction_of_vaccination_id"
+    infants ||--o{ schedule_deferrals : "infant_id"
+    infant_schedules ||--o{ schedule_deferrals : "schedule_id"
+    infants ||--o{ schedule_overrides : "infant_id"
+    infant_schedules ||--o{ schedule_overrides : "schedule_id"
+    users ||--o{ authorization_sessions : "midwife_id"
+    infants ||--o{ authorization_sessions : "infant_id"
+    users ||--o{ authorization_audit : "midwife_id"
+    infants ||--o{ authorization_audit : "infant_id"

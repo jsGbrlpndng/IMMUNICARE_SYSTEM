@@ -475,9 +475,15 @@ const HeatmapMap = memo(({
                     trackResize={true}
                 >
                     <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        attribution="Tiles &copy; Esri"
                         maxZoom={19}
+                    />
+                    <TileLayer
+                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                        attribution="&copy; CARTO"
+                        maxZoom={19}
+                        zIndex={650}
                     />
 
                     <MapResizeHandle />

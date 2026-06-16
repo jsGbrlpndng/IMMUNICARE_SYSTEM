@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BarChart2, FileText, LayoutDashboard, Map as MapIcon, Menu, Users, Layers, Settings } from 'lucide-react';
+import { BarChart2, FileText, LayoutDashboard, Map as MapIcon, MapPinned, Menu, Users, Layers, Settings } from 'lucide-react';
 import SidebarNav from './SidebarNav';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -10,8 +10,15 @@ const adminNavigation = [
         group: 'Administration',
         items: [
             { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-            { name: 'Population Heatmap', path: '/admin/population-heatmap', icon: Layers },
-            { name: 'Spatial Analysis', path: '/admin/spatial-analysis', icon: MapIcon },
+            {
+                name: 'Geospatial Intelligence',
+                path: '/admin/geospatial',
+                icon: MapPinned,
+                children: [
+                    { name: 'Population Heatmap', path: '/admin/population-heatmap', icon: Layers },
+                    { name: 'Spatial Hotspots', path: '/admin/spatial-analysis', icon: MapIcon }
+                ]
+            },
             { name: 'M1 Reports', path: '/admin/reports/m1', icon: BarChart2 },
             { name: 'User Management', path: '/admin/users', icon: Users },
             { name: 'Audit Logs', path: '/admin/audit', icon: FileText },
@@ -74,8 +81,10 @@ const AdminLayout = ({ children }) => {
                     </div>
                 </nav>
 
-                <main className="flex min-w-0 flex-1 overflow-x-hidden">
-                    {children}
+                <main className="flex min-w-0 flex-1 overflow-x-hidden bg-slate-50">
+                    <div className="mx-auto w-full max-w-screen-2xl min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+                        {children}
+                    </div>
                 </main>
             </div>
         </div>

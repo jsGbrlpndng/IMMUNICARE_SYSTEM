@@ -1,0 +1,84 @@
+%%{init: {
+"theme": "base",
+"themeVariables": {
+"background": "#ffffff",
+"primaryColor": "#ffffff",
+"primaryTextColor": "#111827",
+"primaryBorderColor": "#9ca3af",
+"lineColor": "#6b7280",
+"secondaryColor": "#f9fafb",
+"tertiaryColor": "#f3f4f6",
+"fontFamily": "Arial"
+}
+}}%%
+erDiagram
+    users {
+        varchar id PK
+        varchar full_name
+        varchar role
+    }
+
+    caregivers {
+        uuid id PK
+        varchar full_name
+        varchar mobile_number
+        boolean is_portal_enrolled
+        varchar enrolled_by FK
+    }
+
+    infants {
+        varchar id PK
+        varchar reference_id
+        uuid caregiver_id FK
+        varchar caregiver_phone
+        varchar caregiver_relationship
+    }
+
+    sms_logs {
+        uuid id PK
+        varchar infant_id FK
+        uuid caregiver_id FK
+        varchar mobile_number
+        varchar message_type
+        varchar delivery_status
+        varchar sent_by FK
+        timestamptz sent_at
+    }
+
+    otp_records {
+        uuid id PK
+        uuid caregiver_id FK
+        varchar mobile_number
+        varchar purpose
+        timestamptz expires_at
+        timestamptz consumed_at
+        int attempt_count
+    }
+
+    infant_schedules {
+        varchar id PK
+        varchar infant_id FK
+        varchar vaccine_code
+        int dose_number
+        date recommended_date
+        varchar status
+    }
+
+    vaccinations {
+        varchar id PK
+        varchar infant_id FK
+        varchar schedule_id FK
+        varchar vaccine_code
+        int dose_number
+        timestamptz administered_date
+    }
+
+    users ||--o{ caregivers : "enrolled_by"
+    caregivers ||--o{ infants : "caregiver_id"
+    caregivers ||--o{ sms_logs : "caregiver_id"
+    infants ||--o{ sms_logs : "infant_id"
+    users ||--o{ sms_logs : "sent_by"
+    caregivers ||--o{ otp_records : "caregiver_id"
+    infants ||--o{ infant_schedules : "infant_id"
+    infants ||--o{ vaccinations : "infant_id"
+    infant_schedules ||--o{ vaccinations : "schedule_id"

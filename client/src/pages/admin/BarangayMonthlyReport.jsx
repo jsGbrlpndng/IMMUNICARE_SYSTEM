@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertTriangle, ClipboardList, PhoneCall, Table2, UserPlus } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, Table2 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import ReportFilters from '../../components/reports/ReportFilters';
 import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
-import BarangayDssWidgets from '../../components/reports/BarangayDssWidgets';
 import { DataQualityBanner, ErrorState, LoadingState } from '../../components/reports/ReportStates';
 import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
 
@@ -19,20 +18,13 @@ const readJson = async (response) => {
     return payload;
 };
 
-const COHORT_LABELS = {
-    defaulters: 'Defaulter Action Alert',
-    fic_red_zone: 'FIC Red Zone',
-    pipeline_30_day: '30-Day Pipeline',
-    vial_requisition: 'Predictive Vial Requisition'
-};
-
 const TABS = [
-    { key: 'monthly', label: 'Monthly Accomplishment Table', icon: Table2 },
-    { key: 'etcl', label: 'Target Client List (eTCL)', icon: ClipboardList },
-    { key: 'dss', label: 'DSS Action Alerts', icon: AlertTriangle }
+    { key: 'monthly', label: 'Monthly Accomplishment', icon: Table2 },
+    { key: 'etcl', label: 'Target Client List (eTCL)', icon: ClipboardList }
 ];
 
 const ETCL_COLUMNS = [
+    { key: '__row_number', label: '#', system: true },
     { key: 'infant_name', label: 'Infant Name', sticky: true },
     { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
     { key: 'mother_name', label: "Mother's Name" },
@@ -86,105 +78,80 @@ const formatDate = (value) => {
     return parsed.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' });
 };
 
-const TargetClientTable = ({ rows = [], activeCohort }) => (
+const getFilteredEtclRows = (rows, quickFilter) => {
+    if (quickFilter === 'defaulters') return rows.filter((row) => row.remarks === 'Defaulter');
+    if (quickFilter === 'fic_red_zone') return rows.filter((row) => row.remarks === 'FIC Red Zone');
+    if (quickFilter === 'due_soon') return rows.filter((row) => row.remarks === 'Due Soon');
+    return rows;
+};
+
+const EtclTargetClientTable = ({
+    rows = [],
+    allRows = [],
+    scopeLabel,
+    periodLabel,
+    quickFilter,
+    onQuickFilterChange,
+    counters,
+    page,
+    pageSize,
+    totalRows,
+    totalPages,
+    onPageChange,
+    onPageSizeChange,
+    onExport
+}) => {
+    const startRow = totalRows === 0 ? 0 : ((page - 1) * pageSize) + 1;
+    const endRow = Math.min(page * pageSize, totalRows);
+    const quickFilters = [
+        { key: 'all', label: 'All eTCL', count: allRows.length, className: 'border-slate-300 bg-white text-slate-700 hover:border-emerald-800 hover:text-emerald-800' },
+        { key: 'defaulters', label: 'Priority Alerts', count: counters.defaulters, className: 'border-rose-300 bg-rose-50 text-rose-700 hover:border-rose-500' },
+        { key: 'fic_red_zone', label: 'FIC Red Zone', count: counters.ficRedZone, className: 'border-amber-300 bg-amber-50 text-amber-800 hover:border-amber-500' },
+        { key: 'due_soon', label: 'Due Soon', count: counters.dueSoon, className: 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:border-emerald-600' }
+    ];
+
+    return (
     <section className="min-w-0 border border-slate-400 bg-white">
-        <div className="flex flex-col gap-2 border-b border-slate-400 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 border-b border-slate-400 px-4 py-3 xl:flex-row xl:items-end xl:justify-between">
             <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Target Client Line List</p>
-                <h2 className="text-lg font-black text-slate-950">{COHORT_LABELS[activeCohort] || 'Selected Cohort'}</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">DOH Target Client List</p>
+                <h2 className="text-lg font-black text-slate-950">Target Client List (eTCL)</h2>
+                <p className="text-xs font-bold text-slate-500">
+                    {scopeLabel} | {periodLabel} | {totalRows.toLocaleString()} visible of {allRows.length.toLocaleString()} registered client{allRows.length === 1 ? '' : 's'}
+                </p>
             </div>
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                {rows.length} client{rows.length === 1 ? '' : 's'}
-            </p>
-        </div>
-
-        <div className="max-h-[520px] max-w-full overflow-auto">
-            <table className="min-w-[1180px] w-full border-collapse text-left text-xs">
-                <thead className="sticky top-0 z-10 bg-[#064E3B] text-white">
-                    <tr>
-                        <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-[0.08em]">Infant Name</th>
-                        <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-[0.08em]">Age & DOB</th>
-                        <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-[0.08em]">Purok / Sitio</th>
-                        <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-[0.08em]">Missing / Upcoming Antigen</th>
-                        <th className="border border-[#043828] px-3 py-2 font-black uppercase tracking-[0.08em]">Mother & Contact</th>
-                        <th className="border border-[#043828] px-3 py-2 text-center font-black uppercase tracking-[0.08em]">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.length === 0 ? (
-                        <tr>
-                            <td colSpan={6} className="border border-slate-300 px-4 py-8 text-center text-sm font-bold text-slate-500">
-                                No clients in this DSS cohort.
-                            </td>
-                        </tr>
-                    ) : rows.map((row) => (
-                        <tr key={`${activeCohort}-${row.infant_id || row.id}`} className="align-top odd:bg-white even:bg-slate-50 hover:bg-emerald-50/50">
-                            <td className="border border-slate-300 px-3 py-2">
-                                <p className="font-black uppercase text-slate-950">{row.infant_name || 'Unnamed infant'}</p>
-                                <p className="mt-0.5 font-mono text-[11px] font-bold text-slate-500">{row.reference_id || row.infant_id || 'No reference ID'}</p>
-                            </td>
-                            <td className="border border-slate-300 px-3 py-2 tabular-nums">
-                                <p className="font-black text-slate-900">{Number(row.age_months || 0)} month(s)</p>
-                                <p className="mt-0.5 font-semibold text-slate-500">{formatDate(row.dob)}</p>
-                            </td>
-                            <td className="border border-slate-300 px-3 py-2">
-                                <p className="font-bold text-slate-800">{row.purok_sitio || 'Unspecified'}</p>
-                            </td>
-                            <td className="border border-slate-300 px-3 py-2">
-                                <p className="font-black text-[#064E3B]">{row.antigen_summary || row.missing_upcoming_antigen || 'No pending antigen'}</p>
-                                {row.due_date && (
-                                    <p className="mt-0.5 font-semibold text-slate-500">Due: {formatDate(row.due_date)}</p>
-                                )}
-                            </td>
-                            <td className="border border-slate-300 px-3 py-2">
-                                <p className="font-bold text-slate-900">{row.mother_name || 'Not recorded'}</p>
-                                <p className="mt-0.5 font-mono text-[11px] font-bold text-slate-500">{row.contact_number || 'No contact number'}</p>
-                            </td>
-                            <td className="border border-slate-300 px-3 py-2">
-                                <div className="flex items-center justify-center gap-2">
-                                    <a
-                                        href={row.contact_number ? `tel:${row.contact_number}` : undefined}
-                                        aria-disabled={!row.contact_number}
-                                        className={`inline-flex h-8 items-center gap-1 border px-2 text-[11px] font-black uppercase tracking-[0.08em] ${row.contact_number ? 'border-[#064E3B] bg-[#064E3B] text-white hover:bg-[#043828]' : 'pointer-events-none border-slate-300 bg-slate-100 text-slate-400'}`}
-                                    >
-                                        <PhoneCall className="h-3.5 w-3.5" />
-                                        Log Call
-                                    </a>
-                                    <Link
-                                        to="/admin/spatial-analysis"
-                                        className="inline-flex h-8 items-center gap-1 border border-slate-500 bg-white px-2 text-[11px] font-black uppercase tracking-[0.08em] text-slate-800 hover:border-[#064E3B] hover:text-[#064E3B]"
-                                    >
-                                        <UserPlus className="h-3.5 w-3.5" />
-                                        Assign BHW
-                                    </Link>
-                                </div>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    </section>
-);
-
-const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
-    <section className="min-w-0 border border-slate-400 bg-white">
-        <div className="flex flex-col gap-1 border-b border-slate-400 px-4 py-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">DOH Target Client List</p>
-            <h2 className="text-lg font-black text-slate-950">Target Client List (eTCL)</h2>
-            <p className="text-xs font-bold text-slate-500">
-                {scopeLabel} | {periodLabel} | {rows.length.toLocaleString()} registered client{rows.length === 1 ? '' : 's'}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+                {quickFilters.map((filter) => (
+                    <button
+                        key={filter.key}
+                        type="button"
+                        onClick={() => onQuickFilterChange(filter.key)}
+                        className={`inline-flex h-9 items-center gap-2 border px-3 text-[10px] font-black uppercase tracking-wider transition ${filter.className} ${quickFilter === filter.key ? 'ring-2 ring-emerald-800 ring-offset-1' : ''}`}
+                    >
+                        <Filter className="h-3.5 w-3.5" />
+                        {filter.label}
+                        <span className="border border-current px-1.5 py-0.5 tabular-nums">{Number(filter.count || 0).toLocaleString()}</span>
+                    </button>
+                ))}
+                <button
+                    type="button"
+                    onClick={onExport}
+                    className="inline-flex h-9 items-center gap-2 border border-emerald-800 bg-emerald-800 px-3 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-emerald-900"
+                >
+                    <Download className="h-3.5 w-3.5" />
+                    Export XLSX
+                </button>
+            </div>
         </div>
 
         <div className="max-w-full overflow-x-auto overflow-y-auto border-t border-slate-300">
-            <table className="min-w-[2320px] w-full border-collapse bg-white text-left text-xs">
+            <table className="min-w-[2380px] w-full border-collapse bg-white text-left text-xs">
                 <thead className="sticky top-0 z-20">
                     <tr className="bg-[#064E3B] text-white">
                         {ETCL_COLUMNS.map((column) => (
                             <th
                                 key={column.key}
-                                className={`${column.sticky ? 'sticky left-0 z-30 w-56 min-w-56 bg-[#064E3B] text-left' : 'min-w-28 text-center'} border border-[#043828] px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.08em]`}
+                                className={`${column.key === '__row_number' ? 'w-14 min-w-14 text-center' : column.sticky ? 'sticky left-14 z-30 w-56 min-w-56 bg-[#064E3B] text-left' : 'min-w-28 text-center'} border border-[#043828] px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.08em]`}
                             >
                                 {column.label}
                             </th>
@@ -201,6 +168,16 @@ const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
                     ) : rows.map((row, index) => (
                         <tr key={row.infant_id || row.reference_id || index} className="odd:bg-white even:bg-slate-50 hover:bg-emerald-50/50">
                             {ETCL_COLUMNS.map((column) => {
+                                if (column.key === '__row_number') {
+                                    return (
+                                        <td
+                                            key={`${row.infant_id || index}-${column.key}`}
+                                            className="border border-slate-300 px-2.5 py-2 text-center text-xs font-black tabular-nums text-slate-500"
+                                        >
+                                            {((page - 1) * pageSize) + index + 1}
+                                        </td>
+                                    );
+                                }
                                 const rawValue = row[column.key];
                                 const value = column.type === 'date' ? formatDate(rawValue) : (rawValue || '-');
                                 const externalFlag = ETCL_EXTERNAL_FLAG_BY_DATE[column.key];
@@ -208,7 +185,7 @@ const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
                                 return (
                                     <td
                                         key={`${row.infant_id || index}-${column.key}`}
-                                        className={`${column.sticky ? 'sticky left-0 z-10 w-56 min-w-56 bg-inherit font-black uppercase text-slate-950' : column.type === 'date' ? 'text-center font-mono tabular-nums' : 'font-semibold text-slate-800'} border border-slate-300 px-2.5 py-2`}
+                                        className={`${column.sticky ? 'sticky left-14 z-10 w-56 min-w-56 bg-inherit font-black uppercase text-slate-950' : column.type === 'date' ? 'text-center font-mono tabular-nums' : 'font-semibold text-slate-800'} border border-slate-300 px-2.5 py-2`}
                                     >
                                         {column.sticky ? (
                                             <>
@@ -229,8 +206,46 @@ const EtclTargetClientTable = ({ rows = [], scopeLabel, periodLabel }) => (
                 </tbody>
             </table>
         </div>
+        <div className="flex flex-col gap-3 border-t border-slate-300 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-bold text-slate-500">
+                Showing {startRow.toLocaleString()}-{endRow.toLocaleString()} of {totalRows.toLocaleString()} filtered records
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+                <select
+                    value={pageSize}
+                    onChange={(event) => onPageSizeChange(Number(event.target.value))}
+                    className="h-9 border border-slate-300 bg-white px-2 text-xs font-black uppercase tracking-wider text-slate-700"
+                >
+                    {[10, 25, 50, 100].map((size) => (
+                        <option key={size} value={size}>{size} rows</option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => onPageChange(page - 1)}
+                    className="inline-flex h-9 items-center gap-1 border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-wider text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                </button>
+                <span className="px-2 text-xs font-black uppercase tracking-wider text-slate-500">
+                    Page {page} of {totalPages}
+                </span>
+                <button
+                    type="button"
+                    disabled={page >= totalPages}
+                    onClick={() => onPageChange(page + 1)}
+                    className="inline-flex h-9 items-center gap-1 border border-slate-300 bg-white px-3 text-xs font-black uppercase tracking-wider text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                </button>
+            </div>
+        </div>
     </section>
-);
+    );
+};
 
 const BarangayMonthlyReport = () => {
     const { user } = useAuth();
@@ -239,7 +254,9 @@ const BarangayMonthlyReport = () => {
     const [report, setReport] = useState(null);
     const [dss, setDss] = useState(null);
     const [activeTab, setActiveTab] = useState('monthly');
-    const [activeCohort, setActiveCohort] = useState('defaulters');
+    const [etclQuickFilter, setEtclQuickFilter] = useState('all');
+    const [etclPage, setEtclPage] = useState(1);
+    const [etclPageSize, setEtclPageSize] = useState(25);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -277,9 +294,60 @@ const BarangayMonthlyReport = () => {
 
     const assignedBarangay = user?.assigned_barangay || report?.scope?.barangay || 'Assigned Barangay';
     const missingCount = Number(report?.data_quality?.missing_report_classification_count || 0);
-    const cohortRows = Array.isArray(dss?.cohorts?.[activeCohort]) ? dss.cohorts[activeCohort] : [];
     const etclRows = Array.isArray(dss?.etcl_rows) ? dss.etcl_rows : [];
     const periodLabel = formatReportingPeriodLabel(month, year);
+    const dssCounters = useMemo(() => ({
+        defaulters: Number(dss?.metrics?.defaulter_action_alert?.infant_count || 0),
+        ficRedZone: Number(dss?.metrics?.fic_red_zone?.infant_count || 0),
+        dueSoon: Number(dss?.metrics?.upcoming_pipeline?.infant_count || 0)
+    }), [dss]);
+    const filteredEtclRows = useMemo(() => getFilteredEtclRows(etclRows, etclQuickFilter), [etclRows, etclQuickFilter]);
+    const totalEtclPages = Math.max(1, Math.ceil(filteredEtclRows.length / etclPageSize));
+    const paginatedEtclRows = useMemo(() => {
+        const start = (etclPage - 1) * etclPageSize;
+        return filteredEtclRows.slice(start, start + etclPageSize);
+    }, [etclPage, etclPageSize, filteredEtclRows]);
+
+    useEffect(() => {
+        setEtclPage(1);
+    }, [month, year, etclQuickFilter, etclPageSize]);
+
+    useEffect(() => {
+        setEtclPage((current) => Math.min(current, totalEtclPages));
+    }, [totalEtclPages]);
+
+    const exportEtclXlsx = useCallback(() => {
+        const exportRows = filteredEtclRows.map((row, index) => ({
+            '#': index + 1,
+            'Infant Name': row.infant_name || '',
+            'Reference ID': row.reference_id || row.infant_id || '',
+            'Date of Birth': formatDate(row.date_of_birth),
+            "Mother's Name": row.mother_name || '',
+            'Complete Address (Purok/Sitio)': row.complete_address || '',
+            BCG: formatDate(row.bcg_date),
+            'Hep B': formatDate(row.hepb_date),
+            'PENTA 1': formatDate(row.penta1_date),
+            'PENTA 2': formatDate(row.penta2_date),
+            'PENTA 3': formatDate(row.penta3_date),
+            'OPV 1': formatDate(row.opv1_date),
+            'OPV 2': formatDate(row.opv2_date),
+            'OPV 3': formatDate(row.opv3_date),
+            'PCV 1': formatDate(row.pcv1_date),
+            'PCV 2': formatDate(row.pcv2_date),
+            'PCV 3': formatDate(row.pcv3_date),
+            'IPV 1': formatDate(row.ipv1_date),
+            'IPV 2': formatDate(row.ipv2_date),
+            'MCV 1': formatDate(row.mcv1_date),
+            'MCV 2': formatDate(row.mcv2_date),
+            Remarks: row.remarks || ''
+        }));
+        const worksheet = XLSX.utils.json_to_sheet(exportRows);
+        worksheet['!cols'] = Object.keys(exportRows[0] || { '#': '' }).map((key) => ({ wch: Math.max(12, key.length + 4) }));
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'eTCL');
+        const fileSafeBarangay = assignedBarangay.toString().replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'barangay';
+        XLSX.writeFile(workbook, `immunicare_etcl_${fileSafeBarangay}_${year}_${month}.xlsx`);
+    }, [assignedBarangay, filteredEtclRows, month, year]);
 
     return (
         <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 p-5 lg:p-7">
@@ -338,21 +406,21 @@ const BarangayMonthlyReport = () => {
 
                         {activeTab === 'etcl' ? (
                             <EtclTargetClientTable
-                                rows={etclRows}
+                                rows={paginatedEtclRows}
+                                allRows={etclRows}
                                 scopeLabel={assignedBarangay}
                                 periodLabel={periodLabel}
+                                quickFilter={etclQuickFilter}
+                                onQuickFilterChange={setEtclQuickFilter}
+                                counters={dssCounters}
+                                page={etclPage}
+                                pageSize={etclPageSize}
+                                totalRows={filteredEtclRows.length}
+                                totalPages={totalEtclPages}
+                                onPageChange={setEtclPage}
+                                onPageSizeChange={setEtclPageSize}
+                                onExport={exportEtclXlsx}
                             />
-                        ) : null}
-
-                        {activeTab === 'dss' ? (
-                            <div className="min-w-0 space-y-5">
-                                <BarangayDssWidgets
-                                    dss={dss}
-                                    activeCohort={activeCohort}
-                                    onSelect={setActiveCohort}
-                                />
-                                <TargetClientTable rows={cohortRows} activeCohort={activeCohort} />
-                            </div>
                         ) : null}
                     </>
                 )}

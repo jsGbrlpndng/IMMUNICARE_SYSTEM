@@ -221,7 +221,7 @@ describe('AuditLogService role-gated access', () => {
         expect(result.logs[0].id).toBe('auth-log');
     });
 
-    test('Admin listEvents does not drop their own initiated password reset action', async () => {
+    test('Admin listEvents applies unified search without dropping their own initiated password reset action', async () => {
         const db = buildMockDb(async (sql, params) => {
             if (sql.includes('FROM barangays')) {
                 return [[{ id: 'barangay-langgam', name: 'LANGGAM' }]];
@@ -229,7 +229,10 @@ describe('AuditLogService role-gated access', () => {
 
             if (sql.includes('FROM audit_logs al') && sql.includes('ORDER BY')) {
                 expect(sql).toContain('al.actor_user_id = ?');
-                expect(sql).toContain('al.action = ?');
+                expect(sql).toContain('al.action ILIKE ?');
+                expect(sql).toContain("al.new_values->>'infant_name' ILIKE ?");
+                expect(sql).toContain("al.metadata->>'assigned_bhw_name' ILIKE ?");
+                const expectedSearch = Array(17).fill('%INITIATED_PASSWORD_RESET%');
                 expect(params).toEqual([
                     'barangay-langgam',
                     'ADMIN-004',
@@ -237,7 +240,7 @@ describe('AuditLogService role-gated access', () => {
                     'LANGGAM',
                     'LANGGAM',
                     'LANGGAM',
-                    'INITIATED_PASSWORD_RESET',
+                    ...expectedSearch,
                     25,
                     0
                 ]);
@@ -251,6 +254,7 @@ describe('AuditLogService role-gated access', () => {
             }
 
             if (sql.includes('COUNT(*)')) {
+                const expectedSearch = Array(17).fill('%INITIATED_PASSWORD_RESET%');
                 expect(params).toEqual([
                     'barangay-langgam',
                     'ADMIN-004',
@@ -258,7 +262,7 @@ describe('AuditLogService role-gated access', () => {
                     'LANGGAM',
                     'LANGGAM',
                     'LANGGAM',
-                    'INITIATED_PASSWORD_RESET'
+                    ...expectedSearch
                 ]);
                 return [[{ total: 1 }]];
             }
@@ -269,7 +273,7 @@ describe('AuditLogService role-gated access', () => {
         const service = new AuditLogService(db);
         const result = await service.listEvents({
             user: { id: 'ADMIN-004', role: 'Admin', assigned_barangay: 'LANGGAM' },
-            filters: { action: 'INITIATED_PASSWORD_RESET' },
+            filters: { search: 'INITIATED_PASSWORD_RESET' },
             pagination: { page: 1, limit: 25 }
         });
 
@@ -295,7 +299,7 @@ describe('AuditLogService role-gated access', () => {
                 }]];
             }
 
-            if (sql.includes('ORDER BY al.created_at DESC') && sql.includes('LIMIT 5')) {
+            if (sql.includes('ORDER BY al.created_at DESC, al.id DESC') && sql.includes('LIMIT 10')) {
                 expect(sql).toContain('FROM audit_logs al');
                 expect(params).toEqual(['barangay-langgam', 'ADMIN-001', 'LANGGAM', 'LANGGAM', 'LANGGAM', 'LANGGAM']);
                 return [[{
@@ -316,6 +320,47 @@ describe('AuditLogService role-gated access', () => {
 
         expect(summary.total_events).toBe(3);
         expect(summary.recent_events[0].id).toBe('recent-auth');
+    });
+
+    test('Super Admin dashboard summary returns the 10 latest municipal audit events without creator quarantine', async () => {
+        const db = buildMockDb(async (sql, params) => {
+            if (sql.includes('COUNT(*)::int AS total_events')) {
+                expect(sql).toContain('FROM audit_logs al');
+                expect(sql).not.toContain('created_by_user_id');
+                expect(params).toEqual([]);
+                return [[{
+                    total_events: 12,
+                    bhw_events: 0,
+                    midwife_events: 12,
+                    today_events: 2
+                }]];
+            }
+
+            if (sql.includes('ORDER BY al.created_at DESC, al.id DESC') && sql.includes('LIMIT 10')) {
+                expect(sql).toContain('FROM audit_logs al');
+                expect(sql).not.toContain('created_by_user_id');
+                expect(params).toEqual([]);
+                return [[
+                    {
+                        id: 'recent-admin-langgam',
+                        action_type: 'AUTH_LOGIN_SUCCESS',
+                        user_name: 'Admin Langgam',
+                        user_role: 'Admin',
+                        timestamp: '2026-06-16T11:43:00.000Z'
+                    }
+                ]];
+            }
+
+            return [[]];
+        });
+
+        const service = new AuditLogService(db);
+        const summary = await service.getDashboardSummary({
+            user: { id: 'SADMIN-001', role: 'Super Admin' }
+        });
+
+        expect(summary.total_events).toBe(12);
+        expect(summary.recent_events[0].id).toBe('recent-admin-langgam');
     });
 
     test('Admin CSV export is forbidden', async () => {
@@ -350,5 +395,36 @@ describe('AuditLogService role-gated access', () => {
         });
 
         expect(result.logs[0].scope_type).toBe('SYSTEM');
+    });
+
+    test('Super Admin unified search spans staff, infant, BHW, action, and target area fields', async () => {
+        const db = buildMockDb(async (sql, params) => {
+            if (sql.includes('FROM audit_logs al') && sql.includes('ORDER BY')) {
+                expect(sql).toContain('al.actor_user_id::text ILIKE ?');
+                expect(sql).toContain('u.full_name ILIKE ?');
+                expect(sql).toContain('al.action ILIKE ?');
+                expect(sql).toContain('al.target_name ILIKE ?');
+                expect(sql).toContain("COALESCE(al.barangay_name, u.assigned_barangay, '') ILIKE ?");
+                expect(sql).toContain("al.new_values->>'infant_name' ILIKE ?");
+                expect(sql).toContain("al.metadata->>'assigned_bhw_name' ILIKE ?");
+                expect(params).toEqual([...Array(17).fill('%Langgam%'), 25, 0]);
+                return [[{ id: 'log-search', actor_name: 'Admin Langgam', barangay_name: 'LANGGAM' }]];
+            }
+            if (sql.includes('COUNT(*)')) {
+                expect(params).toEqual(Array(17).fill('%Langgam%'));
+                return [[{ total: 1 }]];
+            }
+            return [[]];
+        });
+
+        const service = new AuditLogService(db);
+        const result = await service.listEvents({
+            user: { id: 'SA-001', role: 'Super Admin' },
+            filters: { search: 'Langgam' },
+            pagination: { page: 1, limit: 25 }
+        });
+
+        expect(result.logs[0].id).toBe('log-search');
+        expect(result.pagination.total).toBe(1);
     });
 });

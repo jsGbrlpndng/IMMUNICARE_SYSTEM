@@ -1,0 +1,157 @@
+Project erd_07_dbscan_geospatial_hotspot {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 7: DBSCAN and Geospatial Hotspot Monitoring.
+  Logical only; FK not enforced: infants.barangay, dbscan_cluster_results.barangay, cluster_assignments.barangay, deployment_reports.barangay, and spatial_dss_monthly_snapshots.barangay refer to barangay names by application convention.
+  DBSCAN membership is physically enforced through dbscan_cluster_members.
+  PostGIS metadata tables/views are excluded.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table barangays {
+  id uuid [pk]
+  name varchar
+  code varchar
+  city varchar
+  province varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  created_by varchar
+  reference_id varchar
+  first_name varchar
+  last_name varchar
+  barangay varchar
+  latitude numeric
+  longitude numeric
+  location geometry
+  is_location_exact boolean
+  is_location_verified boolean
+  immunization_status varchar
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table dbscan_cluster_results {
+  id uuid [pk]
+  generated_by varchar
+  run_scope varchar
+  barangay varchar
+  epsilon_meters int
+  min_points int
+  cluster_identifier varchar
+  infant_count int
+  centroid_latitude numeric
+  centroid_longitude numeric
+  density_score numeric
+  generated_at timestamptz
+}
+
+Table dbscan_cluster_members {
+  cluster_result_id uuid
+  infant_id varchar
+
+  indexes {
+    (cluster_result_id, infant_id) [pk]
+  }
+}
+
+Table cluster_assignments {
+  id uuid [pk]
+  barangay_id uuid
+  cluster_result_id uuid
+  assigned_bhw_id varchar
+  assigned_by_admin_id varchar
+  barangay varchar
+  cluster_area_key varchar
+  cluster_label varchar
+  centroid_latitude numeric
+  centroid_longitude numeric
+  bounds jsonb
+  status varchar
+  assigned_at timestamptz
+  resolved_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table cluster_assignment_members {
+  assignment_id uuid
+  infant_id varchar
+  created_at timestamptz
+
+  indexes {
+    (assignment_id, infant_id) [pk]
+  }
+}
+
+Table deployment_reports {
+  id uuid [pk]
+  assignment_id uuid
+  submitted_by varchar
+  validated_by varchar
+  barangay varchar
+  validation_status varchar
+  validation_notes text
+  total_infants int
+  total_vaccinated int
+  total_refused int
+  total_moved_out int
+  total_rescheduled int
+  submitted_at timestamptz
+  validated_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table deployment_report_outcomes {
+  id uuid [pk]
+  report_id uuid
+  infant_id varchar
+  outcome varchar
+  notes text
+  created_at timestamptz
+}
+
+Table spatial_dss_monthly_snapshots {
+  id uuid [pk]
+  snapshot_month date
+  barangay varchar
+  metric_type varchar
+  metric_value numeric
+  age_group varchar
+  vaccine_type varchar
+  metadata jsonb
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Ref: infants.created_by > users.id
+Ref: dbscan_cluster_results.generated_by > users.id
+Ref: dbscan_cluster_members.cluster_result_id > dbscan_cluster_results.id
+Ref: dbscan_cluster_members.infant_id > infants.id
+Ref: cluster_assignments.barangay_id > barangays.id
+Ref: cluster_assignments.cluster_result_id > dbscan_cluster_results.id
+Ref: cluster_assignments.assigned_bhw_id > users.id
+Ref: cluster_assignments.assigned_by_admin_id > users.id
+Ref: cluster_assignment_members.assignment_id > cluster_assignments.id
+Ref: cluster_assignment_members.infant_id > infants.id
+Ref: deployment_reports.assignment_id > cluster_assignments.id
+Ref: deployment_reports.submitted_by > users.id
+Ref: deployment_reports.validated_by > users.id
+Ref: deployment_report_outcomes.report_id > deployment_reports.id
+Ref: deployment_report_outcomes.infant_id > infants.id
+

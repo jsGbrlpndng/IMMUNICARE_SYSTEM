@@ -1,0 +1,114 @@
+Project erd_03_registration_validation_registry {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 3: Registration Validation and Master Infant Registry.
+  Logical only; FK not enforced: approval_audit.approver_id and audit_trail.user_id/entity_id are application-level audit references.
+  Needs verification: infant_transfer_events exists in a migration file but was not present in the inspected live PostgreSQL schema, so it is not included here.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table caregivers {
+  id uuid [pk]
+  enrolled_by varchar
+  full_name varchar
+  mobile_number varchar
+  relationship varchar
+  is_portal_enrolled boolean
+  created_at timestamptz
+}
+
+Table infant_registrations {
+  id varchar [pk]
+  created_by varchar
+  reviewed_by varchar
+  promoted_infant_id varchar
+  reference_id varchar
+  registration_data jsonb
+  barangay varchar
+  status varchar
+  submitted_at timestamptz
+  reviewed_at timestamptz
+  correction_notes text
+  rejection_reason text
+  rejection_notes text
+  correction_cycle_count int
+  review_history jsonb
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table registration_validation_events {
+  id uuid [pk]
+  registration_id varchar
+  reviewer_user_id varchar
+  event_type varchar
+  reason text
+  notes text
+  metadata jsonb
+  created_at timestamptz
+}
+
+Table infants {
+  id varchar [pk]
+  caregiver_id uuid
+  created_by varchar
+  approved_registration_id varchar
+  reference_id varchar
+  first_name varchar
+  middle_name varchar
+  last_name varchar
+  dob date
+  sex varchar
+  barangay varchar
+  registration_status varchar
+  immunization_status varchar
+  status varchar
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table approval_audit {
+  id varchar [pk]
+  registration_id varchar
+  infant_id varchar
+  action varchar
+  approver_id varchar
+  approver_role varchar
+  remarks text
+  timestamp timestamptz
+}
+
+Table audit_trail {
+  id varchar [pk]
+  entity_type varchar
+  entity_id varchar
+  action_type varchar
+  user_id varchar
+  user_role varchar
+  old_values jsonb
+  new_values jsonb
+  description text
+  created_at timestamptz
+}
+
+Ref: caregivers.enrolled_by > users.id
+Ref: infant_registrations.created_by > users.id
+Ref: infant_registrations.reviewed_by > users.id
+Ref: infant_registrations.promoted_infant_id > infants.id
+Ref: registration_validation_events.registration_id > infant_registrations.id
+Ref: registration_validation_events.reviewer_user_id > users.id
+Ref: infants.caregiver_id > caregivers.id
+Ref: infants.created_by > users.id
+Ref: infants.approved_registration_id > infant_registrations.id
+Ref: approval_audit.registration_id > infant_registrations.id
+Ref: approval_audit.infant_id > infants.id
+

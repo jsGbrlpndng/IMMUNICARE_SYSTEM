@@ -237,6 +237,7 @@ export default function SuperAdminMap() {
 
     /* ── UI state ── */
     const [tableOpen, setTableOpen] = useState(true);
+    const [isPanelOpen, setIsPanelOpen] = useState(true);
     const [notifiedBarangays, setNotifiedBarangays] = useState(new Set());
 
     /* ── Notification modal state ── */
@@ -422,7 +423,7 @@ export default function SuperAdminMap() {
                 center: BARANGAY_COORDINATES[String(row.barangay || '').toUpperCase()] || DEFAULT_MUNICIPAL_CENTER
             };
         });
-        return rows.sort((a, b) => b.gapValue - a.gapValue || a.barangay.localeCompare(b.barangay));
+        return rows.sort((a, b) => a.gapValue - b.gapValue || a.barangay.localeCompare(b.barangay));
     }, [performanceGap.rows]);
 
     const municipalSummary = useMemo(() => viewRows.reduce((acc, row) => ({
@@ -469,7 +470,7 @@ export default function SuperAdminMap() {
     /* ════════════════════════════════════════════════════════════ */
 
     return (
-        <div className="w-full min-w-0 bg-slate-50 p-6 lg:p-8">
+        <div className="w-full min-w-0">
             <div className="w-full min-w-0 space-y-5">
 
                 {/* ── Page Header ── */}
@@ -620,22 +621,30 @@ export default function SuperAdminMap() {
                                 </button>
                             </div>
 
-                            <div className={`grid gap-0 ${tableOpen ? 'xl:grid-cols-[minmax(0,1fr)_400px]' : 'xl:grid-cols-1'}`}>
+                            <div className={`grid h-auto w-full items-start gap-0 overflow-visible ${tableOpen ? 'xl:grid-cols-[minmax(0,1fr)_400px]' : 'xl:grid-cols-1'}`}>
                                 {/* Map Panel */}
                                 <div className={tableOpen ? 'border-b border-slate-300 xl:border-b-0 xl:border-r xl:border-slate-300' : ''}>
-                                    <div className="h-[680px] w-full">
+                                    <div className="min-h-[680px] w-full">
                                         <MapContainer
                                             center={[DEFAULT_MUNICIPAL_CENTER.lat, DEFAULT_MUNICIPAL_CENTER.lng]}
                                             zoom={DEFAULT_MUNICIPAL_CENTER.zoom || 14}
                                             minZoom={12}
                                             maxZoom={18}
                                             scrollWheelZoom
-                                            style={{ height: '100%', width: '100%' }}
+                                            style={{ minHeight: 680, height: '100%', width: '100%' }}
                                         >
                                             <TileLayer
                                                 crossOrigin="anonymous"
-                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                attribution="Tiles &copy; Esri"
+                                                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                                maxZoom={19}
+                                            />
+                                            <TileLayer
+                                                crossOrigin="anonymous"
+                                                attribution="&copy; CARTO"
+                                                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                                                maxZoom={19}
+                                                zIndex={650}
                                             />
                                             <ScaleControl position="bottomleft" />
                                             <MapBoundsController barangay={filters.barangay} dataPoints={clinicalMapPoints} />
@@ -685,11 +694,11 @@ export default function SuperAdminMap() {
 
                                 {/* Collapsible Ranking Table */}
                                 {tableOpen && (
-                                    <div className="flex flex-col">
+                                    <div className="flex h-auto w-full flex-col overflow-visible">
                                         <div className="border-b border-slate-300 px-4 py-3">
                                             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">Barangay Target Ranking</p>
                                         </div>
-                                        <div className="max-h-[640px] w-full overflow-x-auto overflow-y-auto">
+                                        <div className="w-full overflow-x-auto">
                                             <table className="w-full text-sm">
                                                 <thead className="sticky top-0 bg-[#064E3B] text-white">
                                                     <tr>
@@ -789,17 +798,27 @@ export default function SuperAdminMap() {
 
                         {/* Cluster Map + Ranking Sidebar */}
                         <section className="border border-slate-300 bg-white">
-                            <div className="border-b border-slate-300 px-5 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">DBSCAN Cluster Map</p>
-                                <p className="mt-1 text-sm font-semibold text-slate-500">
-                                    Macro-level cluster polygons. Individual infant markers are not shown at this administrative level.
-                                </p>
+                            <div className="flex items-center justify-between gap-4 border-b border-slate-300 px-5 py-3">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">DBSCAN Cluster Map</p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-500">
+                                        Macro-level cluster polygons. Individual infant markers are not shown at this administrative level.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPanelOpen((v) => !v)}
+                                    className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-xs font-black uppercase tracking-[0.14em] text-slate-700 transition-colors hover:bg-slate-50"
+                                >
+                                    {isPanelOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                                    {isPanelOpen ? 'Hide Ranking' : 'Show Ranking'}
+                                </button>
                             </div>
 
-                            <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_380px]">
+                            <div className={`grid h-auto w-full items-start gap-0 overflow-visible ${isPanelOpen ? 'xl:grid-cols-[minmax(0,1fr)_380px]' : 'xl:grid-cols-1'}`}>
                                 {/* Map Panel */}
-                                <div className="border-b border-slate-300 xl:border-b-0 xl:border-r xl:border-slate-300">
-                                    <div className="h-[680px] w-full">
+                                <div className={`border-b border-slate-300 xl:border-b-0 ${isPanelOpen ? 'xl:border-r xl:border-slate-300' : ''}`}>
+                                    <div className="min-h-[680px] w-full">
                                         {runningAnalysis ? (
                                             <div className="flex h-full items-center justify-center bg-slate-50">
                                                 <div className="text-center">
@@ -822,12 +841,20 @@ export default function SuperAdminMap() {
                                                 minZoom={12}
                                                 maxZoom={18}
                                                 scrollWheelZoom
-                                                style={{ height: '100%', width: '100%' }}
+                                                style={{ minHeight: 680, height: '100%', width: '100%' }}
                                             >
                                                 <TileLayer
                                                     crossOrigin="anonymous"
-                                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                    attribution="Tiles &copy; Esri"
+                                                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                                                    maxZoom={19}
+                                                />
+                                                <TileLayer
+                                                    crossOrigin="anonymous"
+                                                    attribution="&copy; CARTO"
+                                                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png"
+                                                    maxZoom={19}
+                                                    zIndex={650}
                                                 />
                                                 <ScaleControl position="bottomleft" />
                                                 <MapBoundsController barangay={filters.barangay} dataPoints={clusterMapPoints} />
@@ -874,7 +901,8 @@ export default function SuperAdminMap() {
                                 </div>
 
                                 {/* Ranking Sidebar */}
-                                <div>
+                                {isPanelOpen && (
+                                <aside className="h-auto w-full overflow-visible">
                                     <div className="border-b border-slate-300 px-4 py-3">
                                         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">Defaulter Cluster Ranking</p>
                                     </div>
@@ -892,7 +920,7 @@ export default function SuperAdminMap() {
                                     </div>
 
                                     {/* Ranked list */}
-                                    <div className="max-h-[560px] overflow-auto">
+                                    <div className="h-auto w-full overflow-visible">
                                         {analysisRows.length === 0 && !runningAnalysis ? (
                                             <div className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
                                                 No spatial clusters to rank.
@@ -939,7 +967,8 @@ export default function SuperAdminMap() {
                                             })
                                         )}
                                     </div>
-                                </div>
+                                </aside>
+                                )}
                             </div>
                         </section>
                     </>

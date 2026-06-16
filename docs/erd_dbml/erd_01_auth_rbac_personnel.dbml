@@ -1,0 +1,80 @@
+Project erd_01_auth_rbac_personnel {
+  database_type: 'PostgreSQL'
+  Note: '''
+  ERD 1: Authentication, RBAC, and Personnel Management.
+  Logical only; FK not enforced: users.assigned_barangay and notifications.recipient_barangay refer to barangay names by application convention.
+  RBAC uses users.role. No physical roles, permissions, role_permissions, or user_roles table exists in the inspected schema.
+  '''
+}
+
+Table users {
+  id varchar [pk]
+  created_by_user_id varchar
+  full_name varchar
+  role varchar
+  assigned_barangay varchar
+  is_active boolean
+  failed_login_attempts int
+  locked_until timestamptz
+  last_login_at timestamptz
+  must_change_password boolean
+  last_password_reset_at timestamptz
+  created_at timestamptz
+  updated_at timestamptz
+}
+
+Table barangays {
+  id uuid [pk]
+  name varchar
+  code varchar
+  city varchar
+  province varchar
+  is_active boolean
+  created_at timestamptz
+}
+
+Table user_barangay_assignments {
+  id uuid [pk]
+  user_id varchar
+  barangay_id uuid
+  assigned_by varchar
+  is_active boolean
+  assigned_at timestamptz
+  revoked_at timestamptz
+}
+
+Table notifications {
+  id uuid [pk]
+  recipient_user_id varchar
+  sender_user_id varchar
+  recipient_role varchar
+  recipient_barangay varchar
+  notification_type varchar
+  action_type varchar
+  title text
+  message text
+  is_read boolean
+  read_at timestamptz
+  created_at timestamptz
+}
+
+Table system_settings {
+  setting_key varchar [pk]
+  updated_by varchar
+  setting_value text
+  value_type varchar
+  category varchar
+  description text
+  min_value int
+  max_value int
+  updated_at timestamptz
+}
+
+Ref: users.created_by_user_id > users.id
+Ref: user_barangay_assignments.user_id > users.id
+Ref: user_barangay_assignments.barangay_id > barangays.id
+Ref: user_barangay_assignments.assigned_by > users.id
+Ref: notifications.recipient_user_id > users.id
+Ref: notifications.sender_user_id > users.id
+Ref: system_settings.updated_by > users.id
+

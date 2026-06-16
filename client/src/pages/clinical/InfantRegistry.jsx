@@ -261,7 +261,7 @@ export default function InfantRegistry() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
 
-                        <div className="p-3 bg-emerald-50 text-emerald-800 rounded-lg">
+                        <div className="p-3 bg-emerald-50 text-emerald-800 rounded-md">
                             <Users className="w-6 h-6" />
                         </div>
                         <div>
@@ -306,7 +306,7 @@ export default function InfantRegistry() {
                                 else newParams.delete('urgency');
                                 navigate(`${location.pathname}?${newParams.toString()}`);
                             }}
-                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
+                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-md text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
                         >
                             <option value="">All Clinical Status</option>
                             <option value="defaulter">Defaulted</option>
@@ -318,7 +318,7 @@ export default function InfantRegistry() {
                         <select 
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-lg text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
+                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-md text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
                         >
                             <option value="APPROVED,PENDING_VALIDATION,NEEDS_CORRECTION">All Process Stages</option>
                             <option value="APPROVED">Approved Only</option>

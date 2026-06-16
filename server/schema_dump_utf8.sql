@@ -378,6 +378,10 @@ CREATE TABLE `infants` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `validation_feedback` json DEFAULT NULL,
   `current_address` text,
+  `latitude` decimal(10,8) DEFAULT NULL,
+  `longitude` decimal(11,8) DEFAULT NULL,
+  `location` point /*!80003 SRID 4326 */ DEFAULT NULL,
+  `is_location_verified` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `reference_id` (`reference_id`),
   KEY `created_by` (`created_by`),
@@ -385,7 +389,10 @@ CREATE TABLE `infants` (
   KEY `idx_status` (`status`),
   KEY `idx_dob` (`dob`),
   KEY `idx_barangay` (`barangay`),
+  SPATIAL KEY `idx_infants_location` (`location`),
   KEY `idx_reg_status_status` (`registration_status`,`status`),
+  CONSTRAINT `chk_infants_latitude` CHECK (((`latitude` is null) or ((`latitude` >= -(90)) and (`latitude` <= 90)))),
+  CONSTRAINT `chk_infants_longitude` CHECK (((`longitude` is null) or ((`longitude` >= -(180)) and (`longitude` <= 180)))),
   CONSTRAINT `infants_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -400,26 +407,26 @@ CREATE TABLE `infants` (
 DELIMITER ;;
 /*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `after_infant_insert` AFTER INSERT ON `infants` FOR EACH ROW BEGIN
     -- At Birth Vaccines
-    INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date) 
+    INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date)
     VALUES (NEW.id, 'BCG', NEW.dob), (NEW.id, 'Hepa B (Birth Dose)', NEW.dob);
 
     -- 6 Weeks (Penta 1, OPV 1, PCV 1)
     INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date)
-    VALUES 
+    VALUES
     (NEW.id, 'Pentavalent 1', DATE_ADD(NEW.dob, INTERVAL 6 WEEK)),
     (NEW.id, 'OPV 1', DATE_ADD(NEW.dob, INTERVAL 6 WEEK)),
     (NEW.id, 'PCV 1', DATE_ADD(NEW.dob, INTERVAL 6 WEEK));
 
     -- 10 Weeks (Penta 2, OPV 2, PCV 2)
     INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date)
-    VALUES 
+    VALUES
     (NEW.id, 'Pentavalent 2', DATE_ADD(NEW.dob, INTERVAL 10 WEEK)),
     (NEW.id, 'OPV 2', DATE_ADD(NEW.dob, INTERVAL 10 WEEK)),
     (NEW.id, 'PCV 2', DATE_ADD(NEW.dob, INTERVAL 10 WEEK));
 
     -- 14 Weeks (Penta 3, OPV 3, PCV 3, IPV 1)
     INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date)
-    VALUES 
+    VALUES
     (NEW.id, 'Pentavalent 3', DATE_ADD(NEW.dob, INTERVAL 14 WEEK)),
     (NEW.id, 'OPV 3', DATE_ADD(NEW.dob, INTERVAL 14 WEEK)),
     (NEW.id, 'PCV 3', DATE_ADD(NEW.dob, INTERVAL 14 WEEK)),
@@ -427,7 +434,7 @@ DELIMITER ;;
 
     -- 9 Months (Measles 1, IPV 2)
     INSERT INTO immunization_logs (infant_id, vaccine_name, scheduled_date)
-    VALUES 
+    VALUES
     (NEW.id, 'Measles 1 (MCV1)', DATE_ADD(NEW.dob, INTERVAL 9 MONTH)),
     (NEW.id, 'IPV 2', DATE_ADD(NEW.dob, INTERVAL 9 MONTH));
 
@@ -454,7 +461,7 @@ DELIMITER ;;
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Cannot modify encoded_by_role - field is immutable';
                 END IF;
-                
+
                 IF OLD.created_by IS NOT NULL AND NEW.created_by != OLD.created_by THEN
                     SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Cannot modify created_by - field is immutable';

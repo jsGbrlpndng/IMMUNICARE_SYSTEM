@@ -13,6 +13,12 @@ const requireSuperAdminOnly = requireRole(
     'Only Super Admins can access municipality-wide geospatial intelligence.'
 );
 
+const getScopedBarangay = (req) => (
+    req.user.role === ROLES.SUPER_ADMIN
+        ? (req.query.barangay || null)
+        : req.user.assigned_barangay
+);
+
 router.use(clinicalAuth);
 router.use(requireRole(
     requireRole.CLINICAL_PRIVILEGED,
@@ -22,9 +28,7 @@ router.use(requireRole(
 // GET /api/dashboard/kpis
 router.get('/kpis', async (req, res) => {
     try {
-        const assignedBarangay = req.user.role === 'Super Admin'
-            ? (req.query.barangay || null)
-            : req.user.assigned_barangay;
+        const assignedBarangay = getScopedBarangay(req);
         const barangayClause = assignedBarangay ? 'AND barangay = ?' : '';
         const params = assignedBarangay ? [assignedBarangay] : [];
 
@@ -106,8 +110,12 @@ router.get('/kpis', async (req, res) => {
 router.get('/urgent-actions', async (req, res) => {
     try {
         const { limit = 10, offset = 0 } = req.query;
+        const scopedBarangay = getScopedBarangay(req);
         // Using Enhanced Engine directly
-        const queueData = await enhancedEngine.getApprovedInfantsWithSchedule(req.query, 1000, 0);
+        const queueData = await enhancedEngine.getApprovedInfantsWithSchedule({
+            ...req.query,
+            barangay: scopedBarangay
+        }, 1000, 0);
         const urgentInfants = queueData.infants.filter(i => i.urgency === 'defaulter' || i.urgency === 'due_today');
         const paginated = urgentInfants.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
         
@@ -126,8 +134,9 @@ router.get('/hotspot-summary', async (req, res) => {
     try {
         const rawEps1 = parseInt(req.query.eps, 10);
         const clampedEps1 = Number.isFinite(rawEps1) && rawEps1 >= 100 && rawEps1 <= 500 ? rawEps1 : 300;
+        const scopedBarangay = getScopedBarangay(req);
         const spatialData = await infantService.getSpatialTriage({
-            barangay: req.query.barangay || null,
+            barangay: scopedBarangay,
             eps: clampedEps1,
             minPts: req.query.minPts || 3,
             scope: 'defaulter'
@@ -161,8 +170,9 @@ router.get('/dbscan-alerts', async (req, res) => {
     try {
         const rawEps2 = parseInt(req.query.eps, 10);
         const clampedEps2 = Number.isFinite(rawEps2) && rawEps2 >= 100 && rawEps2 <= 500 ? rawEps2 : 300;
+        const scopedBarangay = getScopedBarangay(req);
         const spatialData = await infantService.getSpatialTriage({
-            barangay: req.query.barangay || null,
+            barangay: scopedBarangay,
             eps: clampedEps2,
             minPts: req.query.minPts || 3,
             scope: 'defaulter'
@@ -189,6 +199,7 @@ router.get('/dbscan-alerts', async (req, res) => {
 // GET /api/dashboard/bhw-outreach
 router.get('/bhw-outreach', async (req, res) => {
     try {
+        const scopedBarangay = getScopedBarangay(req);
         const [rows] = await db.query(`
             SELECT 
                 id,
@@ -198,8 +209,8 @@ router.get('/bhw-outreach', async (req, res) => {
                 users
             WHERE 
                 role = 'BHW' AND is_active = true
-                ${req.query.barangay ? 'AND barangay = ?' : ''}
-        `, req.query.barangay ? [req.query.barangay] : []);
+                ${scopedBarangay ? 'AND assigned_barangay = ?' : ''}
+        `, scopedBarangay ? [scopedBarangay] : []);
         
         res.json({
             success: true,
@@ -216,10 +227,15 @@ router.get('/bhw-outreach', async (req, res) => {
 router.get('/priority-followups', async (req, res) => {
     try {
         const { limit = 10 } = req.query;
+        const scopedBarangay = getScopedBarangay(req);
         
         // 1. Fetch all actionable infants using the Enhanced Engine
         // This ensures we use the same source of truth as the registry and schedule
-        const queueData = await enhancedEngine.getApprovedInfantsWithSchedule({ ...req.query, urgency: 'all' }, 1000, 0);
+        const queueData = await enhancedEngine.getApprovedInfantsWithSchedule({
+            ...req.query,
+            barangay: scopedBarangay,
+            urgency: 'all'
+        }, 1000, 0);
         const infants = queueData.infants || [];
 
         // 2. Explicit Ranking Logic
