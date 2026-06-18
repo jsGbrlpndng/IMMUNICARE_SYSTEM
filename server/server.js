@@ -1,7 +1,6 @@
 console.log('>>> SERVER BOOTING AT ' + new Date().toISOString());
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const infantsRouter = require('./routes/infants');

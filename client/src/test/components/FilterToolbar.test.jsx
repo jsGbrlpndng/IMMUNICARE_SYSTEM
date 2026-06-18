@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import FilterToolbar from './FilterToolbar';
+import FilterToolbar from '../../components/FilterToolbar';
 
 describe('FilterToolbar Component', () => {
   // Mock handlers
@@ -17,7 +17,7 @@ describe('FilterToolbar Component', () => {
     filters: {
       barangay: 'All',
       sex: 'All',
-      ageRange: 'All'
+      ageGroup: 'All'
     },
     onFiltersChange: mockOnFiltersChange,
     sortBy: 'name_asc',
@@ -55,9 +55,9 @@ describe('FilterToolbar Component', () => {
       expect(sexFilter).toBeInTheDocument();
     });
 
-    it('renders age range filter dropdown', () => {
+    it('renders age group filter dropdown', () => {
       render(<FilterToolbar {...defaultProps} />);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
       expect(ageFilter).toBeInTheDocument();
     });
 
@@ -245,48 +245,49 @@ describe('FilterToolbar Component', () => {
     });
   });
 
-  describe('Age Range Filter', () => {
-    it('displays "All Ages" as default option', () => {
+  describe('Age Group Filter', () => {
+    it('displays "All Age Groups" as default option', () => {
       render(<FilterToolbar {...defaultProps} />);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
       expect(ageFilter).toHaveValue('All');
     });
 
-    it('renders all age range options', () => {
+    it('renders all age group options', () => {
       render(<FilterToolbar {...defaultProps} />);
       
-      expect(screen.getByRole('option', { name: 'All Ages' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: '0-6 months' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: '6-12 months' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: '12-24 months' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'All Age Groups' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: '0-5 months' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: '6-11 months' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: '12-23 months' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: '24+ months' })).toBeInTheDocument();
     });
 
-    it('displays selected age range value', () => {
+    it('displays selected age group value', () => {
       const props = {
         ...defaultProps,
-        filters: { ...defaultProps.filters, ageRange: '0-6' }
+        filters: { ...defaultProps.filters, ageGroup: '0-5m' }
       };
       render(<FilterToolbar {...props} />);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
-      expect(ageFilter).toHaveValue('0-6');
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
+      expect(ageFilter).toHaveValue('0-5m');
     });
 
-    it('calls onFiltersChange when age range is selected', async () => {
+    it('calls onFiltersChange when age group is selected', async () => {
       const user = userEvent.setup();
       render(<FilterToolbar {...defaultProps} />);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
       
-      await user.selectOptions(ageFilter, '6-12');
+      await user.selectOptions(ageFilter, '6-11m');
       
       expect(mockOnFiltersChange).toHaveBeenCalledWith({
         ...defaultProps.filters,
-        ageRange: '6-12'
+        ageGroup: '6-11m'
       });
     });
 
     it('has correct aria-label', () => {
       render(<FilterToolbar {...defaultProps} />);
-      const ageFilter = screen.getByLabelText('Filter by age range');
+      const ageFilter = screen.getByLabelText('Filter by age group');
       expect(ageFilter).toBeInTheDocument();
     });
   });
@@ -338,7 +339,7 @@ describe('FilterToolbar Component', () => {
       const storedFilters = {
         barangay: 'Barangay 2',
         sex: 'Male',
-        ageRange: '6-12'
+        ageGroup: '6-11m'
       };
       sessionStorage.setItem('test-category_filters', JSON.stringify(storedFilters));
       
@@ -353,7 +354,7 @@ describe('FilterToolbar Component', () => {
       const newFilters = {
         barangay: 'Barangay 3',
         sex: 'Female',
-        ageRange: '12-24'
+        ageGroup: '12-23m'
       };
       
       rerender(<FilterToolbar {...defaultProps} filters={newFilters} />);
@@ -368,8 +369,8 @@ describe('FilterToolbar Component', () => {
       
       render(<FilterToolbar {...props1} />);
       
-      const filters1 = { barangay: 'Barangay 1', sex: 'Male', ageRange: 'All' };
-      const filters2 = { barangay: 'Barangay 2', sex: 'Female', ageRange: '0-6' };
+      const filters1 = { barangay: 'Barangay 1', sex: 'Male', ageGroup: 'All' };
+      const filters2 = { barangay: 'Barangay 2', sex: 'Female', ageGroup: '0-5m' };
       
       sessionStorage.setItem('zero-dose_filters', JSON.stringify(filters1));
       sessionStorage.setItem('cpab_filters', JSON.stringify(filters2));
@@ -392,7 +393,7 @@ describe('FilterToolbar Component', () => {
       const storedFilters = {
         barangay: 'Barangay 2',
         sex: 'Male',
-        ageRange: '6-12'
+        ageGroup: '6-11m'
       };
       sessionStorage.setItem('undefined_filters', JSON.stringify(storedFilters));
       
@@ -439,11 +440,11 @@ describe('FilterToolbar Component', () => {
       
       const barangayFilter = screen.getByLabelText(/filter by barangay/i);
       const sexFilter = screen.getByLabelText(/filter by sex/i);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
       
       await user.selectOptions(barangayFilter, 'Barangay 2');
       await user.selectOptions(sexFilter, 'Female');
-      await user.selectOptions(ageFilter, '0-6');
+      await user.selectOptions(ageFilter, '0-5m');
       
       expect(mockOnFiltersChange).toHaveBeenCalledTimes(3);
     });
@@ -455,39 +456,40 @@ describe('FilterToolbar Component', () => {
         filters: {
           barangay: 'Barangay 1',
           sex: 'Male',
-          ageRange: 'All'
+          ageGroup: 'All'
         }
       };
       render(<FilterToolbar {...props} />);
       
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
-      await user.selectOptions(ageFilter, '6-12');
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
+      await user.selectOptions(ageFilter, '6-11m');
       
       expect(mockOnFiltersChange).toHaveBeenCalledWith({
         barangay: 'Barangay 1',
         sex: 'Male',
-        ageRange: '6-12'
+        ageGroup: '6-11m'
       });
     });
   });
 
   describe('Responsive Layout', () => {
-    it('applies responsive flex classes', () => {
+    it('applies responsive grid classes', () => {
       const { container } = render(<FilterToolbar {...defaultProps} />);
-      const filtersRow = container.querySelector('.flex.flex-col.sm\\:flex-row');
+      const filtersRow = container.querySelector('.grid.grid-cols-1.sm\\:grid-cols-2');
       expect(filtersRow).toBeInTheDocument();
     });
 
     it('has gap spacing between filter elements', () => {
       const { container } = render(<FilterToolbar {...defaultProps} />);
-      const filtersRow = container.querySelector('.gap-3');
+      const filtersRow = container.querySelector('.gap-2');
       expect(filtersRow).toBeInTheDocument();
     });
 
-    it('filter dropdowns have flex-1 class for equal width', () => {
+    it('filter dropdowns use grid-friendly fixed control styling', () => {
       render(<FilterToolbar {...defaultProps} />);
       const barangayFilter = screen.getByLabelText(/filter by barangay/i);
-      expect(barangayFilter).toHaveClass('flex-1');
+      expect(barangayFilter).toHaveClass('px-3');
+      expect(barangayFilter).toHaveClass('py-2');
     });
   });
 
@@ -499,9 +501,9 @@ describe('FilterToolbar Component', () => {
       expect(searchInput).toHaveClass('w-full');
       expect(searchInput).toHaveClass('pl-10');
       expect(searchInput).toHaveClass('pr-10');
-      expect(searchInput).toHaveClass('py-2.5');
+      expect(searchInput).toHaveClass('py-2');
       expect(searchInput).toHaveClass('border');
-      expect(searchInput).toHaveClass('rounded-lg');
+      expect(searchInput).toHaveClass('rounded-md');
     });
 
     it('filter dropdowns have consistent styling', () => {
@@ -511,7 +513,7 @@ describe('FilterToolbar Component', () => {
       expect(barangayFilter).toHaveClass('px-3');
       expect(barangayFilter).toHaveClass('py-2');
       expect(barangayFilter).toHaveClass('border');
-      expect(barangayFilter).toHaveClass('rounded-lg');
+      expect(barangayFilter).toHaveClass('rounded-md');
       expect(barangayFilter).toHaveClass('bg-white');
     });
 
@@ -604,7 +606,7 @@ describe('FilterToolbar Component', () => {
       const searchInput = screen.getByPlaceholderText(/search by name/i);
       const barangayFilter = screen.getByLabelText(/filter by barangay/i);
       const sexFilter = screen.getByLabelText(/filter by sex/i);
-      const ageFilter = screen.getByLabelText(/filter by age range/i);
+      const ageFilter = screen.getByLabelText(/filter by age group/i);
       const sortDropdown = screen.getByLabelText(/sort by/i);
       
       expect(searchInput).not.toHaveAttribute('tabindex', '-1');
@@ -625,7 +627,7 @@ describe('FilterToolbar Component', () => {
       
       expect(screen.getByLabelText('Filter by barangay')).toBeInTheDocument();
       expect(screen.getByLabelText('Filter by sex')).toBeInTheDocument();
-      expect(screen.getByLabelText('Filter by age range')).toBeInTheDocument();
+      expect(screen.getByLabelText('Filter by age group')).toBeInTheDocument();
       expect(screen.getByLabelText('Sort by')).toBeInTheDocument();
     });
 
@@ -657,14 +659,14 @@ describe('FilterToolbar Component', () => {
       const newFilters = {
         barangay: 'Barangay 3',
         sex: 'Female',
-        ageRange: '12-24'
+        ageGroup: '12-23m'
       };
       
       rerender(<FilterToolbar {...defaultProps} filters={newFilters} />);
       
       expect(screen.getByLabelText(/filter by barangay/i)).toHaveValue('Barangay 3');
       expect(screen.getByLabelText(/filter by sex/i)).toHaveValue('Female');
-      expect(screen.getByLabelText(/filter by age range/i)).toHaveValue('12-24');
+      expect(screen.getByLabelText(/filter by age group/i)).toHaveValue('12-23m');
     });
 
     it('updates sort dropdown when sortBy prop changes', () => {

@@ -1,10 +1,8 @@
 ﻿import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import MainDashboard from './pages/clinical/MainDashboard';
 import MidwifeDashboard from './pages/clinical/MidwifeDashboard';
 import ValidationPage from './pages/clinical/ValidationPage';
 import NIPSchedulePage from './pages/clinical/NIPSchedulePage';
-import AnalyticsMap from './pages/clinical/AnalyticsMap';
 import Heatmap from './pages/clinical/Heatmap';
 import CaregiverPortal from './pages/CaregiverPortal';
 import Reports from './pages/clinical/Reports';
@@ -34,7 +32,6 @@ import { BarangayFilterProvider } from './contexts/BarangayFilterContext';
 import BHWDashboard from './pages/bhw/BHWDashboard';
 import BHWRegistration from './pages/bhw/BHWRegistration';
 import MySubmissions from './pages/bhw/MySubmissions';
-import InfantProfile from './pages/bhw/InfantProfile';
 import InfantRecord from './pages/clinical/InfantRecord';
 import InfantRegistry from './pages/clinical/InfantRegistry';
 import FollowUpTasks from './pages/clinical/FollowUpTasks';

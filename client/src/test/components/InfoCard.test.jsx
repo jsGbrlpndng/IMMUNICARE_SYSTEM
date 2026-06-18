@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import InfoCard from './InfoCard';
+import InfoCard from '../../components/InfoCard';
 
 describe('InfoCard Component', () => {
   describe('Basic Rendering', () => {

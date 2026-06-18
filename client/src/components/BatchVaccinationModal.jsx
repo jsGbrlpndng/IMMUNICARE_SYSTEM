@@ -20,28 +20,34 @@ import Avatar from './Avatar';
 
 // 14 NIP Vaccines as per Philippine DOH National Immunization Program
 const NIP_VACCINES = [
-  { code: 'BCG', name: 'BCG (Bacillus Calmette-GuÃ©rin)' },
-  { code: 'HEPB', name: 'Hepatitis B Birth Dose' },
-  { code: 'PENTA-1', name: 'Pentavalent 1' },
-  { code: 'PENTA-2', name: 'Pentavalent 2' },
-  { code: 'PENTA-3', name: 'Pentavalent 3' },
-  { code: 'OPV-1', name: 'OPV 1 (Oral Polio Vaccine)' },
-  { code: 'OPV-2', name: 'OPV 2 (Oral Polio Vaccine)' },
-  { code: 'OPV-3', name: 'OPV 3 (Oral Polio Vaccine)' },
-  { code: 'PCV-1', name: 'PCV 1 (Pneumococcal Conjugate Vaccine)' },
-  { code: 'PCV-2', name: 'PCV 2 (Pneumococcal Conjugate Vaccine)' },
-  { code: 'PCV-3', name: 'PCV 3 (Pneumococcal Conjugate Vaccine)' },
-  { code: 'IPV-1', name: 'IPV 1 (Inactivated Polio Vaccine)' },
-  { code: 'IPV-2', name: 'IPV 2 (Inactivated Polio Vaccine)' },
-  { code: 'MCV-1', name: 'Measles 1 (MCV1)' },
-  { code: 'MCV-2', name: 'Measles 2 (MCV2)' }
+  { code: 'BCG', name: 'BCG (Bacillus Calmette-GuÃ©rin)', doseNumber: 1 },
+  { code: 'HEPB', name: 'Hepatitis B Birth Dose', doseNumber: 1 },
+  { code: 'PENTA-1', name: 'Pentavalent 1', doseNumber: 1 },
+  { code: 'PENTA-2', name: 'Pentavalent 2', doseNumber: 2 },
+  { code: 'PENTA-3', name: 'Pentavalent 3', doseNumber: 3 },
+  { code: 'OPV-1', name: 'OPV 1 (Oral Polio Vaccine)', doseNumber: 1 },
+  { code: 'OPV-2', name: 'OPV 2 (Oral Polio Vaccine)', doseNumber: 2 },
+  { code: 'OPV-3', name: 'OPV 3 (Oral Polio Vaccine)', doseNumber: 3 },
+  { code: 'PCV-1', name: 'PCV 1 (Pneumococcal Conjugate Vaccine)', doseNumber: 1 },
+  { code: 'PCV-2', name: 'PCV 2 (Pneumococcal Conjugate Vaccine)', doseNumber: 2 },
+  { code: 'PCV-3', name: 'PCV 3 (Pneumococcal Conjugate Vaccine)', doseNumber: 3 },
+  { code: 'IPV-1', name: 'IPV 1 (Inactivated Polio Vaccine)', doseNumber: 1 },
+  { code: 'IPV-2', name: 'IPV 2 (Inactivated Polio Vaccine)', doseNumber: 2 },
+  { code: 'MCV-1', name: 'Measles 1 (MCV1)', doseNumber: 1 },
+  { code: 'MCV-2', name: 'Measles 2 (MCV2)', doseNumber: 2 }
 ];
+
+const getTodayDateString = () => {
+  const today = new Date();
+  const timezoneOffsetMs = today.getTimezoneOffset() * 60 * 1000;
+  return new Date(today.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
+};
 
 const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSuccess }) => {
   // Form state
   const [vaccineType, setVaccineType] = useState('');
   const [vaccinationDate, setVaccinationDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    getTodayDateString()
   );
   const [batchNumber, setBatchNumber] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -64,7 +70,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
   useEffect(() => {
     if (isOpen) {
       setVaccineType('');
-      setVaccinationDate(new Date().toISOString().slice(0, 10));
+      setVaccinationDate(getTodayDateString());
       setBatchNumber('');
       setRemarks('');
       setIsExternal(false);
@@ -128,11 +134,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
     if (!vaccinationDate) {
       newErrors.vaccinationDate = 'Please select a date';
     } else {
-      const selectedDate = new Date(vaccinationDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (selectedDate > today) {
+      if (vaccinationDate > getTodayDateString()) {
         newErrors.vaccinationDate = 'Cannot record future vaccination dates';
       }
     }
@@ -199,8 +201,8 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
         const response = await apiClient.post('/vaccinations', {
           infant_id: infant.id,
           vaccine_name: vaccineName,
-          vaccine_code: selectedVaccineData.code,
-          dose_number: selectedVaccineData.doseNumber,
+          vaccine_code: selectedVaccine?.code || vaccineType,
+          dose_number: selectedVaccine?.doseNumber,
           batch_number: batchNumber,
           site_of_injection: 'Left upper arm', // Default for batch
           vaccinator_id: currentUser.id,
@@ -471,7 +473,7 @@ const BatchVaccinationModal = ({ isOpen, onClose, availableInfants = [], onSucce
                   type="date"
                   value={vaccinationDate}
                   onChange={(e) => setVaccinationDate(e.target.value)}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={getTodayDateString()}
                   className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none transition-all ${
                     errors.vaccinationDate ? 'border-red-300 bg-red-50' : 'border-slate-200'
                   }`}

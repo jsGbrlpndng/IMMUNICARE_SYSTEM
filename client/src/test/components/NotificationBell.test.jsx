@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import NotificationBell from '../../components/NotificationBell';
 
@@ -14,10 +15,27 @@ vi.mock('../../services/apiClient', () => ({
     }
 }));
 
+vi.mock('../../contexts/AuthContext', () => ({
+    useAuth: () => ({
+        user: {
+            id: 'MIDWIFE-001',
+            role: 'Midwife',
+            full_name: 'Test Midwife',
+            name: 'Test Midwife'
+        }
+    })
+}));
+
 describe('NotificationBell', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
+
+    const renderNotificationBell = () => render(
+        <MemoryRouter>
+            <NotificationBell visible />
+        </MemoryRouter>
+    );
 
     test('shows unread count, lists handoff notices, and marks a notice as read', async () => {
         mockGet
@@ -62,7 +80,7 @@ describe('NotificationBell', () => {
         });
 
         const user = userEvent.setup();
-        render(<NotificationBell visible />);
+        renderNotificationBell();
 
         await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument());
         await user.click(screen.getByRole('button', { name: /open notifications/i }));
@@ -98,12 +116,12 @@ describe('NotificationBell', () => {
             });
 
         const user = userEvent.setup();
-        render(<NotificationBell visible />);
+        renderNotificationBell();
 
         expect(screen.queryByText('0')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: /open notifications/i }));
 
-        expect(await screen.findByText('No transfer handoff notices right now.')).toBeInTheDocument();
-        expect(screen.queryByText(/unread handoff notice/i)).not.toBeInTheDocument();
+        expect(await screen.findByText('No notifications right now.')).toBeInTheDocument();
+        expect(screen.queryByText(/unread notification/i)).not.toBeInTheDocument();
     });
 });

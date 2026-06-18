@@ -1,17 +1,22 @@
 ﻿import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import BatchVaccinationModal from './BatchVaccinationModal';
-import apiClient from '../services/apiClient';
+import BatchVaccinationModal from '../../components/BatchVaccinationModal';
+import apiClient from '../../services/apiClient';
 
 // Mock apiClient
-vi.mock('../services/apiClient', () => ({
+vi.mock('../../services/apiClient', () => ({
   default: {
     post: vi.fn()
   }
 }));
 
 describe('BatchVaccinationModal', () => {
+  const getLocalDateString = (date = new Date()) => {
+    const timezoneOffsetMs = date.getTimezoneOffset() * 60 * 1000;
+    return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 10);
+  };
+
   const mockInfants = [
     {
       id: 1,
@@ -46,6 +51,29 @@ describe('BatchVaccinationModal', () => {
     vi.clearAllMocks();
   });
 
+  const fillRequiredFieldsAndApply = async (container, infantNames = ['Juan Dela Cruz']) => {
+    const vaccineSelect = screen.getByDisplayValue('Select vaccine...');
+    fireEvent.change(vaccineSelect, { target: { value: 'BCG' } });
+    expect(vaccineSelect.value).toBe('BCG');
+
+    const dateInput = container.querySelector('input[type="date"]');
+    expect(dateInput.value).toBe(getLocalDateString());
+
+    const batchInput = screen.getByPlaceholderText(/e.g., BCG-2024-001/i);
+    fireEvent.change(batchInput, { target: { value: 'BCG-2024-001' } });
+    expect(batchInput.value).toBe('BCG-2024-001');
+
+    infantNames.forEach((name) => {
+      fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(name, 'i') }));
+    });
+
+    const applyButton = await screen.findByRole('button', {
+      name: new RegExp(`apply to all \\(${infantNames.length}\\)`, 'i')
+    });
+    expect(applyButton).not.toBeDisabled();
+    fireEvent.click(applyButton);
+  };
+
   it('renders modal when isOpen is true', () => {
     render(
       <BatchVaccinationModal
@@ -73,8 +101,8 @@ describe('BatchVaccinationModal', () => {
     expect(screen.queryByText('Batch Vaccination Entry')).not.toBeInTheDocument();
   });
 
-  it('displays all 14 NIP vaccines in dropdown', () => {
-    render(
+  it('displays all current NIP vaccines in dropdown', () => {
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -83,17 +111,17 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    const vaccineSelect = screen.getByRole('combobox', { name: /vaccine type/i });
+    const vaccineSelect = container.querySelector('select');
     const options = vaccineSelect.querySelectorAll('option');
     
-    // 14 vaccines + 1 placeholder option = 15 total
-    expect(options).toHaveLength(15);
+    // 15 vaccines + 1 placeholder option = 16 total
+    expect(options).toHaveLength(16);
     
     // Check for specific vaccines
     expect(screen.getByRole('option', { name: /BCG/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Hepatitis B Birth Dose/i })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Pentavalent 1/i })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /MMR 2/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Measles 2/i })).toBeInTheDocument();
   });
 
   it('filters infants by search term', () => {
@@ -171,7 +199,7 @@ describe('BatchVaccinationModal', () => {
     expect(screen.getByText(/0 infants selected/i)).toBeInTheDocument();
   });
 
-  it('validates required fields before submission', async () => {
+  it('disables submission until an infant is selected and validates required fields', async () => {
     render(
       <BatchVaccinationModal
         isOpen={true}
@@ -182,17 +210,22 @@ describe('BatchVaccinationModal', () => {
     );
 
     const applyButton = screen.getByRole('button', { name: /apply to all/i });
+    expect(applyButton).toBeDisabled();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    expect(applyButton).not.toBeDisabled();
+
     fireEvent.click(applyButton);
 
     await waitFor(() => {
       expect(screen.getByText(/please select a vaccine/i)).toBeInTheDocument();
       expect(screen.getByText(/batch\/lot number is required/i)).toBeInTheDocument();
-      expect(screen.getByText(/please select at least one infant/i)).toBeInTheDocument();
     });
   });
 
   it('shows confirmation dialog before applying', async () => {
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -201,31 +234,19 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    // Fill in required fields
-    const vaccineSelect = screen.getByRole('combobox', { name: /vaccine type/i });
-    fireEvent.change(vaccineSelect, { target: { value: 'BCG' } });
-
-    const batchInput = screen.getByPlaceholderText(/e.g., BCG-2024-001/i);
-    fireEvent.change(batchInput, { target: { value: 'BCG-2024-001' } });
-
-    // Select an infant
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]);
-
-    // Click apply
-    const applyButton = screen.getByRole('button', { name: /apply to all/i });
-    fireEvent.click(applyButton);
+    await fillRequiredFieldsAndApply(container);
 
     await waitFor(() => {
-      expect(screen.getByText('Confirm Batch Vaccination')).toBeInTheDocument();
-      expect(screen.getByText(/you are about to record 1 vaccinations/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Confirm Batch Vaccination' })).toBeInTheDocument();
+      expect(screen.getByText(/you are about to record/i)).toBeInTheDocument();
+      expect(screen.getByText('1 vaccinations')).toBeInTheDocument();
     });
   });
 
   it('successfully processes batch vaccination', async () => {
     apiClient.post.mockResolvedValue({ ok: true, json: async () => ({ success: true }) });
 
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -234,20 +255,7 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    // Fill in required fields
-    const vaccineSelect = screen.getByRole('combobox', { name: /vaccine type/i });
-    fireEvent.change(vaccineSelect, { target: { value: 'BCG' } });
-
-    const batchInput = screen.getByPlaceholderText(/e.g., BCG-2024-001/i);
-    fireEvent.change(batchInput, { target: { value: 'BCG-2024-001' } });
-
-    // Select an infant
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]);
-
-    // Click apply
-    const applyButton = screen.getByRole('button', { name: /apply to all/i });
-    fireEvent.click(applyButton);
+    await fillRequiredFieldsAndApply(container);
 
     // Confirm
     await waitFor(() => {
@@ -257,8 +265,9 @@ describe('BatchVaccinationModal', () => {
 
     // Wait for success
     await waitFor(() => {
-      expect(screen.getByText('Batch Vaccination Complete!')).toBeInTheDocument();
-      expect(screen.getByText(/1 of 1 infants.*successfully vaccinated/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Batch Vaccination Complete!' })).toBeInTheDocument();
+      expect(screen.getByText('1 of 1 infants')).toBeInTheDocument();
+      expect(screen.getByText(/BCG/i)).toBeInTheDocument();
     });
   });
 
@@ -271,7 +280,7 @@ describe('BatchVaccinationModal', () => {
         json: async () => ({ error: 'Duplicate vaccination' }) 
       });
 
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -280,21 +289,7 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    // Fill in required fields
-    const vaccineSelect = screen.getByRole('combobox', { name: /vaccine type/i });
-    fireEvent.change(vaccineSelect, { target: { value: 'BCG' } });
-
-    const batchInput = screen.getByPlaceholderText(/e.g., BCG-2024-001/i);
-    fireEvent.change(batchInput, { target: { value: 'BCG-2024-001' } });
-
-    // Select two infants
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]);
-    fireEvent.click(checkboxes[2]);
-
-    // Click apply and confirm
-    const applyButton = screen.getByRole('button', { name: /apply to all/i });
-    fireEvent.click(applyButton);
+    await fillRequiredFieldsAndApply(container, ['Juan Dela Cruz', 'Maria Santos']);
 
     await waitFor(() => {
       const confirmButton = screen.getByRole('button', { name: /confirm & apply/i });
@@ -303,14 +298,14 @@ describe('BatchVaccinationModal', () => {
 
     // Wait for partial success
     await waitFor(() => {
-      expect(screen.getByText('Batch Vaccination Completed with Errors')).toBeInTheDocument();
-      expect(screen.getByText(/1 of 2 infants.*successfully vaccinated/i)).toBeInTheDocument();
-      expect(screen.getByText(/Failed \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Batch Vaccination Completed with Errors' })).toBeInTheDocument();
+      expect(screen.getByText('1 of 2 infants')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Failed \(1\)/i })).toBeInTheDocument();
     });
   });
 
   it('defaults vaccination date to today', () => {
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -319,13 +314,13 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    const dateInput = screen.getByLabelText(/vaccination date/i);
-    const today = new Date().toISOString().slice(0, 10);
+    const dateInput = container.querySelector('input[type="date"]');
+    const today = getLocalDateString();
     expect(dateInput.value).toBe(today);
   });
 
   it('prevents future vaccination dates', async () => {
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -334,14 +329,14 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    const dateInput = screen.getByLabelText(/vaccination date/i);
+    const dateInput = container.querySelector('input[type="date"]');
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     
     fireEvent.change(dateInput, { target: { value: tomorrow.toISOString().slice(0, 10) } });
 
     // Fill other required fields
-    const vaccineSelect = screen.getByRole('combobox', { name: /vaccine type/i });
+    const vaccineSelect = container.querySelector('select');
     fireEvent.change(vaccineSelect, { target: { value: 'BCG' } });
 
     const batchInput = screen.getByPlaceholderText(/e.g., BCG-2024-001/i);
@@ -361,7 +356,7 @@ describe('BatchVaccinationModal', () => {
   });
 
   it('closes modal when close button is clicked', () => {
-    render(
+    const { container } = render(
       <BatchVaccinationModal
         isOpen={true}
         onClose={mockOnClose}
@@ -370,7 +365,7 @@ describe('BatchVaccinationModal', () => {
       />
     );
 
-    const closeButton = screen.getByRole('button', { name: /close/i });
+    const closeButton = container.querySelector('button');
     fireEvent.click(closeButton);
 
     expect(mockOnClose).toHaveBeenCalled();
