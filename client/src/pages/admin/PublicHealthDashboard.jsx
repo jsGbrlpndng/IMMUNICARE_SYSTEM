@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, GeoJSON, Popup, ScaleControl, useMap } from 'react-leaflet';
 import {
     Activity,
-    AlertTriangle,
     ArrowRight,
     Baby,
     Loader2,
@@ -30,6 +29,7 @@ import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import apiClient from '../../services/apiClient';
 import { getBarangayCenter } from '../../utils/barangayConfig';
 import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
+import { ErrorNotice } from './publicHealthDashboard.components';
 import {
     formatAuditSentence,
     formatAuditTime,
@@ -672,13 +672,6 @@ const PublicHealthDashboard = () => {
         }))
     ), [trends]);
     const targetsMissing = targetStatus?.has_required_targets === false;
-    const ErrorNotice = ({ message }) => message ? (
-        <div role="alert" className="flex items-start gap-2 border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{message}</span>
-        </div>
-    ) : null;
-
     return (
         <div className="min-w-0">
             <div className="mx-auto w-full max-w-7xl min-w-0 space-y-6">
