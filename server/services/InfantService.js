@@ -8,7 +8,7 @@ const NIPScheduleService = require('./NIPScheduleService');
 const DuplicateDetectionService = require('./DuplicateDetectionService');
 const localityHelper = require('../utils/localityHelper');
 const DBSCANService = require('./DBSCANService');
-const { ROLES } = require('../constants/domain');
+const { ROLES, MIN_CLUSTER_INFANTS } = require('../constants/domain');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
 const { normalizeClinicalStatus } = require('../utils/clinicalStatus');
 
@@ -385,7 +385,7 @@ class InfantService {
         // to allow Midwives and other BHWs to pick up incomplete registrations.
         const barangayClause = barangay ? 'AND barangay = ?' : '';
         const params = barangay ? [barangay] : [];
-        
+
         const [drafts] = await this.db.execute(`
             SELECT * FROM infant_registrations 
             WHERE status = 'DRAFT' ${barangayClause}
@@ -630,8 +630,8 @@ class InfantService {
                 finalLastTTDate = null;
             }
 
-            const mappedBirthSetting = (infantData.birth_setting || '').toUpperCase().includes('FACILITY') ? 'FACILITY' : 
-                                       (infantData.birth_setting || '').toUpperCase().includes('HOME') ? 'HOME' : null;
+            const mappedBirthSetting = (infantData.birth_setting || '').toUpperCase().includes('FACILITY') ? 'FACILITY' :
+                (infantData.birth_setting || '').toUpperCase().includes('HOME') ? 'HOME' : null;
 
             const isBcgGiven = String(infantData.bcg_status || '').startsWith('Given');
             const isHepBGiven = infantData.hepatitis_b_status?.startsWith('Given');
@@ -666,7 +666,7 @@ class InfantService {
                 finalLocality || null, lockedBarangay, infantData.current_address || null,
                 finalLastTTDate,
                 infantData.pregnancy_order ? parseInt(infantData.pregnancy_order) : null,
-                cpabResult.cpab_status, 
+                cpabResult.cpab_status,
                 isBcgGiven ? formatDate(infantData.bcg_date) : null,
                 isHepBGiven ? formatDate(infantData.hepatitis_b_date) : null,
                 mappedBirthSetting, finalMotherTTStatus,
@@ -684,7 +684,7 @@ class InfantService {
 
             if (isValidated) {
                 await this.nipScheduleService.generateFullSchedule(id, infantData.dob, connection);
-                
+
                 const [checkSchedule] = await connection.execute(
                     'SELECT COUNT(*) as count FROM infant_schedules WHERE infant_id = ?',
                     [id]
@@ -762,10 +762,10 @@ class InfantService {
             // ─── STEP 2: DETECT ID TYPE ─────────────────────────────────────────
             // A reference ID contains 'REG-' or hyphens, or is non-numeric.
             // A UUID also contains hyphens, but NOT 'REG-'. We detect by prefix.
-            const isRefId = sanitizedId.startsWith('REG-') || 
-                            (!sanitizedId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) && 
-                             sanitizedId.includes('-') && 
-                             !isInternalId);
+            const isRefId = sanitizedId.startsWith('REG-') ||
+                (!sanitizedId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i) &&
+                    sanitizedId.includes('-') &&
+                    !isInternalId);
 
             const idField = isRefId ? 'reference_id' : 'id';
 
@@ -903,7 +903,7 @@ class InfantService {
     async updateInfant(idOrRef, infantData, barangay = null) {
         const fields = Object.keys(infantData).map(key => `${key} = ?`).join(', ');
         const values = Object.values(infantData);
-        
+
         const barangayClause = barangay ? 'AND barangay = ?' : '';
         const params = barangay ? [...values, idOrRef, idOrRef, barangay] : [...values, idOrRef, idOrRef];
 
@@ -1187,12 +1187,12 @@ class InfantService {
             sortBy = 'urgency'
         } = params;
         const epsilonMeters = parseInt(eps, 10) || 300;
-        const safeMinPts = Math.max(parseInt(minPts, 10) || 3, 2);
+        const safeMinPts = Math.max(parseInt(minPts, 10) || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
         // Normalize to uppercase to match the rhu2_barangay PostgreSQL enum
         if (barangay) barangay = barangay.toUpperCase();
 
         // 1. Fetch infants using the clinical engine for consistent urgency/schedule data
-        const scheduleData = await this.nipEngine.getApprovedInfantsWithSchedule({ 
+        const scheduleData = await this.nipEngine.getApprovedInfantsWithSchedule({
             barangay,
             urgency: 'all',
             ageGroup,
@@ -1209,8 +1209,8 @@ class InfantService {
                 noise: [],
                 all_infants: [],
                 recommended_actions: [],
-                counts: { 
-                    all: 0, 
+                counts: {
+                    all: 0,
                     mappable_in_scope: 0,
                     total_defaulters: 0,
                     total_due_soon: 0,
@@ -1265,77 +1265,77 @@ class InfantService {
 
         // 3. Prepare dataset
         const dataset = infants
-        .filter(inf => statusMap.has(inf.id))
-        .map(inf => {
-            const hasCoords = inf.lat != null && inf.lng != null && inf.lat !== 0;
+            .filter(inf => statusMap.has(inf.id))
+            .map(inf => {
+                const hasCoords = inf.lat != null && inf.lng != null && inf.lat !== 0;
 
-            // Mapping Readiness
-            let mapping_readiness = 'Unmapped';
-            if (hasCoords) {
-                // is_location_verified is the clinical truth for house-level geocoding.
-                // If false but coords exist, it's an approximated position (street/sitio).
-                mapping_readiness = inf.is_location_verified ? 'Verified' : 'Approximate';
-            }
+                // Mapping Readiness
+                let mapping_readiness = 'Unmapped';
+                if (hasCoords) {
+                    // is_location_verified is the clinical truth for house-level geocoding.
+                    // If false but coords exist, it's an approximated position (street/sitio).
+                    mapping_readiness = inf.is_location_verified ? 'Verified' : 'Approximate';
+                }
 
-            const computed_map_status = statusMap.get(inf.id) || 'COMPLETED';
+                const computed_map_status = statusMap.get(inf.id) || 'COMPLETED';
 
-            // Clinical Directive — 4 independent states
-            let clinical_directive = 'Routine Follow-Up';
-            const doseCount = (inf.vaccination_needs || []).length;
-            const topVaccine = doseCount > 0 ? (inf.vaccination_needs[0].vaccine_name || inf.vaccination_needs[0].vaccine_code) : null;
+                // Clinical Directive — 4 independent states
+                let clinical_directive = 'Routine Follow-Up';
+                const doseCount = (inf.vaccination_needs || []).length;
+                const topVaccine = doseCount > 0 ? (inf.vaccination_needs[0].vaccine_name || inf.vaccination_needs[0].vaccine_code) : null;
 
-            if (computed_map_status === 'DEFAULTER') {
-                clinical_directive = topVaccine ? `Visit for ${topVaccine}` : 'Urgent Follow-Up';
-            } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
-                clinical_directive = topVaccine ? `Prepare ${topVaccine}` : 'Prepare Next Dose';
-            } else if (computed_map_status === 'ON_TRACK') {
-                clinical_directive = 'On Schedule — Next dose upcoming';
-            } else if (computed_map_status === 'FIC') {
-                clinical_directive = 'Fully Immunized Child (FIC)';
-            } else if (computed_map_status === 'CIC') {
-                clinical_directive = 'Completely Immunized Child (CIC)';
-            } else if (computed_map_status === 'COMPLETED') {
-                clinical_directive = 'Schedule complete';
-            }
+                if (computed_map_status === 'DEFAULTER') {
+                    clinical_directive = topVaccine ? `Visit for ${topVaccine}` : 'Urgent Follow-Up';
+                } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
+                    clinical_directive = topVaccine ? `Prepare ${topVaccine}` : 'Prepare Next Dose';
+                } else if (computed_map_status === 'ON_TRACK') {
+                    clinical_directive = 'On Schedule — Next dose upcoming';
+                } else if (computed_map_status === 'FIC') {
+                    clinical_directive = 'Fully Immunized Child (FIC)';
+                } else if (computed_map_status === 'CIC') {
+                    clinical_directive = 'Completely Immunized Child (CIC)';
+                } else if (computed_map_status === 'COMPLETED') {
+                    clinical_directive = 'Schedule complete';
+                }
 
-            // Map Rendering Rules: 4 independent color categories
-            let marker_color = '#94A3B8'; // Default slate for unknown
-            if (computed_map_status === 'DEFAULTER') {
-                marker_color = '#EF4444'; // Red
-            } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
-                marker_color = '#F59E0B'; // Amber
-            } else if (computed_map_status === 'ON_TRACK') {
-                marker_color = '#10B981'; // Green
-            } else if (computed_map_status === 'COMPLETED' || computed_map_status === 'FIC' || computed_map_status === 'CIC') {
-                marker_color = '#64748B'; // Grey
-            }
+                // Map Rendering Rules: 4 independent color categories
+                let marker_color = '#94A3B8'; // Default slate for unknown
+                if (computed_map_status === 'DEFAULTER') {
+                    marker_color = '#EF4444'; // Red
+                } else if (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') {
+                    marker_color = '#F59E0B'; // Amber
+                } else if (computed_map_status === 'ON_TRACK') {
+                    marker_color = '#10B981'; // Green
+                } else if (computed_map_status === 'COMPLETED' || computed_map_status === 'FIC' || computed_map_status === 'CIC') {
+                    marker_color = '#64748B'; // Grey
+                }
 
-            // Urgency: lowercase token for frontend filtering — 4 independent values
-            const urgency = 
-                computed_map_status === 'DEFAULTER'                            ? 'defaulter' :
-                (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') ? 'due_soon'  :
-                computed_map_status === 'ON_TRACK'                              ? 'on_track'  :
-                'completed';
+                // Urgency: lowercase token for frontend filtering — 4 independent values
+                const urgency =
+                    computed_map_status === 'DEFAULTER' ? 'defaulter' :
+                        (computed_map_status === 'DUE_TODAY' || computed_map_status === 'DUE_SOON') ? 'due_soon' :
+                            computed_map_status === 'ON_TRACK' ? 'on_track' :
+                                'completed';
 
-            const clinical_status = normalizeClinicalStatus({
-                computedStatus: computed_map_status,
-                urgency,
-                registrationStatus: inf.registration_status
+                const clinical_status = normalizeClinicalStatus({
+                    computedStatus: computed_map_status,
+                    urgency,
+                    registrationStatus: inf.registration_status
+                });
+
+                return {
+                    ...inf,
+                    patient_name: `${inf.first_name} ${inf.last_name}`.trim(),
+                    lat: hasCoords ? parseFloat(inf.lat) : null,
+                    lng: hasCoords ? parseFloat(inf.lng) : null,
+                    mapping_readiness,
+                    clinical_directive,
+                    marker_color,
+                    computed_map_status,
+                    urgency,
+                    clinical_status
+                };
             });
-
-            return {
-                ...inf,
-                patient_name: `${inf.first_name} ${inf.last_name}`.trim(),
-                lat: hasCoords ? parseFloat(inf.lat) : null,
-                lng: hasCoords ? parseFloat(inf.lng) : null,
-                mapping_readiness,
-                clinical_directive,
-                marker_color,
-                computed_map_status,
-                urgency,
-                clinical_status
-            };
-        });
 
         // 3. Filter for clustering based on the active scope (only mappable infants)
         // Clinical rule: DBSCAN hotspots are formed only from Active infants whose
@@ -1344,21 +1344,22 @@ class InfantService {
         let dssDataset = [];
         if (scope === 'all' || scope === 'census' || scope === 'due-soon' || scope === 'due_soon' || scope === 'due_today') {
             // For 'all' scope, we don't want to cluster the healthy populations, but we return everyone
-            dssDataset = []; 
+            dssDataset = [];
         } else {
             dssDataset = dataset.filter(pt => pt.computed_map_status === 'DEFAULTER' && pt.lat != null && pt.lng != null);
         }
 
         // 4. Run DBSCAN
         const dbscanStart = performance.now();
-        const dbscan = new DBSCANService(epsilonMeters, safeMinPts);
-        const rawClusters = dssDataset.length >= safeMinPts ? dbscan.cluster(dssDataset) : [];
+        const dbscan = new DBSCANService(epsilonMeters, safeMinPts, this.db);
+        const rawClusters = dssDataset.length >= safeMinPts ? await dbscan.cluster(this.db, dssDataset) : [];
         const dbscanEnd = performance.now();
         console.log(`[PERF] ID-110 DBSCAN Clustering executed in: ${(dbscanEnd - dbscanStart).toFixed(2)}ms`);
 
         // 5. Build Clusters
         const clusteredPointIds = new Set();
-        let clusters = rawClusters.map((clusterPts, index) => {
+        const validRawClusters = rawClusters.filter(clusterPts => Array.isArray(clusterPts) && clusterPts.length >= safeMinPts);
+        let clusters = validRawClusters.map((clusterPts, index) => {
             let totalDoses = 0;
             let dueDoses = 0;
             clusterPts.forEach(pt => {
@@ -1372,11 +1373,11 @@ class InfantService {
 
             const areaName = localityHelper.deriveClusterLabel(clusterPts);
             const meta = DBSCANService.getClusterMetadata(clusterPts);
-            
+
             // Compute severity based on dose burden
             let severity = 'low';
             const relevantDoses = totalDoses + dueDoses;
-            
+
             if (relevantDoses >= 8 || clusterPts.length >= 8) severity = 'critical';
             else if (relevantDoses >= 5 || clusterPts.length >= 5) severity = 'high';
             else if (relevantDoses >= 2 || clusterPts.length >= 3) severity = 'medium';
@@ -1402,7 +1403,7 @@ class InfantService {
                 severity: severity,
                 area_justification: `${clusterPts.length} infants with ${totalDoses + dueDoses} actionable doses.`,
                 // Only use actionable doses for sort metric
-                _sortMetric: relevantDoses + (clusterPts.length * 0.5) 
+                _sortMetric: relevantDoses + (clusterPts.length * 0.5)
             };
         });
 
@@ -1434,7 +1435,7 @@ class InfantService {
         if (clusters.length > 0) {
             const topCluster = clusters[0];
             const isDueSoon = scope === 'due-soon';
-            
+
             recommended_actions.push({
                 type: 'FIELD_TARGET',
                 rank: 1,
@@ -1471,7 +1472,7 @@ class InfantService {
             const highBurdenNoise = noise
                 .filter(pt => (pt.vaccination_needs || []).length >= 3)
                 .sort((a, b) => (b.vaccination_needs || []).length - (a.vaccination_needs || []).length);
-            
+
             if (highBurdenNoise.length > 0) {
                 recommended_actions.push({
                     type: 'INDIVIDUAL_TRIAGE',
@@ -1488,8 +1489,8 @@ class InfantService {
 
         // 8. Response Construction
         const getCounts = (statusList, mappableOnly = false) => {
-            return dataset.filter(p => 
-                statusList.includes(p.urgency) && 
+            return dataset.filter(p =>
+                statusList.includes(p.urgency) &&
                 (!mappableOnly || (p.lat != null && p.lng != null))
             ).length;
         };
@@ -1510,22 +1511,22 @@ class InfantService {
             counts: {
                 all: dataset.length,
                 mappable_in_scope: dssDataset.length,
-                
+
                 // Detailed Clinical Counts (Total population truth) — 4 independent buckets
                 total_defaulters: countComputedStatus('DEFAULTER'),
-                total_due_soon:   getCounts(['due_soon']),
-                total_on_track:   getCounts(['on_track']),
-                total_completed:  getCounts(['completed']),
+                total_due_soon: getCounts(['due_soon']),
+                total_on_track: getCounts(['on_track']),
+                total_completed: getCounts(['completed']),
 
                 // Mapped Counts (Visible on map with valid lat/lng)
                 mapped_defaulters: countComputedStatus('DEFAULTER', true),
-                mapped_due_soon:   getCounts(['due_soon'], true),
-                mapped_on_track:   getCounts(['on_track'], true),
-                mapped_completed:  getCounts(['completed'], true),
+                mapped_due_soon: getCounts(['due_soon'], true),
+                mapped_on_track: getCounts(['on_track'], true),
+                mapped_completed: getCounts(['completed'], true),
 
                 // Unmapped Counts (Exclusions)
                 unmapped_defaulters: countComputedStatus('DEFAULTER') - countComputedStatus('DEFAULTER', true),
-                unmapped_due_soon:   getCounts(['due_soon'])  - getCounts(['due_soon'],  true)
+                unmapped_due_soon: getCounts(['due_soon']) - getCounts(['due_soon'], true)
             }
         };
     }
@@ -1535,6 +1536,8 @@ class InfantService {
 
         const runScope = barangay ? 'BARANGAY' : 'GLOBAL';
         for (const cluster of clusters) {
+            if (Number(cluster.total_infants || 0) < minPts) continue;
+
             const [rows] = await this.db.execute(`
                 INSERT INTO dbscan_cluster_results (
                     run_scope, barangay, epsilon_meters, min_points,

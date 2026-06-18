@@ -261,6 +261,20 @@
   @apply bg-[#F8FAFC]; /* Very light slate */
 }
 
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
+}
+
+/* Clinical Depth Utilities */
+.clinical-surface {
+  @apply bg-[#F8FAFC]; /* Very light slate */
+}
+
 .clinical-card-elevated {
   @apply bg-white rounded-[2rem] border border-slate-100 shadow-sm transition-all duration-300;
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04);
@@ -269,4 +283,13 @@
 .clinical-card-elevated:hover {
   @apply shadow-xl border-slate-200;
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08);
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
 }

@@ -42,6 +42,8 @@ import { formatFullName } from '../../utils/formatFullName';
 import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
 import StatusBadge from '../../components/StatusBadge';
 
+const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
+
 // Fix Leaflet default marker icons
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -103,16 +105,17 @@ export default function MidwifeDashboard() {
     const [priorityFollowups, setPriorityFollowups] = useState([]);
     const [todayList, setTodayList] = useState([]);
     const [systemImpactData, setSystemImpactData] = useState([]);
-    const [fieldKitData, setFieldKitData] = useState([]);
     const [deploymentSummary, setDeploymentSummary] = useState({ activeClusters: 0, deployedBhws: 0 });
     const [activeDeployments, setActiveDeployments] = useState([]);
-    const [timeframe, setTimeframe] = useState('today');
+
+    const [activeAssignments, setActiveAssignments] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     const [loading, setLoading] = useState(true);
     const [chartsReady, setChartsReady] = useState(false);
     const [flyToTarget, setFlyToTarget] = useState(null);
     const [selectedItem, setSelectedItem] = useState(null); // { type: 'cluster' | 'infant', data: object }
-    const [selectedVaccineModal, setSelectedVaccineModal] = useState(null); // Interactive drill-down state
 
     // -- DATA BINDING --
     useEffect(() => {
@@ -180,8 +183,20 @@ export default function MidwifeDashboard() {
             }
         };
         fetchAll();
+        const handleFollowUpUpdate = () => fetchAll({ silent: true });
+        const handleFollowUpStorage = (event) => {
+            if (event.key === 'immunicare:followups-updated') {
+                fetchAll({ silent: true });
+            }
+        };
+        window.addEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+        window.addEventListener('storage', handleFollowUpStorage);
         const intervalId = window.setInterval(() => fetchAll({ silent: true }), 10000);
-        return () => window.clearInterval(intervalId);
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+            window.removeEventListener('storage', handleFollowUpStorage);
+        };
     }, []);
 
     useEffect(() => {
@@ -190,25 +205,55 @@ export default function MidwifeDashboard() {
     }, []);
 
     useEffect(() => {
-        const fetchFieldKit = async () => {
+        const fetchAssignments = async ({ silent = false } = {}) => {
+            if (!silent) {
+                setIsLoading(true);
+            }
             try {
-                const res = await apiClient.get(`/schedule/field-kit?timeframe=${timeframe}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setFieldKitData(Array.isArray(data) ? data : []);
-                } else {
-                    console.error(`Field Kit API Error: ${res.status}`);
-                    setFieldKitData([]);
+                const res = await apiClient.get('/follow-ups');
+                if (!res.ok) {
+                    throw new Error((await res.json()).error || 'Failed to fetch active outreach assignments.');
                 }
+                const data = await res.json();
+                const items = Array.isArray(data?.follow_ups) ? data.follow_ups : [];
+                // Filter to show active individual assignments using the follow_up_tasks state machine.
+                const assignments = items
+                    .filter(item => ACTIVE_FIELD_TASK_STATUSES.includes(item.task_status))
+                    .map(item => ({
+                        ...item,
+                        assignment_status: item.task_status
+                    }))
+                    .sort((a, b) => {
+                        return ACTIVE_FIELD_TASK_STATUSES.indexOf(a.assignment_status) - ACTIVE_FIELD_TASK_STATUSES.indexOf(b.assignment_status);
+                    });
+                setActiveAssignments(assignments);
+                setError(null);
             } catch (err) {
-                console.error('Field Kit Network Failure:', err);
-                setFieldKitData([]);
+                console.error('BHW Outreach Monitor Fetch Failure:', err);
+                setError(err.message || 'Failed to connect to the server.');
+            } finally {
+                if (!silent) {
+                    setIsLoading(false);
+                }
             }
         };
-        fetchFieldKit();
-        const intervalId = window.setInterval(fetchFieldKit, 10000);
-        return () => window.clearInterval(intervalId);
-    }, [timeframe]);
+
+        fetchAssignments();
+        const handleFollowUpUpdate = () => fetchAssignments({ silent: true });
+        const handleFollowUpStorage = (event) => {
+            if (event.key === 'immunicare:followups-updated') {
+                fetchAssignments({ silent: true });
+            }
+        };
+        window.addEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+        window.addEventListener('storage', handleFollowUpStorage);
+        const intervalId = window.setInterval(() => fetchAssignments({ silent: true }), 10000);
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+            window.removeEventListener('storage', handleFollowUpStorage);
+        };
+    }, []);
 
 
     // -- HELPERS --
@@ -257,7 +302,7 @@ export default function MidwifeDashboard() {
         };
 
         if (inf.rankingStatus === 'DEFAULTED' || (inf.days_overdue && inf.days_overdue >= 30)) {
-            return { text: 'Log Field Visit', style: 'bg-emerald-700 text-white hover:bg-emerald-800 border-transparent', action: handleAction };
+            return { text: 'Log Field Visit', style: 'bg-green-800 text-white hover:bg-green-900 border-transparent', action: handleAction };
         }
 
         if (isGenericAddress && inf.urgency === 'overdue') {
@@ -265,7 +310,7 @@ export default function MidwifeDashboard() {
         }
 
         if (inf.urgency === 'overdue') {
-            return { text: 'Log Field Visit', style: 'bg-emerald-700 text-white hover:bg-emerald-800 border-transparent', action: handleAction };
+            return { text: 'Log Field Visit', style: 'bg-green-800 text-white hover:bg-green-900 border-transparent', action: handleAction };
         }
 
         return { text: 'Send SMS', style: 'bg-transparent text-slate-700 border-slate-300 hover:bg-slate-50', action: handleAction };
@@ -306,7 +351,7 @@ export default function MidwifeDashboard() {
     if (loading) {
         return (
             <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
-                <Loader2 className="text-emerald-800 animate-spin" size={48} />
+                <Loader2 className="text-green-800 animate-spin" size={48} />
                 <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Initialising DSS Workspace...</p>
             </div>
         );
@@ -316,27 +361,26 @@ export default function MidwifeDashboard() {
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-6 lg:p-8">
 
             {/* 1. TOP HEADER / KPI ROW */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-6 border-b border-slate-200 pb-6">
-                <div className="flex flex-col gap-1.5">
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-4">
-                        <div className="w-1.5 h-10 bg-emerald-800 rounded-sm" />
-                        Midwife Follow-Up Dashboard
+            <div className="bg-green-800 border border-green-900 text-white p-6 md:p-8 rounded-lg shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex flex-col">
+                    <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">
+                        Midwife Operational Dashboard
                     </h1>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em] ml-5">
+                    <p className="text-[10px] text-green-100 font-bold uppercase tracking-[0.25em] mt-2">
                         Operational Decision Support System • {user?.assigned_barangay ? `BARANGAY ${user.assigned_barangay.toUpperCase()}` : 'MUNICIPAL OVERVIEW'}
                     </p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
                     <button
                         onClick={() => navigate('/clinical/map')}
-                        className="bg-white hover:bg-slate-50 text-emerald-900 px-5 py-4 rounded-sm flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.12em] border border-emerald-800 transition-all active:scale-95 whitespace-nowrap"
+                        className="bg-green-900/50 hover:bg-green-900 text-green-100 border border-green-700/50 px-5 py-3 rounded-md flex items-center gap-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap"
                     >
                         <MapPin size={16} />
                         Active Clusters: {deploymentSummary.activeClusters} | Deployed BHWs: {deploymentSummary.deployedBhws}
                     </button>
                     <button
                         onClick={() => navigate('/clinical/validation')}
-                        className="bg-emerald-800 hover:bg-emerald-900 text-white px-8 py-4 rounded-sm flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.15em] shadow-lg shadow-emerald-900/15 transition-all active:scale-95 group whitespace-nowrap"
+                        className="bg-white hover:bg-slate-50 text-green-800 px-6 py-3 rounded-md flex items-center gap-3 text-xs font-black uppercase tracking-widest shadow-sm transition-all active:scale-95 group whitespace-nowrap"
                     >
                         <Shield size={16} />
                         Validation Center
@@ -376,7 +420,7 @@ export default function MidwifeDashboard() {
                                     }
                                 }
                             })}
-                            className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#084C39] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A]"
+                            className="inline-flex items-center justify-center gap-2 rounded-sm bg-green-800 px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-green-900"
                         >
                             View Deployment Area
                             <ChevronRight className="h-4 w-4" />
@@ -387,27 +431,24 @@ export default function MidwifeDashboard() {
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                 {[
-                    { label: 'Due Today', value: stats?.scheduledToday, icon: Clock, color: 'emerald', bg: 'bg-emerald-50', text: 'text-emerald-800', path: '/clinical/registry?urgency=due_today' },
-                    { label: 'Overdue', value: stats?.overdueCount, icon: AlertCircle, color: 'rose', bg: 'bg-rose-50', text: 'text-rose-600', path: '/clinical/registry?urgency=overdue' },
-                    { label: 'Due Soon', value: stats?.dueSoon, icon: Calendar, color: 'amber', bg: 'bg-amber-50', text: 'text-amber-600', path: '/clinical/registry?urgency=due_soon' },
-                    { label: 'Risk Hotspots', value: stats?.clusterCount, icon: MapPin, color: 'emerald', bg: 'bg-emerald-50/50', text: 'text-emerald-800', path: '/clinical/map' }
+                    { label: 'Due Today', value: stats?.scheduledToday, icon: Clock, bg: 'bg-green-50', text: 'text-green-800', path: '/clinical/registry?urgency=due_today' },
+                    { label: 'Defaulted', value: stats?.overdueCount, icon: AlertCircle, bg: 'bg-rose-50', text: 'text-rose-600', path: '/clinical/registry?urgency=overdue' },
+                    { label: 'Due Soon', value: stats?.dueSoon, icon: Calendar, bg: 'bg-amber-50', text: 'text-amber-600', path: '/clinical/registry?urgency=due_soon' },
+                    { label: 'Risk Hotspots', value: stats?.clusterCount, icon: MapPin, bg: 'bg-green-50/50', text: 'text-green-800', path: '/clinical/map' }
                 ].map((kpi, i) => (
                     <div
                         key={i}
                         onClick={() => kpi.path && navigate(kpi.path)}
-                        className={`bg-white border border-slate-200 rounded-sm p-6 shadow-sm flex flex-col justify-between hover:border-${kpi.color}-300 hover:shadow-md transition-all cursor-pointer group active:scale-[0.98]`}
+                        className="bg-white border border-slate-200 rounded-md p-6 shadow-sm flex items-center justify-between hover:shadow-md hover:border-slate-300 transition-all cursor-pointer group active:scale-[0.98]"
                     >
-                        <div className="flex justify-between items-start">
-                            <div className={`p-3 rounded-sm ${kpi.bg} ${kpi.text} group-hover:scale-110 transition-transform`}>
-                                <kpi.icon size={20} />
-                            </div>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{kpi.label}</span>
-                        </div>
-                        <div className="flex items-end justify-between mt-6">
-                            <h3 className="text-4xl font-black text-slate-900 tracking-tighter">
+                        <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{kpi.label}</span>
+                            <h3 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
                                 {kpi.value || 0}
                             </h3>
-                            <ArrowUpRight size={16} className="text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+                        </div>
+                        <div className={`p-3 rounded-md ${kpi.bg} ${kpi.text} shrink-0`}>
+                            <kpi.icon size={24} />
                         </div>
                     </div>
                 ))}
@@ -415,105 +456,101 @@ export default function MidwifeDashboard() {
 
             {/* ROW 1: ACTION QUEUE + STRATEGIC FOLLOW-UP */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-
                 {/* Main Action Queue / Worklist */}
                 <div className="lg:col-span-2 h-full">
-                    <div className="bg-white border border-slate-200 rounded-sm shadow-sm flex flex-col h-[500px]">
-                        <div className="px-6 py-6 border-b-2 border-emerald-800 flex items-center justify-between bg-white shrink-0">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-emerald-50 rounded-sm">
-                                    <Activity size={18} className="text-emerald-800" />
-                                </div>
-                                <div>
-                                    <h2 className="text-sm font-black text-emerald-800 uppercase tracking-[0.1em]">Midwife Action Queue</h2>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Prioritised Follow-Ups & Vaccinations</p>
-                                </div>
-                            </div>
+                    <div className="bg-white border border-slate-200 rounded-md shadow-sm flex flex-col h-[500px] overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
                             <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black text-emerald-800 bg-white border border-emerald-800 px-3 py-1.5 rounded-sm uppercase tracking-widest">
-                                    {priorityFollowups.length + todayList.length} Tasks Pending
-                                </span>
+                                <Activity size={16} className="text-green-800" />
+                                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Midwife Action Queue</h2>
                             </div>
+                            <span className="text-[10px] font-bold text-green-800 bg-green-50 px-2.5 py-1 rounded-md uppercase tracking-wider border border-green-200">
+                                {priorityFollowups.length + todayList.length} Tasks Pending
+                            </span>
                         </div>
 
-                        <div className="overflow-y-auto custom-scrollbar flex-1">
-                            <div className="w-full flex flex-col">
-                                <div className="sticky top-0 bg-white z-20 grid grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_1.5fr] border-b border-slate-100 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
-                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Infant / Reference</div>
-                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Reason / Priority</div>
-                                    <div className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center">Locality</div>
-                                    <div className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Overdue</div>
-                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-center items-center">Risk Tier</div>
-                                    <div className="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex justify-end items-center">Recommended Action</div>
-                                </div>
-                                <div className="divide-y divide-slate-50 flex flex-col">
-                                    {sortedWorklist.length === 0 ? (
-                                        <div className="py-24 flex justify-center items-center">
-                                            <div className="flex flex-col items-center gap-3">
-                                                <div className="w-16 h-16 bg-slate-50 rounded-sm flex items-center justify-center text-emerald-800">
-                                                    <CheckCircle2 size={32} />
-                                                </div>
-                                                <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">No immediate actions required</h3>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest max-w-xs mx-auto text-center">All validated infants in this sector are currently up-to-date based on their NIP schedules.</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        sortedWorklist.map((inf, i) => {
-                                            const rec = getRecommendation(inf);
-                                            const isDEFAULTED = inf.urgency === 'DEFAULTED' || inf.rankingStatus === 'DEFAULTED';
-                                            return (
-                                                <div key={i} className="grid grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_1.5fr] hover:bg-slate-50/80 transition-colors group border-b border-slate-50">
-                                                    <div className="py-4 px-5 flex items-center">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-sm bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-800 transition-colors shrink-0">
-                                                                {inf.first_name?.[0]}{inf.last_name?.[0]}
+                        <div className="overflow-auto scrollbar-hide flex-1">
+                            <div className="overflow-x-auto w-full">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="sticky top-0 bg-slate-50 z-20 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
+                                        <tr className="border-b border-slate-200">
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap" style={{ width: '26%' }}>Infant / Reference</th>
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap" style={{ width: '16%' }}>Reason / Priority</th>
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap" style={{ width: '16%' }}>Locality</th>
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '11%' }}>Defaulted</th>
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '12%' }}>Risk Tier</th>
+                                            <th className="py-2.5 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '19%' }}>Recommended Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {sortedWorklist.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="py-24 text-center">
+                                                    <div className="flex flex-col items-center gap-3 justify-center">
+                                                        <div className="w-16 h-16 bg-slate-50 rounded-md flex items-center justify-center text-green-800 border border-slate-100">
+                                                            <CheckCircle2 size={32} />
+                                                        </div>
+                                                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">No immediate actions required</h3>
+                                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider max-w-xs mx-auto text-center">All validated infants in this sector are currently up-to-date based on their NIP schedules.</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            sortedWorklist.map((inf, i) => {
+                                                const rec = getRecommendation(inf);
+                                                const isDEFAULTED = inf.urgency === 'DEFAULTED' || inf.rankingStatus === 'DEFAULTED';
+                                                return (
+                                                    <tr key={i} className="hover:bg-slate-50/80 transition-colors group">
+                                                        <td className="py-2 px-4 align-middle whitespace-nowrap">
+                                                            <div className="flex items-center gap-3 min-w-0">
+                                                                <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-[10px] font-black text-slate-500 group-hover:bg-green-100 group-hover:text-green-800 transition-colors shrink-0">
+                                                                    {inf.first_name?.[0]}{inf.last_name?.[0]}
+                                                                </div>
+                                                                {formatName(inf.first_name, inf.middle_name, inf.last_name, inf.reference_id)}
                                                             </div>
-                                                            {formatName(inf.first_name, inf.middle_name, inf.last_name, inf.reference_id)}
-                                                        </div>
-                                                    </div>
-                                                    <div className="py-4 px-5 flex items-center">
-                                                        <div className="flex flex-col gap-1">
-                                                            <StatusBadge
-                                                                record={{
-                                                                    ...inf,
-                                                                    clinical_status: isDEFAULTED ? 'DEFAULTED' : inf.clinical_status
-                                                                }}
-                                                                emphasize={isDEFAULTED}
-                                                                className="rounded-sm"
-                                                            />
-                                                            {inf.next_due_vaccine && (
-                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter leading-tight max-w-[120px]">
-                                                                    {inf.next_due_vaccine.replace('Pending: ', '')}
+                                                        </td>
+                                                        <td className="py-2 px-4 align-middle whitespace-nowrap">
+                                                            <div className="flex flex-col gap-1 min-w-0">
+                                                                <StatusBadge
+                                                                    record={{
+                                                                        ...inf,
+                                                                        clinical_status: isDEFAULTED ? 'DEFAULTED' : inf.clinical_status
+                                                                    }}
+                                                                    emphasize={isDEFAULTED}
+                                                                    className="rounded-md"
+                                                                />
+                                                                {inf.next_due_vaccine && (
+                                                                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider truncate max-w-[120px]">
+                                                                        {inf.next_due_vaccine.replace('Pending: ', '')}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2 px-4 align-middle whitespace-nowrap">
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <MapPin size={11} className="text-slate-400 shrink-0" />
+                                                                <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider truncate">
+                                                                    {inf.locality || inf.purok || 'General'}
                                                                 </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="py-4 px-4 flex items-center">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <MapPin size={11} className="text-slate-300 shrink-0" />
-                                                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight leading-tight">
-                                                                {inf.locality || inf.purok || 'General'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2 px-4 align-middle text-center whitespace-nowrap">
+                                                            <span className={`text-xs font-bold ${inf.days_overdue > 30 ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                                {isDEFAULTED || inf.days_overdue > 365 ? '> 1 Yr' : `${inf.days_overdue || 0}d`}
                                                             </span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="py-4 px-4 flex justify-center items-center text-center">
-                                                        <span className={`text-xs font-black ${inf.days_overdue > 30 ? 'text-rose-600' : 'text-slate-700'}`}>
-                                                            {isDEFAULTED || inf.days_overdue > 365 ? '> 1 Year (Audit Required)' : `${inf.days_overdue || 0}d`}
-                                                        </span>
-                                                    </div>
-                                                    <div className="py-4 px-5 flex justify-center items-center">
-                                                        {isDEFAULTED || inf.days_overdue > 365 ? (
-                                                            <span className="text-[10px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
-                                                        ) : inf.days_overdue >= 30 ? (
-                                                            <span className="text-[10px] font-bold text-rose-700 border border-rose-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 1 Critical</span>
-                                                        ) : inf.days_overdue > 0 ? (
-                                                            <span className="text-[10px] font-bold text-amber-600 border border-amber-500 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 2 Elevated</span>
-                                                        ) : (
-                                                            <span className="text-[10px] font-bold text-emerald-700 border border-emerald-600 px-2 py-1 bg-white uppercase tracking-widest rounded-sm whitespace-nowrap">Tier 3 Routine</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="py-4 px-5 flex justify-end items-center">
-                                                        <div className="flex items-center justify-end gap-2 w-full">
+                                                        </td>
+                                                        <td className="py-2 px-4 align-middle text-center whitespace-nowrap">
+                                                            {isDEFAULTED || inf.days_overdue > 365 ? (
+                                                                <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-0.5 bg-rose-50/50 uppercase tracking-wider rounded-md whitespace-nowrap">Tier 1 Critical</span>
+                                                            ) : inf.days_overdue >= 30 ? (
+                                                                <span className="text-[9px] font-bold text-rose-700 border border-rose-600 px-2 py-0.5 bg-rose-50/50 uppercase tracking-wider rounded-md whitespace-nowrap">Tier 1 Critical</span>
+                                                            ) : inf.days_overdue > 0 ? (
+                                                                <span className="text-[9px] font-bold text-amber-600 border border-amber-500 px-2 py-0.5 bg-amber-50/50 uppercase tracking-wider rounded-md whitespace-nowrap">Tier 2 Elevated</span>
+                                                            ) : (
+                                                                <span className="text-[9px] font-bold text-green-700 border border-green-600 px-2 py-0.5 bg-green-50/50 uppercase tracking-wider rounded-md whitespace-nowrap">Tier 3 Routine</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2 px-4 align-middle text-right whitespace-nowrap">
                                                             <button
                                                                 onClick={(e) => {
                                                                     if (rec.action) {
@@ -521,44 +558,39 @@ export default function MidwifeDashboard() {
                                                                         rec.action();
                                                                     }
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-sm border transition-all text-[10px] font-bold uppercase tracking-widest whitespace-nowrap cursor-pointer ${rec.style} w-full`}
+                                                                className={`flex items-center justify-center gap-1 px-3 py-1.5 rounded-md border transition-all text-[10px] font-bold uppercase tracking-wider cursor-pointer ${rec.style} w-full`}
                                                             >
                                                                 {rec.text}
                                                             </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
-                        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-center">
+                        <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-center shrink-0">
                             <button
                                 onClick={() => navigate('/clinical/registry')}
-                                className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:text-slate-600 transition-colors flex items-center gap-2"
+                                className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors flex items-center gap-1.5"
                             >
-                                View Full Registry <ChevronRight size={14} />
+                                View Full Registry <ChevronRight size={12} />
                             </button>
                         </div>
                     </div>
-
-                    {/* Dynamic Field Kit Planner moved to new grid */}
                 </div>
 
                 {/* Sidebar: Strategic Follow-Up */}
                 <div className="lg:col-span-1 h-[500px]">
-
-                    {/* Outreach Recommendation */}
-                    <div className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden h-full flex flex-col transition-all hover:shadow-md">
-                        <div className="p-6 border-b-2 border-emerald-800 bg-white">
-                            <div className="flex items-center gap-2 mb-1">
-                                <ShieldCheck size={16} className="text-emerald-800" />
-                                <h2 className="text-xs font-black text-emerald-800 uppercase tracking-[0.15em]">Strategic Follow-Up</h2>
+                    <div className="bg-white border border-slate-200 rounded-md shadow-sm overflow-hidden h-full flex flex-col transition-all hover:shadow-md">
+                        <div className="px-5 py-4 border-b border-slate-200 bg-white shrink-0">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-green-800" />
+                                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Strategic Follow-Up</h2>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Recommended Focus Area</p>
                         </div>
 
                         <div className="p-6 flex-1 flex flex-col justify-between">
@@ -566,7 +598,7 @@ export default function MidwifeDashboard() {
                                 <>
                                     <div className="space-y-4">
                                         <div className="flex justify-between items-start">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-700 bg-white px-2.5 py-1 rounded-sm border border-rose-600">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
                                                 Priority Area
                                             </span>
                                             <div className="p-2 bg-rose-50 rounded-sm">
@@ -574,19 +606,19 @@ export default function MidwifeDashboard() {
                                             </div>
                                         </div>
 
-                                        <h3 className="text-xl font-black text-slate-800">{spatialData.clusters[0].locality}</h3>
-                                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                                        <h3 className="text-lg font-black text-slate-800">{spatialData.clusters[0].locality}</h3>
+                                        <p className="text-xs text-slate-500 font-medium leading-relaxed">
                                             Concentrated backlog detected. Coordinated <span className="font-bold text-slate-900">home visits</span> are recommended for this sector to improve coverage.
                                         </p>
-                                        <div className="bg-emerald-50 border-l-4 border-emerald-800 p-4 rounded-sm">
-                                            <p className="text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-1">Operational Directive</p>
-                                            <p className="text-[11px] font-bold text-emerald-600 leading-tight">Address {spatialData.clusters[0].total_infants || spatialData.clusters[0].count} critical cases in this locality.</p>
+                                        <div className="bg-green-50 border-l-4 border-green-800 p-4 rounded-md">
+                                            <p className="text-[10px] font-black text-green-800 uppercase tracking-widest mb-1">Operational Directive</p>
+                                            <p className="text-[11px] font-bold text-green-600 leading-tight">Address {spatialData.clusters[0].total_infants || spatialData.clusters[0].count} critical cases in this locality.</p>
                                         </div>
                                     </div>
 
                                     <button
                                         onClick={() => navigate('/clinical/map')}
-                                        className="w-full text-slate-400 hover:text-emerald-800 hover:bg-emerald-50 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all py-3 border border-slate-100 rounded-sm"
+                                        className="w-full text-slate-500 hover:text-green-800 hover:bg-green-50 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all py-3 border border-slate-200 rounded-md"
                                     >
                                         <MapIcon size={14} />
                                         View Triage Map
@@ -595,11 +627,11 @@ export default function MidwifeDashboard() {
                                 </>
                             ) : (
                                 <div className="py-12 text-center h-full flex flex-col justify-center">
-                                    <div className="w-16 h-16 bg-emerald-50 rounded-sm flex items-center justify-center mx-auto mb-4">
-                                        <ShieldCheck size={32} className="text-emerald-800" />
+                                    <div className="w-16 h-16 bg-green-50 rounded-md flex items-center justify-center mx-auto mb-4 border border-green-100">
+                                        <ShieldCheck size={32} className="text-green-800" />
                                     </div>
-                                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Sector Secured</h3>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No spatial risks identified</p>
+                                    <h3 className="text-xs font-bold text-slate-905 uppercase tracking-wider mb-1">Sector Secured</h3>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">No spatial risks identified</p>
                                 </div>
                             )}
                         </div>
@@ -607,88 +639,130 @@ export default function MidwifeDashboard() {
                 </div>
             </div>
 
-            {/* ROW 2: FIELD KIT + BOTTLENECKS */}
+            {/* ROW 2: BHW OUTREACH MONITOR + BOTTLENECKS */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
-                {/* Dynamic Field Kit Planner */}
+                {/* Barangay Health Worker (BHW) Outreach Monitor */}
                 <div className="lg:col-span-2">
-                    <div className="bg-white border border-slate-200 border-t-4 border-t-emerald-700 rounded-sm shadow-sm h-[350px] flex flex-col">
-                        <div className="p-6 border-b border-slate-100 shrink-0 flex justify-between items-start">
-                            <div>
-                                <h2 className="text-xs font-black text-slate-800 tracking-widest uppercase">DAILY REQUISITION & FIELD KIT</h2>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
-                                    BASED ON {timeframe === 'today' ? "TODAY'S" : "THIS WEEK'S"} ACTIVE QUEUE
+                    <div className="bg-white border border-slate-200 rounded-md shadow-sm h-[350px] flex flex-col overflow-hidden border-t-4 border-[#084C39]">
+                        <div className="px-5 py-4 border-b border-slate-200 shrink-0 flex justify-between items-center bg-white">
+                            <div className="flex items-start flex-col">
+                                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                                    👥 BARANGAY HEALTH WORKER (BHW) OUTREACH MONITOR
+                                </h2>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase mt-0.5">
+                                    Active field assignments and home visitation logs for Barangay Langgam.
                                 </p>
-                            </div>
-                            <div className="flex bg-slate-100 p-1 rounded-md gap-1">
-                                <button
-                                    onClick={() => setTimeframe('today')}
-                                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'today' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                                >
-                                    Today
-                                </button>
-                                <button
-                                    onClick={() => setTimeframe('week')}
-                                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all ${timeframe === 'week' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                                >
-                                    This Week
-                                </button>
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-0 space-y-1">
-                            {fieldKitData.length === 0 ? (
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest py-12 text-center">Queue Clear: No vaccines required for today's operational queue.</p>
-                            ) : (
-                                fieldKitData.map((item, idx) => (
-                                    <button
-                                        key={idx}
-                                        onClick={() => setSelectedVaccineModal(item)}
-                                        className="w-full flex justify-between items-center py-3 border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer group text-left"
-                                    >
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-bold text-slate-700 group-hover:text-emerald-800 transition-colors">{item.vaccineName}</span>
-                                        </div>
-                                        <span className="text-sm font-black text-emerald-700 bg-emerald-50/50 px-2 py-1 rounded-sm border border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-200 transition-all">
-                                            {item.requiredDoses} Doses
-                                        </span>
-                                    </button>
-                                ))
-                            )}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            <table className="w-full border-collapse text-left text-xs">
+                                <thead className="bg-[#084C39] text-white sticky top-0 z-10">
+                                    <tr className="border-b border-slate-200">
+                                        <th className="py-2.5 px-5 text-[10px] font-black uppercase tracking-wider">ASSIGNED BHW</th>
+                                        <th className="py-2.5 px-5 text-[10px] font-black uppercase tracking-wider">TARGET INFANT</th>
+                                        <th className="py-2.5 px-5 text-[10px] font-black uppercase tracking-wider">LOCALITY</th>
+                                        <th className="py-2.5 px-5 text-[10px] font-black uppercase tracking-wider text-center">STATUS</th>
+                                        <th className="py-2.5 px-5 text-[10px] font-black uppercase tracking-wider text-right">ACTION</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {isLoading ? (
+                                        <tr>
+                                            <td colSpan={5} className="py-12 px-5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                                <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin text-green-800" />
+                                                Syncing active field deployments...
+                                            </td>
+                                        </tr>
+                                    ) : error ? (
+                                        <tr>
+                                            <td colSpan={5} className="py-12 px-5 text-center text-xs font-semibold text-rose-600 uppercase tracking-wider">
+                                                Error: {error}
+                                            </td>
+                                        </tr>
+                                    ) : activeAssignments.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="py-12 px-5 text-center text-xs font-semibold text-slate-550 uppercase tracking-wider">
+                                                No active infant follow-up assignments found.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        activeAssignments.map((assignment, idx) => {
+                                            const displayStatus = assignment.assignment_status || assignment.task_status || 'ASSIGNED';
+                                            const localityStr = assignment.infant?.address_purok || assignment.infant?.address_sitio || assignment.infant?.address_barangay || assignment.purok || assignment.sitio || assignment.barangay || 'Locality unassigned';
+                                            return (
+                                                <tr key={assignment.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                                                    <td className="py-2.5 px-5 font-semibold text-slate-800 align-middle">
+                                                        {assignment.assigned_bhw_name || 'Unassigned'}
+                                                    </td>
+                                                    <td className="py-2.5 px-5 font-black text-slate-800 align-middle">
+                                                        {formatFullName(assignment.first_name, assignment.middle_name, assignment.last_name) || 'Unnamed Infant'}
+                                                    </td>
+                                                    <td className="py-2.5 px-5 text-slate-600 font-medium align-middle max-w-[155px] truncate whitespace-nowrap" title={localityStr}>
+                                                        {localityStr}
+                                                    </td>
+                                                    <td className="py-2.5 px-5 text-center align-middle">
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                            displayStatus === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                                                            displayStatus === 'ACKNOWLEDGED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                            'bg-green-50 text-green-700 border border-green-200'
+                                                        }`}>
+                                                            {displayStatus}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-5 text-right align-middle">
+                                                        <button
+                                                            onClick={() => navigate('/clinical/follow-ups')}
+                                                            className="inline-flex items-center justify-center gap-1 border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50 transition-all rounded-sm active:scale-95 whitespace-nowrap"
+                                                        >
+                                                            REVIEW
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Trend Metrics Summary */}
+                        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 shrink-0 text-xs text-slate-500 font-medium">
+                            📈 OUTREACH METRIC: 50% of targeted defaulting households have been reached this week.
                         </div>
                     </div>
                 </div>
 
                 {/* Follow-Up Bottlenecks */}
                 <div className="lg:col-span-1">
-                    <div className="bg-white border border-slate-200 border-t-4 border-t-emerald-800 rounded-sm shadow-sm overflow-hidden flex flex-col h-[350px] transition-all hover:shadow-md">
-                        <div className="p-6 border-b-2 border-emerald-800 bg-white shrink-0">
-                            <div className="flex items-center gap-2 mb-1">
+                    <div className="bg-white border border-slate-200 rounded-md shadow-sm overflow-hidden flex flex-col h-[350px] transition-all hover:shadow-md">
+                        <div className="px-5 py-4 border-b border-slate-200 bg-white shrink-0">
+                            <div className="flex items-center gap-2">
                                 <AlertCircle size={16} className="text-rose-600" />
-                                <h2 className="text-xs font-black text-emerald-800 uppercase tracking-[0.15em]">Follow-Up Bottlenecks</h2>
+                                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Follow-Up Bottlenecks</h2>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Barriers to effective follow-up</p>
                         </div>
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-3">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-2.5">
                             {[
                                 { label: 'Needs Home Visit', count: bottlenecks.homeVisit, icon: Home, color: 'text-rose-600', bg: 'bg-rose-50', path: '/clinical/registry?urgency=overdue' },
                                 { label: 'Unreachable (SMS/Phone)', count: bottlenecks.unreachable, icon: Phone, color: 'text-orange-600', bg: 'bg-orange-50' },
                                 { label: 'No Exact Address', count: bottlenecks.addressMissing, icon: MapPin, color: 'text-amber-600', bg: 'bg-amber-50' },
-                                { label: 'Severe Overdue (>90d)', count: bottlenecks.severeOverdue, icon: Clock, color: 'text-red-900', bg: 'bg-red-50', path: '/clinical/registry?urgency=overdue' },
-                                { label: 'Validation Required', count: bottlenecks.validationRequired, icon: Search, color: 'text-emerald-800', bg: 'bg-emerald-50', path: '/clinical/validation' }
+                                { label: 'Severe Defaulter (>90d)', count: bottlenecks.severeOverdue, icon: Clock, color: 'text-red-900', bg: 'bg-red-50', path: '/clinical/registry?urgency=overdue' },
+                                { label: 'Validation Required', count: bottlenecks.validationRequired, icon: Search, color: 'text-green-800', bg: 'bg-green-50', path: '/clinical/validation' }
                             ].map((item, idx) => (
                                 <div
                                     key={idx}
                                     onClick={() => item.path && navigate(item.path)}
-                                    className={`flex items-center justify-between group p-2.5 rounded-sm transition-all ${item.path ? 'cursor-pointer hover:bg-slate-50 active:scale-[0.98]' : 'cursor-default'}`}
+                                    className={`flex items-center justify-between group p-2 rounded-md transition-all ${item.path ? 'cursor-pointer hover:bg-slate-50 active:scale-[0.98] border border-transparent hover:border-slate-200' : 'cursor-default border border-transparent'}`}
                                 >
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-sm ${item.bg} ${item.color} group-hover:scale-110 transition-transform`}>
+                                        <div className={`p-2 rounded-md ${item.bg} ${item.color} group-hover:scale-105 transition-transform`}>
                                             <item.icon size={16} />
                                         </div>
-                                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{item.label}</span>
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{item.label}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`text-sm font-black ${item.count > 0 ? item.color : 'text-slate-300'}`}>{item.count}</span>
+                                        <span className={`text-xs font-black ${item.count > 0 ? item.color : 'text-slate-300'}`}>{item.count}</span>
                                         {item.path && <ChevronRight size={12} className="text-slate-300 group-hover:text-slate-500 transition-colors" />}
                                     </div>
                                 </div>
@@ -700,10 +774,10 @@ export default function MidwifeDashboard() {
 
             {/* 3. ANALYTICS ROW: CHART */}
             <div className="grid grid-cols-1 mt-2">
-                <div className="bg-white border border-slate-200 rounded-sm p-8 shadow-sm flex flex-col h-[400px]">
+                <div className="bg-white border border-slate-200 rounded-md p-8 shadow-sm flex flex-col h-[400px]">
                     <div className="flex items-start justify-between mb-8 gap-4">
                         <div className="flex flex-col gap-1">
-                            <h2 className="text-xs font-black text-emerald-800 uppercase tracking-[0.15em]">System Impact & Defaulter Rate</h2>
+                            <h2 className="text-xs font-black text-green-800 uppercase tracking-[0.15em]">System Impact & Defaulter Rate</h2>
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">6-Month Trajectory of Program Engagement</p>
                         </div>
                     </div>
@@ -745,72 +819,7 @@ export default function MidwifeDashboard() {
                     </div>
                 </div>
             </div>
-            <FieldKitModal
-                vaccine={selectedVaccineModal}
-                onClose={() => setSelectedVaccineModal(null)}
-            />
         </div>
     );
 }
-
-// -- Field kit drill-down modal component --
-const FieldKitModal = ({ vaccine, onClose }) => {
-    if (!vaccine) return null;
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div
-                className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-                onClick={onClose}
-            />
-            <div className="relative bg-white rounded-sm shadow-xl p-6 w-[500px] max-w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
-                <div className="mb-6">
-                    <h2 className="text-emerald-800 font-black text-lg uppercase tracking-tight leading-none">
-                        INFANTS REQUIRING {vaccine.vaccineName}
-                    </h2>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2">
-                        Clinical Allocation Directive • {vaccine.requiredDoses} Doses Total
-                    </p>
-                </div>
-
-                <div className="overflow-y-auto flex-1 space-y-2 pr-2 custom-scrollbar">
-                    {vaccine.infantsList && vaccine.infantsList.length > 0 ? (
-                        vaccine.infantsList.map((inf, i) => (
-                            <div key={i} className="p-3 border border-slate-100 rounded-sm hover:border-emerald-200 transition-colors bg-slate-50/30">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight block">
-                                            {inf.name}
-                                        </span>
-                                        <div className="flex items-center gap-1.5 mt-1">
-                                            <MapPin size={10} className="text-emerald-600" />
-                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                                                {inf.locality || 'Unspecified Sector'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2 py-0.5 border border-slate-100">
-                                        {inf.id}
-                                    </span>
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="py-12 text-center border-2 border-dashed border-slate-100 rounded-sm">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8">
-                                No specific infant data found for this clinical directive.
-                            </p>
-                        </div>
-                    )}
-                </div>
-
-                <button
-                    onClick={onClose}
-                    className="mt-8 w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-black py-4 rounded-sm text-[10px] tracking-[0.2em] uppercase transition-all shadow-sm active:scale-[0.98]"
-                >
-                    Close Directive
-                </button>
-            </div>
-        </div>
-    );
-};
 

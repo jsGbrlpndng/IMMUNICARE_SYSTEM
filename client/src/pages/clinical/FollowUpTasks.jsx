@@ -114,7 +114,7 @@ const FollowUpTasks = () => {
         }
         if (isBhw) {
             if (showUrgentOnly) {
-                results = results.filter(item => item?.is_midwife_delegated);
+                results = results.filter(item => item?.is_midwife_requested_active);
             }
         }
         return results;
@@ -122,8 +122,8 @@ const FollowUpTasks = () => {
 
     const sortedFollowUps = useMemo(() => {
         return [...filteredFollowUps].sort((a, b) => {
-            if (Boolean(a?.is_midwife_delegated) !== Boolean(b?.is_midwife_delegated)) {
-                return a?.is_midwife_delegated ? -1 : 1;
+            if (Boolean(a?.is_midwife_requested_active) !== Boolean(b?.is_midwife_requested_active)) {
+                return a?.is_midwife_requested_active ? -1 : 1;
             }
             if (Boolean(a?.cluster_priority) !== Boolean(b?.cluster_priority)) {
                 return a?.cluster_priority ? -1 : 1;
@@ -256,8 +256,8 @@ const FollowUpTasks = () => {
     };
 
     const renderInfantRow = (infant, isNested = false) => {
-        const isUrgent = isBhw && infant?.is_midwife_delegated;
-        
+        const isUrgent = isBhw && infant?.is_midwife_requested_active;
+
         let rowClass = "align-top transition-colors ";
         if (isUrgent) {
             rowClass += "border-l-4 border-l-amber-500 bg-amber-50/40 hover:bg-amber-100/40";
@@ -282,7 +282,7 @@ const FollowUpTasks = () => {
                                         Cluster Priority
                                     </span>
                                 )}
-                                {isBhw && infant?.is_midwife_delegated && (
+                                {isUrgent && (
                                     <span className="inline-flex border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">
                                         URGENT: Midwife Requested
                                     </span>

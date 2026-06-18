@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
@@ -63,11 +63,11 @@ const URGENCY = {
     },
     completed: {
         label:     'Completed',
-        pill:      'bg-emerald-50 text-emerald-700 border-emerald-200',
-        dot:       'bg-emerald-400',
+        pill:      'bg-emerald-50 text-[#064E3B] border-emerald-300',
+        dot:       'bg-[#084C39]',
         row:       '',
-        kpiText:   'text-emerald-600',
-        kpiBorder: 'border-l-emerald-500',
+        kpiText:   'text-[#084C39]',
+        kpiBorder: 'border-l-[#084C39]',
     },
     pending_validation: {
         label:     'Pending review',
@@ -291,26 +291,27 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
     // Portal target - escapes StaffLayout stacking context
     const modalContent = (
         <div
-            className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 flex items-center justify-center"
+            className="fixed top-0 left-0 w-screen h-screen z-[9999] bg-black/50 flex items-center justify-center animate-fadeIn"
             onClick={onClose}
         >
             <div
-                className="bg-white border border-slate-200 rounded-sm w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl"
+                className="bg-white border border-slate-300 rounded-none w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Modal Header */}
-                <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
+                <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-900 capitalize">
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#084C39]">Clinical Record Timeline</p>
+                        <h3 className="text-lg font-black text-slate-900 capitalize">
                             {formatFullNameFromObject(infant)}
-                        </h2>
-                        <p className="text-xs font-medium text-slate-500 mt-0.5">
-                            {infant.reference_id} · Vaccination Timeline
+                        </h3>
+                        <p className="text-xs font-semibold text-slate-500 mt-1">
+                            REF ID: {infant.reference_id}
                         </p>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-[4px] transition-colors flex-shrink-0"
+                        className="p-1.5 text-slate-400 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 flex-shrink-0"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -352,7 +353,7 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                 let badgeClass = 'bg-slate-50 text-slate-600 border-slate-200';
                                 let badgeLabel = 'Upcoming';
                                 if (isCompleted) {
-                                    badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                    badgeClass = 'bg-emerald-50 text-[#064E3B] border-emerald-300';
                                     badgeLabel = 'Completed';
                                 } else if (isExpiredHepB) {
                                     badgeClass = 'bg-slate-900 text-white border-slate-950';
@@ -382,18 +383,16 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                         )}
 
                                         {/* Timeline node dot */}
-                                        <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10 ${
-                                            isCompleted ? 'bg-emerald-500' : isExpiredHepB ? 'bg-slate-900' : isDefaulter ? 'bg-red-600' : isOverdue ? 'bg-amber-500' : isIneligible ? 'bg-slate-400' : 'bg-slate-300'
-                                        }`}>
+                                        <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center z-10 bg-slate-300`}>
                                             {isCompleted
-                                                ? <CircleCheck className="w-3 h-3 text-white" />
-                                                : <Clock className="w-3 h-3 text-white" />
+                                                ? <CircleCheck className="w-3 h-3 text-[#084C39]" />
+                                                : <Clock className="w-3 h-3 text-slate-400" />
                                             }
                                         </div>
 
                                         {/* Content card */}
-                                        <div className={`p-4 border rounded-[4px] ${
-                                            isCompleted ? 'bg-white border-slate-100' : 'bg-white border-slate-200'
+                                        <div className={`p-4 border rounded-none ${
+                                            isCompleted ? 'bg-white border-slate-200' : 'bg-white border-slate-200'
                                         }`}>
                                             <div className="flex items-start justify-between gap-4">
                                                 <div>
@@ -401,21 +400,21 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                         {item?.vaccineName || item?.vaccine_name || 'Vaccine'}
                                                     </h4>
                                                     <p className="text-[10px] font-bold text-slate-500 uppercase mt-1 flex items-center gap-2">
-                                                        <Calendar className="w-3 h-3" />
+                                                        <Calendar className="w-3 h-3 text-slate-400" />
                                                         Target: {formatDate(actionableDate)}
                                                         {isCompleted && (item?.administeredDate || item?.actual_date) &&
                                                             ` · Given: ${formatDate(item.administeredDate || item.actual_date)}`
                                                         }
                                                         {needsCatchUp && daysLate > 0 && (
-                                                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-black ${
-                                                                isDefaulter ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'
+                                                            <span className={`ml-1 px-1.5 py-0.5 text-[9px] font-black border uppercase tracking-wider rounded-none ${
+                                                                isDefaulter ? 'bg-red-600 border-red-700 text-white' : 'bg-red-100 border-red-200 text-red-700'
                                                             }`}>
                                                                 {daysLate}d late
                                                             </span>
                                                         )}
                                                     </p>
                                                 </div>
-                                                <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex-shrink-0 ${badgeClass}`}>
+                                                <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border flex-shrink-0 rounded-none ${badgeClass}`}>
                                                     {badgeLabel}
                                                 </span>
                                             </div>
@@ -431,12 +430,12 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
                                                             <button
                                                                 onClick={() => onRecordDose(item)}
                                                                 disabled={isDisabled}
-                                                                className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                                                                className={`px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-colors ${
                                                                     isDisabled
-                                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                                                         : needsCatchUp
-                                                                            ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                                                                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                                                            ? 'bg-red-600 hover:bg-red-750 text-white'
+                                                                            : 'bg-[#084C39] hover:bg-[#07362A] text-white'
                                                                 }`}
                                                             >
                                                                 {isExpiredHepB
@@ -474,6 +473,24 @@ const NIPTimelineModal = ({ infant, onClose, onRecordDose }) => {
     return ReactDOM.createPortal(modalContent, document.body);
 };
 
+/* Compact address formatter utility */
+const formatCompactAddress = (address, barangay) => {
+    if (!address) return barangay || 'General';
+    const parts = address.split(',').map(p => p.trim());
+    const filteredParts = parts.filter(p => {
+        const lower = p.toLowerCase();
+        return !lower.includes('san pedro') &&
+               !lower.includes('laguna') &&
+               !lower.includes('calabarzon') &&
+               !lower.includes('philippines');
+    });
+    if (filteredParts.length > 0) {
+        const mainPart = filteredParts.slice(0, 2).join(', ');
+        return mainPart;
+    }
+    return address;
+};
+
 /* Main page component */
 const NIPSchedulePage = () => {
     const { user } = useAuth();
@@ -498,7 +515,7 @@ const NIPSchedulePage = () => {
         { key: 'overdue',         label: 'Overdue',         icon: TriangleAlert, colorText: 'text-red-600',     colorBorder: 'border-l-red-500'     },
         { key: 'due_today',       label: 'Due today',       icon: Clock,         colorText: 'text-orange-600',  colorBorder: 'border-l-orange-400'   },
         { key: 'due_soon',        label: 'Due soon',        icon: Clock,         colorText: 'text-amber-600',   colorBorder: 'border-l-amber-400'    },
-        { key: 'completed_today', label: 'Completed today', icon: CircleCheck,   colorText: 'text-emerald-600', colorBorder: 'border-l-emerald-500'  },
+        { key: 'completed_today', label: 'Completed today', icon: CircleCheck,   colorText: 'text-[#084C39]', colorBorder: 'border-l-[#084C39]'  },
     ];
 
     /* Fetch queue */
@@ -558,13 +575,9 @@ const NIPSchedulePage = () => {
     }, [allInfants, urgencyFilter, searchQuery]);
 
     /* Handlers */
-    // Called from inside NIPTimelineModal when "Record Dose" is clicked on a vaccine item.
-    // Items are camelCase per NIPScheduleService._mapRowToFrontend:
-    //   vaccineName, vaccineCode, doseNumber, scheduleId, dueDate
     const handleRecordDose = (item) => {
         if (!timelineModal) return;
         setVacModal({
-            // Ensure infant.name is available - RecordVaccinationModal uses this for display
             infant: {
                 ...timelineModal,
                 name: formatFullNameFromObject(timelineModal),
@@ -585,7 +598,6 @@ const NIPSchedulePage = () => {
         setUrgencyFilter(prev => prev === key ? 'all' : key);
     };
 
-    // After a successful dose record: close both modals, refresh the table
     const afterAction = () => {
         setVacModal(null);
         setTimelineModal(null);
@@ -594,25 +606,31 @@ const NIPSchedulePage = () => {
 
     /* Render */
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
 
             {/* Page Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl font-bold text-slate-900 tracking-tight">Vaccination Schedule</h1>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                        Due, upcoming, and overdue vaccinations
-                    </p>
+            <section className="border border-slate-300 bg-white px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center bg-[#084C39] text-white shrink-0">
+                            <Calendar className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#084C39]">Clinical Operations Control</p>
+                            <h1 className="mt-1 text-2xl font-black text-slate-950">Vaccination Schedule</h1>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">Manage pending, due, and overdue NIP immunization records.</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => fetchQueue({ silent: true })}
+                        disabled={loading || refreshing}
+                        className="inline-flex h-10 w-10 items-center justify-center border border-slate-300 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+                        title="Refresh"
+                    >
+                        <RefreshCw className={`w-4 h-4 text-slate-700 ${loading || refreshing ? 'animate-spin' : ''}`} />
+                    </button>
                 </div>
-                <button
-                    onClick={() => fetchQueue({ silent: true })}
-                    disabled={loading || refreshing}
-                    className="bg-white border border-slate-200 p-2 rounded-[4px] hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    title="Refresh"
-                >
-                    <RefreshCw className={`w-4 h-4 text-slate-500 ${loading || refreshing ? 'animate-spin' : ''}`} />
-                </button>
-            </div>
+            </section>
 
             {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -623,8 +641,8 @@ const NIPSchedulePage = () => {
                         <button
                             key={kpi.key}
                             onClick={() => handleKPIClick(kpi.key)}
-                            className={`text-left bg-white border border-slate-200 border-l-4 ${kpi.colorBorder} p-4 rounded-sm hover:bg-slate-50 transition-colors ${
-                                isActive ? 'ring-1 ring-inset ring-[#2E7D32]' : ''
+                            className={`text-left bg-white border border-slate-300 border-l-4 ${kpi.colorBorder} p-4 hover:bg-slate-50 transition-colors ${
+                                isActive ? 'ring-1 ring-inset ring-[#084C39]' : ''
                             }`}
                         >
                             <div className="flex items-center justify-between gap-2 mb-1">
@@ -637,8 +655,8 @@ const NIPSchedulePage = () => {
                                 {loading && allInfants.length === 0 ? '-' : (stats[kpi.key] ?? 0)}
                             </p>
                             {isActive && (
-                                <p className="text-xs text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active filter
+                                <p className="text-xs text-[#084C39] font-bold mt-1.5 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#084C39]"></span> Active filter
                                 </p>
                             )}
                         </button>
@@ -647,16 +665,16 @@ const NIPSchedulePage = () => {
             </div>
 
             {/* Search and filters */}
-            <div className="bg-white border border-slate-200 rounded-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 border border-slate-300 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 {/* Search input */}
-                <div className="relative w-72">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <div className="relative w-full sm:w-80">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search by name, ID, or barangay..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-[4px] text-xs font-semibold text-slate-700 focus:border-[#2E7D32] focus:bg-white outline-none transition-colors"
+                        className="h-10 w-full border border-slate-300 bg-white pl-9 pr-3 text-[11px] font-black uppercase tracking-wide text-slate-700 outline-none placeholder:text-slate-400 focus:border-[#084C39]"
                     />
                 </div>
 
@@ -674,10 +692,10 @@ const NIPSchedulePage = () => {
                             <button
                                 key={f}
                                 onClick={() => setUrgencyFilter(f)}
-                                className={`px-4 py-1.5 mr-2 mb-1 rounded-md text-xs font-semibold border transition-all ${
+                                className={`px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] border transition-all rounded-none ${
                                     urgencyFilter === f
-                                        ? 'bg-emerald-800 border-emerald-800 text-white shadow-sm'
-                                        : 'bg-white border-gray-300 text-gray-600 hover:bg-emerald-50'
+                                        ? 'bg-[#084C39] border-[#084C39] text-white shadow-sm'
+                                        : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-800'
                                 }`}
                             >
                                 {labels[f]}
@@ -688,37 +706,37 @@ const NIPSchedulePage = () => {
             </div>
 
             {/* Queue table */}
-            <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
+            <div className="overflow-hidden border border-slate-300 bg-white flex flex-col">
                 <div className="overflow-x-auto">
                     <div className="max-h-[calc(100vh-420px)] overflow-y-auto custom-scrollbar">
                         <table className="w-full text-left border-collapse">
-                            <thead className="sticky top-0 z-10">
-                                <tr className="border-b border-slate-200">
-                                    <th className="clinical-table-th">Ref. ID</th>
-                                    <th className="clinical-table-th">Infant</th>
-                                    <th className="clinical-table-th">Location</th>
-                                    <th className="clinical-table-th">Next vaccine</th>
-                                    <th className="clinical-table-th">Status</th>
-                                    <th className="clinical-table-th">Delay</th>
-                                    <th className="clinical-table-th text-right">Actions</th>
+                            <thead className="sticky top-0 z-10 bg-[#084C39] text-white">
+                                <tr>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">REF. ID</th>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">INFANT</th>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">LOCATION</th>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">NEXT VACCINE</th>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">STATUS</th>
+                                    <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-wider">DELAY</th>
+                                    <th className="px-5 py-3.5 text-right text-[10px] font-black uppercase tracking-wider">ACTIONS</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y divide-slate-200">
                                 {loading && allInfants.length === 0 ? (
                                     Array(6).fill(0).map((_, i) => (
                                         <tr key={`skeleton-${i}`} className="animate-pulse">
-                                            <td colSpan={7} className="px-4 py-2 bg-slate-50/50 h-10" />
+                                            <td colSpan={7} className="px-5 py-4 bg-slate-50/50 h-10 border-b border-slate-200" />
                                         </tr>
                                     ))
                                 ) : filtered.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-4 py-20 text-center">
+                                        <td colSpan={7} className="px-5 py-20 text-center">
                                              <div className="flex flex-col items-center gap-3">
-                                                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
-                                                     <Calendar size={32} className="text-slate-200" />
+                                                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-200">
+                                                     <Calendar size={32} className="text-slate-300" />
                                                  </div>
                                                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">No matching records</h3>
-                                                 <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                                                 <p className="text-xs text-slate-400 max-w-xs mx-auto font-semibold">
                                                      No schedule records match your selection. This list is based on validated NIP schedules for active infants.
                                                  </p>
                                              </div>
@@ -728,67 +746,73 @@ const NIPSchedulePage = () => {
                                     filtered.map(infant => {
                                         const cfg = getUrgencyConfig(infant.urgency);
                                         const statusLabel = infant.computed_schedule_status || cfg.label;
-                                        return (
-                                            <tr
+                                        return (                                            <tr
                                                 key={infant.id}
-                                                className={`hover:bg-slate-50/80 transition-colors group ${cfg.row}`}
+                                                className={`hover:bg-slate-50 transition-colors group ${cfg.row}`}
                                             >
                                                 {/* Ref. ID */}
-                                                <td className="clinical-table-td font-mono text-[10px] font-bold text-slate-500">
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle font-mono text-[10px] font-bold text-slate-500">
                                                     {infant.reference_id}
                                                 </td>
 
                                                 {/* Infant Name + guardian subtext */}
-                                                <td className="clinical-table-td">
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle">
                                                     <div className="flex flex-col">
-                                                        <span className="text-sm font-semibold text-slate-900 capitalize">
+                                                        <span className="text-sm font-black text-slate-900 capitalize group-hover:text-[#084C39] transition-colors leading-tight">
                                                             {formatFullNameFromObject(infant)}
                                                         </span>
-                                                        <span className="text-xs text-slate-500 font-medium mt-0.5">
+                                                        <span className="text-[10px] text-slate-500 font-bold mt-1 uppercase tracking-wider">
                                                             {infant.guardian_name || infant.mothers_maiden_name || infant.mother_name || '-'}
                                                         </span>
                                                     </div>
                                                 </td>
 
                                                 {/* Location */}
-                                                <td className="clinical-table-td">
-                                                    <div className="flex flex-col text-xs">
-                                                        <span className="text-slate-700 font-semibold">{infant.exact_address || infant.barangay}</span>
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle">
+                                                    <div className="flex flex-col text-xs max-w-[200px]">
+                                                        <span className="text-slate-900 font-black block truncate leading-tight" title={infant.exact_address}>
+                                                            {formatCompactAddress(infant.exact_address, infant.barangay)}
+                                                        </span>
+                                                        {infant.exact_address && (
+                                                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5 block truncate" title={`${infant.purok ? `${infant.purok}, ` : ''}${infant.barangay}`}>
+                                                                {infant.purok ? `${infant.purok}, ` : ''}{infant.barangay}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
 
                                                 {/* Next vaccine due */}
-                                                <td className="clinical-table-td text-xs font-bold text-slate-700">
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle text-xs font-bold text-slate-700">
                                                     {infant.next_due_vaccine || infant.next_due_date || '-'}
                                                 </td>
 
                                                 {/* Status badge */}
-                                                <td className="clinical-table-td">
-                                                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border shadow-sm ${cfg.pill}`}>
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle whitespace-nowrap">
+                                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 border text-[9px] font-black uppercase tracking-wider rounded-none h-5 leading-none ${cfg.pill}`}>
                                                         {statusLabel.replace(/_/g, ' ')}
                                                     </span>
                                                 </td>
 
                                                 {/* Delay - days overdue */}
-                                                <td className="clinical-table-td">
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle whitespace-nowrap">
                                                     {(infant.urgency === 'overdue' || infant.urgency === 'defaulter') && (infant.days_overdue > 0) ? (
-                                                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-black border ${
+                                                        <span className={`inline-flex items-center justify-center px-2 py-0.5 border text-[9px] font-black uppercase tracking-wider rounded-none h-5 leading-none ${
                                                             infant.days_overdue > 28
-                                                                ? 'bg-red-600 text-white border-red-700'
-                                                                : 'bg-red-50 text-red-700 border-red-200'
+                                                                ? 'bg-red-600 border-red-700 text-white'
+                                                                : 'bg-red-50 border-red-200 text-red-700'
                                                         }`}>
                                                             {infant.days_overdue}d late
                                                         </span>
                                                     ) : (
-                                                        <span className="text-slate-300 text-xs">-</span>
+                                                        <span className="text-slate-300 text-xs font-bold h-5 inline-flex items-center">-</span>
                                                     )}
                                                 </td>
 
                                                 {/* Actions */}
-                                                <td className="clinical-table-td text-right">
+                                                <td className="border-b border-slate-200 px-5 py-4 align-middle text-right whitespace-nowrap">
                                                     <button
                                                         onClick={() => setTimelineModal(infant)}
-                                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-md transition-colors"
+                                                        className="inline-flex items-center justify-center bg-[#084C39] hover:bg-[#07362A] text-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-all active:scale-95 whitespace-nowrap rounded-none border border-transparent"
                                                     >
                                                         Manage dose
                                                     </button>
@@ -804,8 +828,8 @@ const NIPSchedulePage = () => {
 
                 {/* Table footer */}
                 {!loading && (
-                    <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-                        <p className="text-xs font-medium text-slate-500">
+                    <div className="px-5 py-4 border-t border-slate-200 bg-slate-50">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                             Showing {filtered.length} of {allInfants.length} records
                         </p>
                     </div>

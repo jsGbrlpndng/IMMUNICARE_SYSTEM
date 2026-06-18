@@ -52,6 +52,7 @@ export default function Heatmap() {
     const [activeReport, setActiveReport] = useState(null);
     const [loadingReport, setLoadingReport] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     const selectedCluster = useMemo(() => {
         if (!mapState?.clusters || !selectedClusterId) return null;
@@ -356,7 +357,7 @@ export default function Heatmap() {
                 
                 {/* Header Left content */}
                 <div className="flex items-center gap-4">
-                    <div className="p-2.5 bg-emerald-700 rounded-xl shadow-sm">
+                    <div className="p-2.5 bg-[#084C39] rounded-xl shadow-sm">
                         <Activity className="text-white" size={20} />
                     </div>
                     <div>
@@ -392,7 +393,7 @@ export default function Heatmap() {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search clinical registry..."
-                            className="pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-200 transition-all w-64 placeholder:text-slate-300"
+                            className="pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#084C39]/10 focus:border-[#084C39]/30 transition-all w-64 placeholder:text-slate-300"
                         />
                         {searchQuery.trim() && (
                             <div className="absolute top-full right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl w-80 max-h-80 overflow-y-auto">
@@ -426,13 +427,17 @@ export default function Heatmap() {
             <div className="flex-1 flex overflow-hidden relative">
                 
                 {/* Map Column */}
-                <div className="flex-1 flex flex-col z-0 bg-white">
+                <div className={`flex flex-col bg-white ${
+                    isExpanded 
+                        ? 'fixed inset-0 z-[9999] w-screen h-screen rounded-none border-none' 
+                        : 'flex-1 z-0 relative'
+                }`}>
                     {/* Map Area */}
                     <div className="flex-1 relative overflow-hidden flex flex-col">
                         {/* Floating Status Badge - Non-intrusive geographical context */}
                         {!loading && derivedCounts.totalDefaulter === 0 && (
                             <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[1000] animate-in slide-in-from-top-4 duration-500">
-                                <div className="bg-emerald-800/90 backdrop-blur-md text-white px-6 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-500/30">
+                                <div className="bg-[#084C39]/90 backdrop-blur-md text-white px-6 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-[#084C39]/30">
                                     <Shield size={16} className="text-emerald-300" />
                                     <span className="text-[11px] font-black uppercase tracking-[0.2em]">✅ Zero Active Defaulters</span>
                                 </div>
@@ -459,52 +464,54 @@ export default function Heatmap() {
                                 setActiveFilters={setActiveFilters}
                                 derivedCounts={derivedCounts}
                                 barangayBoundaryData={barangayBoundaryData}
+                                isExpanded={isExpanded}
+                                setIsExpanded={setIsExpanded}
                             />
                         </ErrorBoundary>
                     </div>
 
                     {/* Dedicated Bottom Rail */}
-                    <div className="h-14 bg-slate-900 border-t-2 border-emerald-700 px-6 flex items-center justify-between flex-shrink-0 z-10 relative">
+                    <div className="h-14 bg-slate-50 border-t border-slate-200 px-6 flex items-center justify-between flex-shrink-0 z-10 relative">
                         <div className="flex items-center gap-6">
                             {mode === 'all' ? (
                                 <div className="flex items-center gap-6 text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
                                     <div className="flex flex-col">
-                                        <span className="text-white opacity-40 mb-0.5">Defaulters</span>
+                                        <span className="text-slate-400 mb-0.5">Defaulters</span>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-rose-500">Total: {derivedCounts.totalDefaulter}</span>
-                                            <span className="text-white/20">•</span>
-                                            <span className="text-slate-300">Mapped: {derivedCounts.mappedDefaulter}</span>
+                                            <span className="text-rose-600">Total: {derivedCounts.totalDefaulter}</span>
+                                            <span className="text-slate-200">•</span>
+                                            <span className="text-slate-600">Mapped: {derivedCounts.mappedDefaulter}</span>
                                             {derivedCounts.unmappedDefaulter > 0 && (
                                                 <>
-                                                    <span className="text-white/20">•</span>
-                                                    <span className="text-rose-300">Unmapped: {derivedCounts.unmappedDefaulter}</span>
+                                                    <span className="text-slate-200">•</span>
+                                                    <span className="text-rose-600">Unmapped: {derivedCounts.unmappedDefaulter}</span>
                                                 </>
                                             )}
                                         </div>
                                     </div>
 
-                                    <div className="w-[1px] h-6 bg-white/10"></div>
+                                    <div className="w-[1px] h-6 bg-slate-200"></div>
 
                                     <div className="flex flex-col">
-                                        <span className="text-white opacity-40 mb-0.5">Due Soon</span>
+                                        <span className="text-slate-400 mb-0.5">Due Soon</span>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-amber-400">Total: {derivedCounts.totalDueSoon}</span>
-                                            <span className="text-white/20">•</span>
-                                            <span className="text-slate-300">Mapped: {derivedCounts.mappedDueSoon}</span>
+                                            <span className="text-amber-600">Total: {derivedCounts.totalDueSoon}</span>
+                                            <span className="text-slate-200">•</span>
+                                            <span className="text-slate-600">Mapped: {derivedCounts.mappedDueSoon}</span>
                                         </div>
                                     </div>
 
-                                    <div className="w-[1px] h-6 bg-white/10"></div>
+                                    <div className="w-[1px] h-6 bg-slate-200"></div>
 
                                     <div className="flex items-center gap-4 pt-2">
-                                        <span className="text-emerald-400">On Track: {derivedCounts.totalOnTrack}</span>
-                                        <span className="text-slate-400">Completed: {derivedCounts.totalCompleted}</span>
+                                        <span className="text-[#084C39]">On Track: {derivedCounts.totalOnTrack}</span>
+                                        <span className="text-slate-500">Completed: {derivedCounts.totalCompleted}</span>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${mode === 'all' ? 'bg-emerald-500' : 'bg-rose-500'} animate-pulse`}></span>
-                                    <span className="text-[11px] font-black text-white tracking-widest uppercase">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${mode === 'all' ? 'bg-[#084C39]' : 'bg-rose-500'} animate-pulse`}></span>
+                                    <span className="text-[11px] font-black text-slate-800 tracking-widest uppercase">
                                         {activeFilters.statuses.length < 4 || activeFilters.shortcuts.length > 0 ? 'Filtered' : 'Global'} View: {allMarkersForMode.length} Infants
                                     </span>
                                 </div>
@@ -514,21 +521,21 @@ export default function Heatmap() {
                         <div className="flex items-center gap-6">
                             <button 
                                 onClick={() => setResetViewFlag(prev => prev + 1)}
-                                className="flex items-center gap-2 text-white/70 hover:text-white transition-colors group"
+                                className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors group"
                             >
                                 <Maximize size={14} className="group-hover:scale-110 transition-transform" />
                                 <span className="text-[10px] font-black tracking-widest uppercase">Reset View</span>
                             </button>
                             {mode === 'priority' && mapState?.recommended_actions?.find(a => a.type === 'FIELD_TARGET') && (
                                 <>
-                                    <div className="w-[1px] h-4 bg-white/20"></div>
+                                    <div className="w-[1px] h-4 bg-slate-200"></div>
                                     <button 
                                         onClick={() => {
                                             const target = mapState.recommended_actions.find(a => a.type === 'FIELD_TARGET');
                                             setSelectedClusterId(target.targetId);
                                             setMapTarget({ lat: target.lat, lng: target.lng, bounds: target.bounds });
                                         }}
-                                        className="flex items-center gap-2 text-amber-400/90 hover:text-amber-400 transition-colors group"
+                                        className="flex items-center gap-2 text-amber-700 hover:text-amber-800 transition-colors group"
                                     >
                                         <Target size={14} className="group-hover:scale-110 transition-transform" />
                                         <span className="text-[10px] font-black tracking-widest uppercase">Focus Top Priority</span>
@@ -584,7 +591,7 @@ export default function Heatmap() {
                                     if (!canAdjustEpsilon) return;
                                     setEps(Number(e.target.value));
                                 }}
-                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-700"
+                                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#084C39]"
                             />
                             <p className="text-[9px] text-slate-400 font-semibold mt-1">
                                 ⚠️ Exploration only. Deployments always use 300m standard.
@@ -592,7 +599,7 @@ export default function Heatmap() {
                         </div>
                     ) : (
                         <div className="flex items-center gap-2 p-4 border-t border-slate-200 bg-slate-50">
-                            <Shield size={14} className="text-emerald-700" />
+                            <Shield size={14} className="text-[#084C39]" />
                             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                                 Cluster Radius Locked: 300m (DOH Standard)
                             </span>
@@ -603,9 +610,9 @@ export default function Heatmap() {
             </div>
 
             {/* System Status Footer */}
-            <div className="h-10 bg-slate-900 flex items-center justify-between px-6 z-30 shrink-0">
-                <span className="text-emerald-400 text-[10px] font-mono tracking-widest">STATUS: LIVE SYNC ACTIVE</span>
-                <span className="text-slate-400 text-[10px] font-mono tracking-widest">DATABASE: SECURE | LAST UPDATED: JUST NOW</span>
+            <div className="h-10 bg-slate-50 border-t border-slate-200 flex items-center justify-between px-6 z-30 shrink-0">
+                <span className="text-[#084C39] text-[10px] font-mono font-bold tracking-widest">STATUS: LIVE SYNC ACTIVE</span>
+                <span className="text-slate-500 text-[10px] font-mono font-bold tracking-widest">DATABASE: SECURE | LAST UPDATED: JUST NOW</span>
             </div>
 
             {isReportModalOpen && selectedCluster && (

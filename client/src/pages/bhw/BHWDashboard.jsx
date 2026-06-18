@@ -15,6 +15,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
 import LogVisitModal from '../../components/LogVisitModal';
 
+const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
+
 const BHWDashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
@@ -37,8 +39,20 @@ const BHWDashboard = () => {
         const intervalId = window.setInterval(() => {
             fetchDashboardData({ silent: true });
         }, 10000);
+        const handleFollowUpUpdate = () => fetchDashboardData({ silent: true });
+        const handleFollowUpStorage = (event) => {
+            if (event.key === 'immunicare:followups-updated') {
+                fetchDashboardData({ silent: true });
+            }
+        };
+        window.addEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+        window.addEventListener('storage', handleFollowUpStorage);
 
-        return () => window.clearInterval(intervalId);
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('immunicare:followups-updated', handleFollowUpUpdate);
+            window.removeEventListener('storage', handleFollowUpStorage);
+        };
     }, [user]);
 
     const fetchDashboardData = async ({ silent = false } = {}) => {
@@ -73,10 +87,19 @@ const BHWDashboard = () => {
             if (followUpsRes.ok) {
                 const followUpsData = await followUpsRes.json();
                 const tasks = (followUpsData.follow_ups || [])
-                    .filter((item) => item?.status === 'DEFAULTER' || item?.status === 'DUE_SOON')
+                    .filter((item) =>
+                        ACTIVE_FIELD_TASK_STATUSES.includes(item?.task_status) ||
+                        item?.status === 'DEFAULTER' ||
+                        item?.status === 'DUE_SOON'
+                    )
                     .sort((a, b) => {
-                        if (Boolean(a?.is_midwife_delegated) !== Boolean(b?.is_midwife_delegated)) {
-                            return a?.is_midwife_delegated ? -1 : 1;
+                        if (Boolean(a?.is_midwife_requested_active) !== Boolean(b?.is_midwife_requested_active)) {
+                            return a?.is_midwife_requested_active ? -1 : 1;
+                        }
+                        const taskStatusA = ACTIVE_FIELD_TASK_STATUSES.indexOf(a?.task_status);
+                        const taskStatusB = ACTIVE_FIELD_TASK_STATUSES.indexOf(b?.task_status);
+                        if (taskStatusA !== taskStatusB) {
+                            return (taskStatusA === -1 ? 99 : taskStatusA) - (taskStatusB === -1 ? 99 : taskStatusB);
                         }
                         return (b?.days_overdue || 0) - (a?.days_overdue || 0);
                     })
@@ -178,6 +201,18 @@ const BHWDashboard = () => {
     };
 
     const getTaskStatusPill = (status) => {
+        if (status === 'ASSIGNED') {
+            return 'bg-green-50 text-green-700 border border-green-200';
+        }
+
+        if (status === 'ACKNOWLEDGED') {
+            return 'bg-amber-50 text-amber-700 border border-amber-200';
+        }
+
+        if (status === 'OVERDUE') {
+            return 'bg-rose-50 text-rose-700 border border-rose-200';
+        }
+
         if (status === 'DEFAULTER') {
             return 'bg-rose-50 text-rose-700 border border-rose-200';
         }
@@ -370,7 +405,8 @@ const BHWDashboard = () => {
                         </div>
                     ) : (
                         fieldTasks.map((task) => {
-                            const isUrgent = task?.is_midwife_delegated;
+                            const isUrgent = task?.is_midwife_requested_active;
+                            const displayStatus = task?.task_status || task?.status;
                             let rowClass = "flex flex-col gap-4 px-5 py-4 transition-colors lg:flex-row lg:items-center lg:justify-between ";
                             if (isUrgent) {
                                 rowClass += "border-l-4 border-l-amber-500 bg-amber-50/40 hover:bg-amber-100/40";
@@ -388,8 +424,8 @@ const BHWDashboard = () => {
                                             <p className="text-lg font-bold tracking-tight text-slate-900">
                                                 {formatFullNameFromObject(task) || 'Unnamed infant'}
                                             </p>
-                                            <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${getTaskStatusPill(task.status)}`}>
-                                                {task.status}
+                                            <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] ${getTaskStatusPill(displayStatus)}`}>
+                                                {displayStatus}
                                             </span>
                                             {isUrgent && (
                                                 <span className="inline-flex border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-amber-800">

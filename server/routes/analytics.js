@@ -8,7 +8,7 @@ const clinicalAuth = require('../middleware/clinicalAuth');
 const requireRole = require('../middleware/requireRole');
 const localityHelper = require('../utils/localityHelper');
 const InfantService = require('../services/InfantService');
-const { ROLES } = require('../constants/domain');
+const { ROLES, MIN_CLUSTER_INFANTS } = require('../constants/domain');
 const infantService = new InfantService(db);
 const engine = new EnhancedNIPScheduleEngine(db);
 
@@ -97,8 +97,9 @@ router.get('/dashboard-stats', async (req, res) => {
                 i => (i.urgency === 'defaulter' || i.computed_map_status === 'DEFAULTER') && i.geom_present && i.lat && i.lng
             );
             if (overdueWithGeo.length > 1) {
-                const dbscan = new DBSCANService(300, 3);
-                const clusters = dbscan.cluster(overdueWithGeo);
+                const dbscan = new DBSCANService(300, MIN_CLUSTER_INFANTS, db);
+                const clusters = (await dbscan.cluster(db, overdueWithGeo))
+                    .filter(clusterPoints => Array.isArray(clusterPoints) && clusterPoints.length >= MIN_CLUSTER_INFANTS);
                 clusterCount = clusters.length;
             }
         } catch (clusterErr) {
@@ -340,7 +341,7 @@ router.get('/system-impact', async (req, res) => {
             `, params);
             rows.push(monthRows[0]);
         }
-        
+
         // Ensure chronological order matches our months array
         const sortedRows = months.map(m => {
             const row = rows.find(r => r.month === m.label) || { active: 0, completed: 0, dropouts: 0 };
@@ -445,7 +446,7 @@ router.get('/map-data', async (req, res) => {
         const spatialData = await infantService.getSpatialTriage({ eps, minPts, barangay: targetBarangay, scope });
         const end = performance.now();
         console.log(`[PERF] ID-110 Spatial Triage executed in: ${(end - start).toFixed(2)}ms`);
-        
+
         const counts = spatialData.counts || {};
         const computedDefaulters = (spatialData.all_infants || [])
             .filter(infant => infant.computed_map_status === 'DEFAULTER').length;
@@ -489,7 +490,7 @@ router.get('/due-soon', async (req, res) => {
 router.get('/dbscan', async (req, res) => {
     try {
         const { eps = 300, minPts = 3 } = req.query;
-        const safeMinPts = Math.max(parseInt(minPts, 10) || 3, 2);
+        const safeMinPts = Math.max(parseInt(minPts, 10) || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
         const scheduleData = await engine.getApprovedInfantsWithSchedule({ urgency: 'all', barangay: req.query.barangay || null }, 1000, 0);
         const overdueWithGeo = (scheduleData.infants || []).filter(i => (i.urgency === 'overdue' || i.urgency === 'defaulter') && i.lat && i.lng);
 
@@ -497,8 +498,9 @@ router.get('/dbscan', async (req, res) => {
             return res.json([]);
         }
 
-        const dbscan = new DBSCANService(parseInt(eps, 10), safeMinPts);
-        const clusters = dbscan.cluster(overdueWithGeo);
+        const dbscan = new DBSCANService(parseInt(eps, 10), safeMinPts, db);
+        const clusters = (await dbscan.cluster(db, overdueWithGeo))
+            .filter(clusterPoints => Array.isArray(clusterPoints) && clusterPoints.length >= safeMinPts);
 
         const summaries = clusters.map((clusterPoints, index) => {
             const meta = DBSCANService.getClusterMetadata(clusterPoints);

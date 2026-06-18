@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 const db = require('../db');
 const clinicalAuth = require('../middleware/clinicalAuth');
-const { ROLES } = require('../constants/domain');
+const { ROLES, OPEN_URGENT_TASK_STATUSES } = require('../constants/domain');
 const { performAuditLog } = require('../utils/auditLogger');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
@@ -86,7 +86,7 @@ const normalizeFollowUpRow = (row) => ({
     missing_vaccine_name: row.missing_vaccine_name,
     missing_dose_number: row.missing_dose_number,
     assigned_bhw_id: row.assigned_bhw_id,
-    assigned_bhw_name: row.assigned_bhw_name,
+    assigned_bhw_name: row.delegated_task_bhw_name || row.assigned_bhw_name,
     assigned_bhw_barangay: row.assigned_bhw_barangay || row.barangay,
     last_visit_date: row.last_visit_date,
     last_visit_outcome: row.last_visit_outcome,
@@ -100,7 +100,12 @@ const normalizeFollowUpRow = (row) => ({
     days_overdue: Number(row.days_overdue || 0),
     assigned_cluster_bhw_role: row.assigned_cluster_bhw_role || null,
     assigned_cluster_bhw_name: row.assigned_cluster_bhw_name || null,
-    is_midwife_delegated: Boolean(row.assigned_by_midwife_id)
+    delegated_task_id: row.delegated_task_id || null,
+    delegated_task_bhw_id: row.delegated_task_bhw_id || null,
+    delegated_task_bhw_name: row.delegated_task_bhw_name || null,
+    is_midwife_delegated: Boolean(row.assigned_by_midwife_id),
+    is_midwife_requested_active: Boolean(row.assigned_by_midwife_id) && OPEN_URGENT_TASK_STATUSES.includes(row.task_status),
+    task_status: row.task_status || null
 });
 
 /**
@@ -132,6 +137,34 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('[FOLLOW_UP_LIST]', error);
         res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/bhws', async (req, res) => {
+    try {
+        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
+            return res.status(403).json({ success: false, error: 'Forbidden: Only midwives, nurses, or admins can retrieve BHW list.' });
+        }
+
+        const barangay = getScopedBarangay(req);
+        if (!barangay) {
+            return res.status(400).json({ success: false, error: 'Barangay scope is required.' });
+        }
+
+        const [bhws] = await db.execute(
+            `SELECT id, full_name 
+             FROM users 
+             WHERE role = 'BHW' 
+               AND is_active = TRUE 
+               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+             ORDER BY full_name ASC`,
+            [barangay]
+        );
+
+        res.json({ success: true, bhws });
+    } catch (error) {
+        console.error('[GET_BHWS_ERROR]', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -366,33 +399,6 @@ router.put('/:infantId/archive', async (req, res) => {
     }
 });
 
-router.get('/bhws', async (req, res) => {
-    try {
-        if (![ROLES.MIDWIFE, ROLES.NURSE, ROLES.ADMIN, ROLES.SUPER_ADMIN].includes(req.user.role)) {
-            return res.status(403).json({ success: false, error: 'Forbidden: Only midwives, nurses, or admins can retrieve BHW list.' });
-        }
-
-        const barangay = getScopedBarangay(req);
-        if (!barangay) {
-            return res.status(400).json({ success: false, error: 'Barangay scope is required.' });
-        }
-
-        const [bhws] = await db.execute(
-            `SELECT id, full_name 
-             FROM users 
-             WHERE role = 'BHW' 
-               AND is_active = TRUE 
-               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
-             ORDER BY full_name ASC`,
-            [barangay]
-        );
-
-        res.json({ success: true, bhws });
-    } catch (error) {
-        console.error('[GET_BHWS_ERROR]', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
 
 router.post('/:infantId/delegate', async (req, res) => {
     try {
@@ -445,8 +451,17 @@ router.post('/:infantId/delegate', async (req, res) => {
         if (existingTasks.length > 0) {
             taskId = existingTasks[0].id;
             await db.execute(
-                `UPDATE follow_up_tasks SET assigned_to_bhw_id = ?, task_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [bhw.id, taskNotes, taskId]
+                `
+                UPDATE follow_up_tasks
+                SET assigned_to_bhw_id = ?,
+                    assigned_by_midwife_id = ?,
+                    task_notes = ?,
+                    status = 'ASSIGNED',
+                    target_completion_date = CURRENT_DATE + INTERVAL '7 days',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                `,
+                [bhw.id, req.user.id, taskNotes, taskId]
             );
         } else {
             taskId = uuidv4();
@@ -461,7 +476,7 @@ router.post('/:infantId/delegate', async (req, res) => {
         const NotificationService = require('../services/NotificationService');
         const notificationService = new NotificationService(db);
         const infantFullName = [infant.first_name, infant.middle_name, infant.last_name].filter(Boolean).join(' ');
-        
+
         await notificationService.createNotification({
             recipientUserId: bhw.id,
             recipientRole: ROLES.BHW,
@@ -497,7 +512,7 @@ router.post('/:infantId/delegate', async (req, res) => {
             req
         });
 
-        res.status(200).json({ success: true, taskId, bhwName: bhw.full_name });
+        res.status(200).json({ success: true, taskId, bhwName: bhw.full_name, taskStatus: 'ASSIGNED' });
     } catch (err) {
         console.error('[DELEGATION_ERR]', err);
         res.status(500).json({ success: false, error: err.message });

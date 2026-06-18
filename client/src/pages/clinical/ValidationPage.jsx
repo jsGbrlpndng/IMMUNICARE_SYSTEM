@@ -33,7 +33,6 @@ const ValidationPage = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
     const [pendingRegistrations, setPendingRegistrations] = useState([]);
-    const [selectedId, setSelectedId] = useState(null);
     const [selectedDetail, setSelectedDetail] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -50,6 +49,30 @@ const ValidationPage = () => {
     const [approvalSuccess, setApprovalSuccess] = useState(null);
     const [resolvingDuplicateAlert, setResolvingDuplicateAlert] = useState(false);
     const persistedRecordId = searchParams.get('record');
+    const selectedId = persistedRecordId || null;
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const selectRecord = (id) => {
+        const nextParams = new URLSearchParams(searchParams);
+        if (id) {
+            nextParams.set('record', id);
+        } else {
+            nextParams.delete('record');
+        }
+        setSearchParams(nextParams, { replace: true });
+    };
+
+    const filteredRegistrations = (pendingRegistrations || []).filter(infant => {
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase().trim();
+        const fullName = formatFullNameFromObject(infant).toLowerCase();
+        const refId = String(infant?.reference_id || '').toLowerCase();
+        const trackingNum = String(infant?.tracking_number || '').toLowerCase();
+        const firstName = String(infant?.first_name || '').toLowerCase();
+        const middleName = String(infant?.middle_name || '').toLowerCase();
+        const lastName = String(infant?.last_name || '').toLowerCase();
+        return fullName.includes(query) || refId.includes(query) || trackingNum.includes(query) || firstName.includes(query) || middleName.includes(query) || lastName.includes(query);
+    });
 
     const fetchQueue = async () => {
         setLoading(true);
@@ -72,12 +95,6 @@ const ValidationPage = () => {
     useEffect(() => {
         fetchQueue();
     }, []);
-
-    useEffect(() => {
-        if (persistedRecordId && persistedRecordId !== selectedId) {
-            setSelectedId(persistedRecordId);
-        }
-    }, [persistedRecordId, selectedId]);
 
     useEffect(() => {
         if (!selectedId) {
@@ -113,23 +130,6 @@ const ValidationPage = () => {
             cancelled = true;
         };
     }, [selectedId]);
-
-    useEffect(() => {
-        if (!selectedId) {
-            if (searchParams.has('record')) {
-                const nextParams = new URLSearchParams(searchParams);
-                nextParams.delete('record');
-                setSearchParams(nextParams, { replace: true });
-            }
-            return;
-        }
-
-        if (searchParams.get('record') !== selectedId) {
-            const nextParams = new URLSearchParams(searchParams);
-            nextParams.set('record', selectedId);
-            setSearchParams(nextParams, { replace: true });
-        }
-    }, [searchParams, selectedId, setSearchParams]);
 
     const queueRecord = pendingRegistrations?.find(q => q.id === selectedId);
     const selectedRecord = selectedDetail?.registration
@@ -237,7 +237,7 @@ const ValidationPage = () => {
                 // Immediately remove from local queue
                 setPendingRegistrations(prev => prev.filter(item => item.id !== selectedId));
                 setSelectedDetail(null);
-                setSelectedId(null);
+                selectRecord(null);
                 setShowApprovalModal(false);
                 setApprovalSuccess({
                     infantId: targetId,
@@ -330,7 +330,7 @@ const ValidationPage = () => {
                 // Immediately remove from local queue
                 setPendingRegistrations(prev => prev.filter(item => item.id !== selectedId));
                 setSelectedDetail(null);
-                setSelectedId(null);
+                selectRecord(null);
                 setShowRevisionModal(false);
                 setCorrectionNote('');
                 fetchQueue(); // Background refresh
@@ -394,7 +394,7 @@ const ValidationPage = () => {
             if (res.ok && data.success) {
                 setPendingRegistrations(prev => prev.filter(item => item.id !== selectedId));
                 setSelectedDetail(null);
-                setSelectedId(null);
+                selectRecord(null);
                 setApprovalSuccess({
                     infantId: data.infantId || '',
                     name: formatFullNameFromObject(selectedRecord) || 'Infant record',
@@ -457,6 +457,8 @@ const ValidationPage = () => {
                                 <input 
                                     type="text" 
                                     placeholder="SEARCH QUEUE..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-none text-[10px] font-bold tracking-widest outline-none uppercase"
                                 />
                             </div>
@@ -468,17 +470,19 @@ const ValidationPage = () => {
                                     <div className="w-6 h-6 border-2 border-slate-200 border-t-emerald-700 rounded-full animate-spin"></div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Loading...</p>
                                 </div>
-                            ) : (!pendingRegistrations || pendingRegistrations.length === 0) ? (
+                            ) : (!filteredRegistrations || filteredRegistrations.length === 0) ? (
                                 <div className="p-10 text-center">
                                     <Shield className="text-slate-100 mx-auto mb-2" size={24} />
-                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Queue Empty</h3>
+                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                        {pendingRegistrations.length === 0 ? 'Queue Empty' : 'No Matches'}
+                                    </h3>
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-100">
-                                    {Array.isArray(pendingRegistrations) && pendingRegistrations.map(infant => (
+                                    {Array.isArray(filteredRegistrations) && filteredRegistrations.map(infant => (
                                         <button 
                                             key={infant?.id}
-                                            onClick={() => setSelectedId(infant?.id)}
+                                            onClick={() => selectRecord(infant?.id)}
                                             className={`w-full p-4 text-left transition-all border-l-2 ${selectedId === infant?.id ? 'bg-emerald-50/40 border-l-emerald-700' : 'bg-white border-l-transparent hover:bg-slate-50'}`}
                                         >
                                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{infant?.reference_id}</div>

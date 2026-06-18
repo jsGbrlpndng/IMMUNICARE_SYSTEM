@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 const MappingBadge = ({ status }) => {
-    if (status === 'Verified') return <span title="Verified Location" className="text-emerald-600"><MapPin size={10} /></span>;
+    if (status === 'Verified') return <span title="Verified Location" className="text-[#084C39]"><MapPin size={10} /></span>;
     if (status === 'Approximate') return <span title="Approximate Location" className="text-amber-500 opacity-80"><MapPin size={10} strokeDasharray="2 1" /></span>;
     return <span title="Unmapped / Needs Address Validation" className="text-slate-300"><AlertTriangle size={10} /></span>;
 };
@@ -70,7 +70,7 @@ const FilterPillContainer = ({ activeFilters, setActiveFilters }) => {
                 {[
                     { id: 'defaulter', label: 'Defaulters', color: 'bg-rose-600' },
                     { id: 'due_today', label: 'Due Today', color: 'bg-amber-500' },
-                    { id: 'upcoming', label: 'On Track', color: 'bg-emerald-600' },
+                    { id: 'upcoming', label: 'On Track', color: 'bg-[#084C39]' },
                     { id: 'completed', label: 'Completed', color: 'bg-slate-400' }
                 ].map(f => (
                     <button
@@ -188,13 +188,13 @@ const InfantRow = ({ pt, onFocus }) => {
                 </div>
                 <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
                     pt?.urgency === 'defaulter' || pt?.urgency === 'overdue' ? 'bg-rose-600 shadow-[0_0_8px_rgba(225,29,72,0.4)]' : 
-                    (pt?.urgency === 'due_soon' || pt?.urgency === 'due_today' ? 'bg-amber-400' : 'bg-emerald-500')
+                    (pt?.urgency === 'due_soon' || pt?.urgency === 'due_today' ? 'bg-amber-400' : 'bg-[#084C39]')
                 }`}></div>
             </button>
             <div className="px-4 pb-3 flex justify-end">
                 <button 
                     onClick={() => window.location.href = `/clinical/infants/${pt?.reference_id}`}
-                    className={`px-3 py-1.5 text-white text-[9px] font-black uppercase tracking-widest transition-colors ${isNonUrgent ? 'bg-slate-400 hover:bg-slate-500' : 'bg-emerald-700 hover:bg-emerald-800'}`}
+                    className={`px-3 py-1.5 text-white text-[9px] font-black uppercase tracking-widest transition-colors ${isNonUrgent ? 'bg-slate-400 hover:bg-slate-500' : 'bg-[#084C39] hover:bg-[#07362A]'}`}
                 >
                     View Profile
                 </button>
@@ -280,11 +280,11 @@ const HeatmapSidePanel = ({
                         </div>
                     )}
                 </div>
-                <div className="bg-slate-900 p-5 flex-shrink-0 border-t-4 border-emerald-700">
+                <div className="bg-slate-50 p-5 flex-shrink-0 border-t border-slate-200">
                     <div className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Action Roster</span>
-                            <span className="text-sm font-black text-white uppercase tracking-widest">{sortedInfants.length} Infants</span>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Action Roster</span>
+                            <span className="text-sm font-black text-slate-800 uppercase tracking-widest">{sortedInfants.length} Infants</span>
                         </div>
                     </div>
                 </div>
@@ -303,13 +303,13 @@ const HeatmapSidePanel = ({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                <div className="mb-4 flex items-start gap-3 border border-emerald-200 bg-emerald-50 p-4">
-                    <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-800" />
+                <div className="mb-4 flex items-start gap-3 border border-[#084C39]/20 bg-[#084C39]/10 p-4">
+                    <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#084C39]" />
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">
                             Standardized Cluster Detection (Min. 3 Infants)
                         </p>
-                        <p className="mt-1 text-[11px] font-semibold leading-5 text-emerald-700">
+                        <p className="mt-1 text-[11px] font-semibold leading-5 text-[#084C39]">
                             Read-only supervisor view of assigned outreach areas.
                         </p>
                     </div>
@@ -330,7 +330,7 @@ const HeatmapSidePanel = ({
                                         key={cluster.clusterId || cluster.id || index}
                                         type="button"
                                         onClick={() => handleClusterSelect(cluster.clusterId || cluster.id, cluster.lat, cluster.lng, cluster.bounds)}
-                                        className="mb-3 w-full border border-slate-200 bg-white p-4 text-left transition-colors hover:border-emerald-800 hover:bg-slate-50"
+                                        className="mb-3 w-full border border-slate-200 bg-white p-4 text-left transition-colors hover:border-[#084C39] hover:bg-slate-50"
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
@@ -342,7 +342,7 @@ const HeatmapSidePanel = ({
                                             </span>
                                         </div>
                                         <div className="mt-3 border-t border-slate-200 pt-3 text-[11px] font-bold leading-5 text-slate-600">
-                                            Assigned to: <span className="text-slate-900">{assignedName}</span> - Status: <span className="text-emerald-800">{status}</span>
+                                            Assigned to: <span className="text-slate-900">{assignedName}</span> - Status: <span className="text-[#084C39]">{status}</span>
                                         </div>
                                     </button>
                                 );
@@ -377,7 +377,7 @@ const HeatmapSidePanel = ({
                                 </div>
                             </div>
 
-                            <div className="mb-4 border border-emerald-200 bg-emerald-50 p-3 text-[11px] font-bold leading-5 text-emerald-900">
+                            <div className="mb-4 border border-[#084C39]/20 bg-[#084C39]/10 p-3 text-[11px] font-bold leading-5 text-[#084C39]">
                                 Assigned to: <span className="text-slate-950">{getAssignedDisplay(selectedCluster)}</span> - Status: <span>{selectedCluster?.cluster_status || getDeployment(selectedCluster)?.cluster_status || 'Pending'}</span>
                             </div>
 
@@ -393,7 +393,7 @@ const HeatmapSidePanel = ({
                             </div>
 
                             <div className="bg-slate-50 p-4 flex items-start gap-3 border border-slate-200">
-                                <Activity size={16} className="text-emerald-700 flex-shrink-0 mt-0.5" />
+                                <Activity size={16} className="text-[#084C39] flex-shrink-0 mt-0.5" />
                                 <div>
                                     <span className="block text-[10px] font-black text-slate-800 uppercase tracking-widest mb-1">Operational Context</span>
                                     <span className="text-[11px] text-slate-500 font-medium leading-relaxed">{selectedCluster.area_justification || "Optimal deployment zone based on localized dose burden."}</span>
@@ -432,8 +432,8 @@ const HeatmapSidePanel = ({
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="mt-4 p-4 border border-emerald-200 bg-emerald-50 rounded-xl flex flex-col gap-1.5">
-                                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                                    <div className="mt-4 p-4 border border-emerald-200 bg-[#084C39]/10 rounded-xl flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-2 text-[#084C39] font-bold text-xs">
                                             <ShieldCheck size={14} /> Report Validated
                                         </div>
                                     </div>
@@ -442,7 +442,7 @@ const HeatmapSidePanel = ({
                                 <button
                                     type="button"
                                     onClick={() => onSubmitReport && onSubmitReport(selectedCluster)}
-                                    className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                                    className="w-full mt-4 bg-[#084C39] hover:bg-[#07362A] text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
                                 >
                                     <ClipboardList size={12} /> Submit Deployment Report
                                 </button>
@@ -465,10 +465,10 @@ const HeatmapSidePanel = ({
             </div>
 
             {/* Operational Footer */}
-            <div className="bg-slate-900 p-5 flex-shrink-0 border-t-4 border-emerald-700">
+            <div className="bg-slate-50 p-5 flex-shrink-0 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Triage Count</span>
-                    <span className="text-sm font-black text-white uppercase tracking-widest">{selectedCluster ? selectedCluster.points.filter(p => activeFilters.statuses.includes(p.urgency)).length : (mapState?.all_infants?.filter(p => activeFilters.statuses.includes(p.urgency)).length || 0)} Infants</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Triage Count</span>
+                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest">{selectedCluster ? selectedCluster.points.filter(p => activeFilters.statuses.includes(p.urgency)).length : (mapState?.all_infants?.filter(p => activeFilters.statuses.includes(p.urgency)).length || 0)} Infants</span>
                 </div>
             </div>
         </div>

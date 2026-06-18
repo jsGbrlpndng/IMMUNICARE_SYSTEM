@@ -7,7 +7,9 @@ import {
     AlertTriangle,
     MapPin,
     Filter,
-    Crosshair
+    Crosshair,
+    Maximize2,
+    Minimize2
 } from 'lucide-react';
 import { computeConvexHull } from '../../utils/spatialUtils';
 import { barangayBoundaryStyle } from '../../utils/barangayBoundaries';
@@ -129,6 +131,18 @@ const MapZoomListener = ({ onZoomChange }) => {
         map.on('zoomend', handleZoom);
         return () => map.off('zoomend', handleZoom);
     }, [map, onZoomChange]);
+    return null;
+};
+
+const MapResizeInvalidator = ({ isExpanded }) => {
+    const map = useMap();
+    useEffect(() => {
+        map.invalidateSize({ animate: false });
+        const timer = setTimeout(() => {
+            map.invalidateSize({ animate: false });
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [isExpanded, map]);
     return null;
 };
 
@@ -312,7 +326,9 @@ const HeatmapMap = memo(({
     activeFilters,
     setActiveFilters,
     derivedCounts,
-    barangayBoundaryData
+    barangayBoundaryData,
+    isExpanded,
+    setIsExpanded
 }) => {
     const validMarkers = useMemo(() => {
         return (allMarkersForMode || []).map(pt => {
@@ -441,7 +457,7 @@ const HeatmapMap = memo(({
                             </div>
                             <button
                                 onClick={() => window.location.href = `/clinical/infants/${pt?.reference_id}?tab=address`}
-                                style={{ width: '100%', padding: '14px', background: '#059669', color: '#fff', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', border: 'none', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '14px', background: '#084C39', color: '#fff', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', border: 'none', cursor: 'pointer' }}
                             >
                                 Validate Address
                             </button>
@@ -457,11 +473,21 @@ const HeatmapMap = memo(({
             <style dangerouslySetInnerHTML={{ __html: mapStyles }} />
 
             <div className="flex-1 relative overflow-hidden">
+                {/* Fullscreen Toggle Button */}
+                <button
+                    type="button"
+                    onClick={() => setIsExpanded(prev => !prev)}
+                    className="absolute top-6 left-6 z-[1000] p-2.5 bg-white/95 backdrop-blur-sm border border-slate-200 shadow-2xl rounded-xl hover:bg-slate-50 transition-all cursor-pointer flex items-center justify-center"
+                    title={isExpanded ? 'Minimize Map' : 'Maximize Map'}
+                >
+                    {isExpanded ? <Minimize2 size={16} className="text-slate-800" /> : <Maximize2 size={16} className="text-slate-800" />}
+                </button>
+
                 {loading && (
                     <div className="absolute inset-0 bg-white/70 z-[2000] flex items-center justify-center">
                         <div className="flex flex-col items-center gap-3">
-                            <Loader2 className="text-emerald-700 animate-spin" size={28} />
-                            <p className="text-[10px] font-black text-emerald-900 uppercase tracking-widest">Updating Triage...</p>
+                            <Loader2 className="text-[#084C39] animate-spin" size={28} />
+                            <p className="text-[10px] font-black text-[#084C39] uppercase tracking-widest">Updating Triage...</p>
                         </div>
                     </div>
                 )}
@@ -487,6 +513,7 @@ const HeatmapMap = memo(({
                     />
 
                     <MapResizeHandle />
+                    <MapResizeInvalidator isExpanded={isExpanded} />
                     <MapController target={mapTarget} />
                     <MapZoomListener onZoomChange={setCurrentZoom} />
                     <AutoBounds

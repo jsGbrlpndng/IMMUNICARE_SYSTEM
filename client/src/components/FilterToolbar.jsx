@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 
@@ -38,7 +38,11 @@ const FilterToolbar = ({
   showVaccineTypeFilter = false,
   showAssignedBhwFilter = false,
   searchPlaceholder = 'Search by name, ID, barangay, or phone...',
-  className = ''
+  className = '',
+  urgencyFilter = '',
+  onUrgencyFilterChange = null,
+  statusFilter = '',
+  onStatusFilterChange = null
 }) => {
   const [localSearch, setLocalSearch] = useState(searchTerm || '');
 
@@ -128,16 +132,16 @@ const FilterToolbar = ({
   const ageGroupValue = filters.ageGroup ?? filters.ageRange ?? 'All';
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       {/* Search Bar */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input
           type="search"
           value={localSearch}
           onChange={handleSearchChange}
           placeholder={searchPlaceholder}
-          className="w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+          className="w-full pl-10 pr-10 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm text-slate-700 bg-white"
           aria-label="Search infants by name, ID, barangay, or phone"
         />
         {localSearch && (
@@ -152,12 +156,42 @@ const FilterToolbar = ({
       </div>
 
       {/* Filters Row */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        {onUrgencyFilterChange && (
+          <select
+            value={urgencyFilter || ''}
+            onChange={(e) => onUrgencyFilterChange(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
+            aria-label="Filter by clinical status"
+          >
+            <option value="">All Clinical Status</option>
+            <option value="defaulter">Defaulted</option>
+            <option value="due_today">Due Today</option>
+            <option value="due_soon">Due Soon</option>
+            <option value="upcoming">Up-to-Date</option>
+          </select>
+        )}
+
+        {onStatusFilterChange && (
+          <select
+            value={statusFilter || ''}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
+            aria-label="Filter by process stage"
+          >
+            <option value="APPROVED,PENDING_VALIDATION,NEEDS_CORRECTION">All Process Stages</option>
+            <option value="APPROVED">Approved Only</option>
+            <option value="PENDING_VALIDATION">Pending Only</option>
+            <option value="NEEDS_CORRECTION">Needs Correction</option>
+            <option value="DRAFT">My Drafts</option>
+          </select>
+        )}
+
         {showBarangayFilter && (
           <select
             value={filters.barangay || 'All'}
             onChange={(e) => handleFilterChange('barangay', e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
             aria-label="Filter by barangay"
           >
             <option value="All">All Barangays</option>
@@ -173,7 +207,7 @@ const FilterToolbar = ({
           <select
             value={filters.sex || 'All'}
             onChange={(e) => handleFilterChange('sex', e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
             aria-label="Filter by sex"
           >
             <option value="All">All Sexes</option>
@@ -186,7 +220,7 @@ const FilterToolbar = ({
           <select
             value={ageGroupValue}
             onChange={(e) => handleFilterChange(filters.ageGroup !== undefined ? 'ageGroup' : 'ageRange', e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
             aria-label="Filter by age group"
           >
             <option value="All">All Age Groups</option>
@@ -202,7 +236,7 @@ const FilterToolbar = ({
           <select
             value={filters.vaccineType || 'All'}
             onChange={(e) => handleFilterChange('vaccineType', e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
             aria-label="Filter by vaccine type"
           >
             <option value="All">All Vaccine Types</option>
@@ -218,7 +252,7 @@ const FilterToolbar = ({
           <select
             value={filters.assignedBhw || 'All'}
             onChange={(e) => handleFilterChange('assignedBhw', e.target.value)}
-            className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
             aria-label="Filter by assigned BHW"
           >
             <option value="All">All Assigned BHWs</option>
@@ -233,7 +267,7 @@ const FilterToolbar = ({
         <select
           value={sortBy || normalizedSortOptions[0]?.value || 'name_asc'}
           onChange={(e) => onSortChange(e.target.value)}
-          className="px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+          className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:border-[#084C39] text-sm bg-white text-slate-700 font-semibold"
           aria-label="Sort by"
         >
           {normalizedSortOptions.map((option) => (

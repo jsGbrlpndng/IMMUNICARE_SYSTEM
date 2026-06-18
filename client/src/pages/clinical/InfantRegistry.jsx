@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -228,25 +228,25 @@ export default function InfantRegistry() {
         switch (status) {
             case 'APPROVED':
                 return (
-                    <div className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                    <div className="inline-flex items-center gap-1 text-[9px] font-black text-green-700 bg-green-50 px-2 py-0.5 border border-green-200 whitespace-nowrap">
                         <ShieldCheck className="w-3 h-3" /> APPROVED
                     </div>
                 );
             case 'PENDING_VALIDATION':
                 return (
-                    <div className="flex items-center gap-1 text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+                    <div className="inline-flex items-center gap-1 text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 border border-amber-200 whitespace-nowrap">
                         <Clock className="w-3 h-3" /> PENDING REVIEW
                     </div>
                 );
             case 'NEEDS_CORRECTION':
                 return (
-                    <div className="flex items-center gap-1 text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                    <div className="inline-flex items-center gap-1 text-[9px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 border border-blue-200 whitespace-nowrap">
                         <RefreshCw className="w-3 h-3" /> REVISION
                     </div>
                 );
             case 'DRAFT':
                 return (
-                    <div className="flex items-center gap-1 text-[10px] font-black text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                    <div className="inline-flex items-center gap-1 text-[9px] font-black text-slate-600 bg-slate-50 px-2 py-0.5 border border-slate-200 whitespace-nowrap">
                         <FileText className="w-3 h-3" /> DRAFT
                     </div>
                 );
@@ -256,28 +256,25 @@ export default function InfantRegistry() {
     };
 
     return (
-        <div className="flex flex-col gap-6">
-            <div className="clinical-card">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-
-                        <div className="p-3 bg-emerald-50 text-emerald-800 rounded-md">
-                            <Users className="w-6 h-6" />
+        <div className="flex flex-col gap-5">
+            <section className="border border-slate-300 bg-white px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center bg-[#084C39] text-white shrink-0">
+                            <Users className="h-5 w-5" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-800 tracking-tight leading-none">
-                                Infant Registry
-                            </h1>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Master Clinical Directory</p>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#084C39]">Clinical Directory Control</p>
+                            <h1 className="mt-1 text-2xl font-black text-slate-950">Infant Registry</h1>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">Master database of registered infants, dynamic NIP schedules, and risk mapping.</p>
                         </div>
                     </div>
 
-                    <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-
+                    <div className="flex flex-wrap items-center gap-2">
                         {['Midwife', 'Admin', 'Super Admin'].includes(user?.role) && (
                             <button
                                 onClick={() => setShowGlobalSearch(true)}
-                                className="border border-emerald-800 bg-white px-5 py-3 rounded-md flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-800 transition-all hover:bg-emerald-50 active:scale-95 w-full md:w-auto"
+                                className="inline-flex h-10 items-center justify-center gap-2 border border-[#084C39] bg-white px-5 text-xs font-black uppercase tracking-wider text-[#084C39] hover:bg-slate-50 transition-all active:scale-95 whitespace-nowrap"
                             >
                                 <Search className="w-4 h-4" />
                                 Global Search
@@ -287,7 +284,7 @@ export default function InfantRegistry() {
                         {user?.role === 'BHW' && (
                             <button
                                 onClick={() => navigate('/bhw/register')}
-                                className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-3 rounded-md flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-900/10 transition-all active:scale-95 w-full md:w-auto mb-2 md:mb-0"
+                                className="inline-flex h-10 items-center justify-center gap-2 bg-[#084C39] px-5 text-xs font-black uppercase tracking-wider text-white hover:bg-[#07362A] transition-colors active:scale-95 whitespace-nowrap"
                             >
                                 <Plus className="w-4 h-4" />
                                 Register New Infant
@@ -295,71 +292,49 @@ export default function InfantRegistry() {
                         )}
                     </div>
                 </div>
+            </section>
 
-                <div className="mt-5 border-t border-slate-100 pt-5 flex flex-col gap-4">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                        <select 
-                            value={urgencyFilter}
-                            onChange={(e) => {
-                                const newParams = new URLSearchParams(location.search);
-                                if (e.target.value) newParams.set('urgency', e.target.value);
-                                else newParams.delete('urgency');
-                                navigate(`${location.pathname}?${newParams.toString()}`);
-                            }}
-                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-md text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
-                        >
-                            <option value="">All Clinical Status</option>
-                            <option value="defaulter">Defaulted</option>
-                            <option value="due_today">Due Today</option>
-                            <option value="due_soon">Due Soon</option>
-                            <option value="upcoming">Up-to-Date</option>
-                        </select>
+            <section className="border border-slate-300 bg-white px-5 py-4">
+                <FilterToolbar
+                    category="infant_registry"
+                    searchTerm={searchTerm}
+                    onSearchChange={setSearchTerm}
+                    filters={registryFilters}
+                    onFiltersChange={setRegistryFilters}
+                    sortBy={sortBy}
+                    onSortChange={setSortBy}
+                    urgencyFilter={urgencyFilter}
+                    onUrgencyFilterChange={(value) => {
+                        const newParams = new URLSearchParams(location.search);
+                        if (value) newParams.set('urgency', value);
+                        else newParams.delete('urgency');
+                        navigate(`${location.pathname}?${newParams.toString()}`);
+                    }}
+                    statusFilter={statusFilter}
+                    onStatusFilterChange={setStatusFilter}
+                    barangayOptions={filterOptions.barangays || []}
+                    ageGroupOptions={filterOptions.ageGroups || []}
+                    vaccineOptions={filterOptions.vaccineTypes || []}
+                    assignedBhwOptions={filterOptions.assignedBhws || []}
+                    sortOptions={filterOptions.sortOptions || []}
+                    showBarangayFilter={user?.role === 'Super Admin'}
+                    showSexFilter={false}
+                    showAgeGroupFilter
+                    showVaccineTypeFilter
+                    showAssignedBhwFilter
+                    searchPlaceholder="Search by infant name or reference ID..."
+                />
+            </section>
 
-                        <select 
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="bg-white border border-slate-300 px-4 py-2.5 rounded-md text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-800/10 focus:border-emerald-800"
-                        >
-                            <option value="APPROVED,PENDING_VALIDATION,NEEDS_CORRECTION">All Process Stages</option>
-                            <option value="APPROVED">Approved Only</option>
-                            <option value="PENDING_VALIDATION">Pending Only</option>
-                            <option value="NEEDS_CORRECTION">Needs Correction</option>
-                            <option value="DRAFT">My Drafts</option>
-                        </select>
-                    </div>
-
-                    <FilterToolbar
-                        category="infant_registry"
-                        searchTerm={searchTerm}
-                        onSearchChange={setSearchTerm}
-                        filters={registryFilters}
-                        onFiltersChange={setRegistryFilters}
-                        sortBy={sortBy}
-                        onSortChange={setSortBy}
-                        barangayOptions={filterOptions.barangays || []}
-                        ageGroupOptions={filterOptions.ageGroups || []}
-                        vaccineOptions={filterOptions.vaccineTypes || []}
-                        assignedBhwOptions={filterOptions.assignedBhws || []}
-                        sortOptions={filterOptions.sortOptions || []}
-                        showBarangayFilter={user?.role === 'Super Admin'}
-                        showSexFilter={false}
-                        showAgeGroupFilter
-                        showVaccineTypeFilter
-                        showAssignedBhwFilter
-                        searchPlaceholder="Search by infant name or reference ID..."
-                    />
-                </div>
-            </div>
-
-            <div className="flex w-fit overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div className="flex w-fit border border-slate-300 bg-white">
                 {['Active', 'Archived'].map((tab) => (
                     <button
                         key={tab}
                         type="button"
                         onClick={() => handleViewChange(tab)}
-                        className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                        className={`px-5 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors border-r border-slate-200 last:border-r-0 ${
                             view === tab
-                                ? 'bg-emerald-50 text-emerald-800'
+                                ? 'bg-[#084C39]/15 text-[#084C39]'
                                 : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                         }`}
                     >
@@ -369,35 +344,34 @@ export default function InfantRegistry() {
             </div>
 
             {/* Main Table Content */}
-            <div className="clinical-card !p-0 overflow-hidden flex flex-col max-h-[600px] border border-slate-200 shadow-xl shadow-slate-200/40">
+            <div className="overflow-hidden border border-slate-300 bg-white flex flex-col max-h-[600px]">
                 <div className="overflow-y-auto custom-scrollbar flex-1">
                     <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 z-10 bg-slate-50/90 backdrop-blur shadow-sm">
-                            <tr className="border-b border-slate-200">
-                                <th className="clinical-table-th">Patient Details</th>
-                                <th className="clinical-table-th">Caregiver & Locality</th>
-                                <th className="clinical-table-th">Next Due Vaccine</th>
-                                <th className="clinical-table-th">Risk Tier</th>
-                                <th className="clinical-table-th text-right">Clinical Action</th>
+                        <thead className="sticky top-0 z-10 bg-[#084C39] text-white">
+                            <tr>
+                                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-wider">Patient Details</th>
+                                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-wider">Caregiver & Locality</th>
+                                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-wider">Next Due Vaccine</th>
+                                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-wider">Risk Tier</th>
+                                <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-wider">Clinical Action</th>
                             </tr>
-
                         </thead>
-                        <tbody className="divide-y divide-slate-100 uppercase text-[11px] font-bold">
+                        <tbody className="divide-y divide-slate-200 uppercase text-[11px] font-bold">
                             {loading ? (
                                 Array(6).fill(0).map((_, i) => (
                                     <tr key={i} className="animate-pulse">
-                                        <td colSpan={7} className="px-4 py-3 bg-slate-50/50 h-10" />
+                                        <td colSpan={5} className="px-5 py-4 bg-slate-50/50 h-10 border-b border-slate-200" />
                                     </tr>
                                 ))
                             ) : infants.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-20 text-center">
+                                    <td colSpan={5} className="px-5 py-20 text-center">
                                         <div className="flex flex-col items-center gap-3">
-                                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center">
-                                                <Search size={32} className="text-slate-200" />
+                                            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-200">
+                                                <Search size={32} className="text-slate-300" />
                                             </div>
                                             <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">No infants found</h3>
-                                            <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                                            <p className="text-xs text-slate-400 max-w-xs mx-auto font-semibold">
                                                 {view === 'Archived'
                                                     ? 'No archived infant records match the current selection.'
                                                     : 'Try adjusting your search terms or filters. No infants match the current health status or process stage selection.'}
@@ -414,58 +388,56 @@ export default function InfantRegistry() {
                                                 navigate(`/clinical/registry/${infant.id}`);
                                             }
                                         }}
-                                        className="hover:bg-emerald-50/40 transition-all cursor-pointer group border-l-4 border-transparent hover:border-emerald-800"
+                                        className="hover:bg-slate-50 transition-all cursor-pointer group border-l-4 border-transparent hover:border-[#084C39]"
                                     >
-                                        <td className="clinical-table-td py-5">
+                                        <td className="border-b border-slate-200 px-5 py-4 align-top">
                                             <div className="flex flex-col gap-0.5">
-                                                <div className="text-slate-900 text-sm font-black group-hover:text-emerald-800 transition-colors leading-none uppercase">
+                                                <div className="text-slate-900 text-sm font-black group-hover:text-[#084C39] transition-colors leading-none uppercase">
                                                     {formatFullNameFromObject(infant)}
                                                 </div>
-                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">
                                                     REF: {infant.reference_id} &bull; DOB: {new Date(infant.dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                                 </div>
-
                                             </div>
                                         </td>
 
-                                        <td className="clinical-table-td py-5">
+                                        <td className="border-b border-slate-200 px-5 py-4 align-top">
                                             <div className="flex flex-col gap-0.5">
                                                 <div className="text-slate-700 text-[11px] font-black leading-none uppercase">
                                                     {infant.mothers_maiden_name || infant.mother_name || infant.guardian_name || 'Caregiver Pending'}
                                                 </div>
-                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight italic">
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight italic mt-1">
                                                     {infant.barangay}, {infant.purok}
                                                 </div>
                                                 {infant.assigned_bhw_name && (
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mt-1">
                                                         BHW: {infant.assigned_bhw_name}
                                                     </div>
                                                 )}
                                             </div>
                                         </td>
 
-                                        <td className="clinical-table-td py-5">
+                                        <td className="border-b border-slate-200 px-5 py-4 align-top">
                                             <div className="flex flex-col">
                                                 <span className="text-xs font-black text-slate-800 uppercase tracking-tight">
                                                     {infant.next_due_vaccine || (infant.computed_schedule_status === 'COMPLETED' ? 'Completed' : 'No Active Dose')}
                                                 </span>
-                                                <span className="text-[10px] font-bold text-slate-400">
+                                                <span className="text-[10px] font-bold text-slate-400 mt-1">
                                                     {infant.next_due_date
                                                         ? new Date(infant.next_due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                                                         : (infant.computed_schedule_status === 'COMPLETED' ? 'All schedule rows complete' : 'Awaiting schedule data')}
                                                 </span>
-
                                             </div>
                                         </td>
 
-                                        <td className="clinical-table-td py-5">
-                                                    {getRiskTierBadge(infant.urgency)}
-                                                    <div className="mt-2">
-                                                        <StatusBadge record={infant} emphasize={infant.clinical_status === 'DEFAULTED'} />
-                                                    </div>
-                                                </td>
+                                        <td className="border-b border-slate-200 px-5 py-4 align-top">
+                                            <div className="flex flex-col gap-1.5 items-start">
+                                                {getRiskTierBadge(infant.urgency)}
+                                                <StatusBadge record={infant} emphasize={infant.clinical_status === 'DEFAULTED'} className="!rounded-none !px-2 !py-0.5 !text-[9px]" />
+                                            </div>
+                                        </td>
 
-                                        <td className="clinical-table-td py-5 text-right">
+                                        <td className="border-b border-slate-200 px-5 py-4 align-top text-right">
                                             {view === 'Archived' || infant.status === 'Archived' ? (
                                                 <div className="flex flex-wrap justify-end gap-2">
                                                     <button
@@ -473,9 +445,9 @@ export default function InfantRegistry() {
                                                             e.stopPropagation();
                                                             navigate(`/clinical/registry/${infant.id}`);
                                                         }}
-                                                        className="border border-slate-300 bg-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:bg-slate-50 active:scale-95 whitespace-nowrap"
+                                                        className="border border-slate-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 active:scale-95 whitespace-nowrap animate-none"
                                                     >
-                                                        View Profile
+                                                        Profile
                                                     </button>
                                                     <button
                                                         onClick={(e) => {
@@ -483,9 +455,9 @@ export default function InfantRegistry() {
                                                             restoreRecord(infant);
                                                         }}
                                                         disabled={updatingStatusId === infant.id}
-                                                        className="border border-emerald-800 bg-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest text-emerald-800 transition-all hover:bg-emerald-50 active:scale-95 disabled:opacity-60 whitespace-nowrap"
+                                                        className="border border-[#084C39] bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-[#084C39] transition-all hover:bg-slate-50 active:scale-95 disabled:opacity-60 whitespace-nowrap animate-none"
                                                     >
-                                                        {updatingStatusId === infant.id ? 'Restoring...' : 'Restore Record'}
+                                                        {updatingStatusId === infant.id ? 'Restoring' : 'Restore'}
                                                     </button>
                                                 </div>
                                             ) : (
@@ -495,9 +467,9 @@ export default function InfantRegistry() {
                                                             e.stopPropagation();
                                                             navigate(`/clinical/registry/${infant.id}`);
                                                         }}
-                                                        className="bg-emerald-800 hover:bg-emerald-900 text-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 whitespace-nowrap"
+                                                        className="bg-[#084C39] hover:bg-[#07362A] text-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-all active:scale-95 whitespace-nowrap"
                                                     >
-                                                        Manage Record
+                                                        Manage
                                                     </button>
                                                     <button
                                                         onClick={(e) => {
@@ -507,9 +479,9 @@ export default function InfantRegistry() {
                                                             setArchiveNotes('');
                                                             setArchiveError('');
                                                         }}
-                                                        className="border border-slate-300 bg-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:bg-slate-50 active:scale-95 whitespace-nowrap"
+                                                        className="border border-slate-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 transition-all hover:bg-slate-50 active:scale-95 whitespace-nowrap"
                                                     >
-                                                        Archive Record
+                                                        Archive
                                                     </button>
                                                 </div>
                                             )}
@@ -523,29 +495,29 @@ export default function InfantRegistry() {
                 </div>
 
                 {/* Professional Pagination Controls */}
-                <div className="px-6 py-5 bg-slate-50/80 backdrop-blur border-t border-slate-200 flex items-center justify-between">
+                <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
                     <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                         Node {Math.min(meta.totalRecords, (page - 1) * limit + 1)}-{Math.min(meta.totalRecords, page * limit)} / Total {meta.totalRecords}
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                         <button
                             disabled={page === 1 || loading}
                             onClick={() => handlePageChange(page - 1)}
-                            className="p-2.5 bg-white border border-slate-200 rounded-md hover:shadow-md disabled:opacity-30 transition-all text-slate-600"
+                            className="p-2 border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 transition-all text-slate-600"
                         >
                             <ChevronLeft className="w-4 h-4" />
                         </button>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                             {[...Array(meta.totalPages)].map((_, i) => (
                                 <button
                                     key={i + 1}
                                     onClick={() => handlePageChange(i + 1)}
-                                    className={`w-9 h-9 rounded-md text-[10px] font-black transition-all ${
+                                    className={`w-9 h-9 text-[10px] font-black transition-all ${
                                         page === i + 1 
-                                            ? 'bg-emerald-800 text-white shadow-lg shadow-emerald-900/20 scale-110' 
-                                            : 'bg-white border border-slate-200 text-slate-500 hover:border-emerald-800 hover:text-emerald-800'
+                                            ? 'bg-[#084C39] text-white' 
+                                            : 'bg-white border border-slate-200 text-slate-500 hover:border-[#084C39] hover:text-[#084C39]'
                                     }`}
                                 >
                                     {i + 1}
@@ -556,7 +528,7 @@ export default function InfantRegistry() {
                         <button
                             disabled={page === meta.totalPages || loading}
                             onClick={() => handlePageChange(page + 1)}
-                            className="p-2.5 bg-white border border-slate-200 rounded-md hover:shadow-md disabled:opacity-30 transition-all text-slate-600"
+                            className="p-2 border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 transition-all text-slate-600"
                         >
                             <ChevronRight className="w-4 h-4" />
                         </button>
@@ -566,10 +538,10 @@ export default function InfantRegistry() {
 
             {confirmArchiveInfant && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/40 px-4">
-                    <div className="w-full max-w-md rounded-md border border-slate-200 bg-white shadow-sm">
+                    <div className="w-full max-w-md border border-slate-250 bg-white shadow-2xl">
                         <div className="border-b border-slate-200 px-6 py-5">
                             <div className="flex items-start gap-3">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-md border border-amber-100 bg-amber-50 text-amber-700">
+                                <div className="flex h-10 w-10 items-center justify-center border border-amber-200 bg-amber-50 text-amber-700">
                                     <AlertCircle className="h-5 w-5" />
                                 </div>
                                 <div>
@@ -586,7 +558,7 @@ export default function InfantRegistry() {
                                     Are you sure you want to archive this record? It will be removed from all active reports and follow-up queues.
                                 </p>
                                 {archiveError && (
-                                    <div role="alert" className="rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold leading-5 text-rose-800">
+                                    <div role="alert" className="border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold leading-5 text-rose-800">
                                         {archiveError}
                                     </div>
                                 )}
@@ -596,7 +568,7 @@ export default function InfantRegistry() {
                                         required
                                         value={archiveReason}
                                         onChange={(event) => setArchiveReason(event.target.value)}
-                                        className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-800"
+                                        className="mt-2 w-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-[#084C39]"
                                     >
                                         <option value="">Select archive reason</option>
                                         <option value="Relocated / Moved Away">Relocated / Moved Away</option>
@@ -611,13 +583,13 @@ export default function InfantRegistry() {
                                         value={archiveNotes}
                                         onChange={(event) => setArchiveNotes(event.target.value)}
                                         rows={4}
-                                        className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-800"
+                                        className="mt-2 w-full resize-none border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-[#084C39]"
                                         placeholder="Add supporting context for the archive action."
                                     />
                                 </label>
                             </form>
                         </div>
-                        <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
+                        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4">
                             <button
                                 type="button"
                                 onClick={() => {
@@ -626,7 +598,7 @@ export default function InfantRegistry() {
                                     setArchiveNotes('');
                                     setArchiveError('');
                                 }}
-                                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50"
+                                className="border border-slate-200 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50"
                             >
                                 Cancel
                             </button>
@@ -634,7 +606,7 @@ export default function InfantRegistry() {
                                 type="submit"
                                 form="archive-record-form"
                                 disabled={updatingStatusId === confirmArchiveInfant.id || !archiveReason}
-                                className="rounded-md bg-rose-700 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-800 disabled:opacity-60"
+                                className="bg-rose-700 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-800 disabled:opacity-60"
                             >
                                 {updatingStatusId === confirmArchiveInfant.id ? 'Archiving...' : 'Confirm Archive'}
                             </button>

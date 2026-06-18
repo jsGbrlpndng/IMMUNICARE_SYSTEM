@@ -1,4 +1,5 @@
 const db = require('../db');
+const { MIN_CLUSTER_INFANTS, OPEN_URGENT_TASK_STATUSES } = require('../constants/domain');
 
 class DefaulterService {
     /**
@@ -83,7 +84,9 @@ class DefaulterService {
                     cluster_assignment.assigned_bhw_id AS assigned_cluster_bhw_id,
                     cluster_assignment.assigned_cluster_bhw_role AS assigned_cluster_bhw_role,
                     cluster_assignment.assigned_cluster_bhw_name AS assigned_cluster_bhw_name,
-                    delegated_task.assigned_by_midwife_id AS assigned_by_midwife_id
+                    delegated_task.assigned_by_midwife_id AS assigned_by_midwife_id,
+                    delegated_task.assigned_task_bhw_name AS delegated_task_bhw_name,
+                    delegated_task.task_status AS task_status
                 FROM schedule_urgency su
                 LEFT JOIN LATERAL (
                     SELECT id, full_name, assigned_barangay
@@ -109,17 +112,27 @@ class DefaulterService {
                     WHERE cam.infant_id = su.infant_id
                       AND ca.status IN ('Pending', 'In Progress')
                       AND UPPER(TRIM(ca.barangay)) = UPPER(TRIM(su.barangay))
+                      AND (
+                          SELECT COUNT(*)::int
+                          FROM cluster_assignment_members cam_count
+                          WHERE cam_count.assignment_id = ca.id
+                      ) >= ?
                     ORDER BY ca.updated_at DESC
                     LIMIT 1
                 ) cluster_assignment ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT
                         ft.id AS delegated_task_id,
-                        ft.assigned_by_midwife_id
+                        ft.assigned_to_bhw_id AS delegated_task_bhw_id,
+                        task_bhw.full_name AS assigned_task_bhw_name,
+                        ft.assigned_by_midwife_id,
+                        ft.status AS task_status
                     FROM follow_up_tasks ft
+                    LEFT JOIN users task_bhw ON task_bhw.id = ft.assigned_to_bhw_id
                     WHERE ft.infant_id = su.infant_id
-                      AND ft.status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
+                      AND ft.status = ANY(?)
                       AND ft.assigned_by_midwife_id IS NOT NULL
+                      ${bhwId ? 'AND ft.assigned_to_bhw_id = ?' : ''}
                     ORDER BY ft.updated_at DESC
                     LIMIT 1
                 ) delegated_task ON TRUE
@@ -131,7 +144,12 @@ class DefaulterService {
             ORDER BY days_overdue DESC
             LIMIT ?
         `;
-        const [rows] = await db.execute(query, [barangayName, Number(limit) || 250]);
+        const params = [MIN_CLUSTER_INFANTS, OPEN_URGENT_TASK_STATUSES];
+        if (bhwId) params.push(bhwId);
+        params.push(barangayName);
+        params.push(Number(limit) || 250);
+
+        const [rows] = await db.execute(query, params);
         return rows;
     }
 }

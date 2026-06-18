@@ -176,8 +176,8 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
             FROM infants
             WHERE barangay = ?
               AND status = 'Active'
-              AND created_at >= ?::date
-              AND created_at < (?::date + INTERVAL '1 day')
+              AND dob >= ?::date
+              AND dob <= ?::date
               AND UPPER(COALESCE(registration_status, status, '')) IN ('APPROVED', 'VALIDATED')
         `;
 
@@ -231,7 +231,7 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
                         WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('IPV', 'IPV-1', 'IPV1') THEN 'IPV-1'
                         WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('MCV-1', 'MCV1', 'MEASLES', 'MEASLES-1') THEN 'MCV-1'
                         ELSE COALESCE(s.vaccine_code, v.vaccine_code)
-                      END IN ('BCG', 'HEPB', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'IPV-1', 'MCV-1')
+                      END IN ('BCG', 'HEPB', 'PENTA-1', 'PENTA-2', 'PENTA-3', 'OPV-1', 'OPV-2', 'OPV-3', 'MCV-1')
             ),
             fic_infants AS (
                 SELECT
@@ -240,7 +240,7 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
                     MAX(actual_date) AS final_qualifying_actual_date
                 FROM completed_primary_series
                 GROUP BY infant_id, sex
-                HAVING COUNT(DISTINCT canonical_vaccine_code) >= 10
+                HAVING COUNT(DISTINCT canonical_vaccine_code) >= 9
             )
             SELECT
                 SUM(CASE WHEN ${maleSexSql('sex')} THEN 1 ELSE 0 END)::int AS male,
@@ -251,42 +251,10 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
               AND final_qualifying_actual_date < (?::date + INTERVAL '1 day')
         `;
 
-        const demandForecastSql = `
-            SELECT
-                CASE
-                    WHEN s.vaccine_code IN ('IPV', 'IPV-1', 'IPV1') THEN 'IPV-1'
-                    WHEN s.vaccine_code IN ('IPV-2', 'IPV2') THEN 'IPV-2'
-                    WHEN s.vaccine_code IN ('MCV1', 'MEASLES', 'MEASLES-1') THEN 'MCV-1'
-                    WHEN s.vaccine_code IN ('MCV2', 'MMR-2', 'MEASLES-2') THEN 'MCV-2'
-                    ELSE s.vaccine_code
-                END AS vaccine_code,
-                COALESCE(s.vaccine_name, r.vaccine_name, s.vaccine_code) AS vaccine_name,
-                COUNT(*)::int AS doses_required
-            FROM infant_schedules s
-            JOIN infants i ON i.id = s.infant_id
-            LEFT JOIN doh_compliance_rules r ON r.vaccine_code = s.vaccine_code
-            WHERE i.barangay = ?
-              AND i.status = 'Active'
-              AND s.status NOT IN ('COMPLETED', 'PENDING_VALIDATION', 'INELIGIBLE')
-              AND s.recommended_date::date >= CURRENT_DATE
-              AND s.recommended_date::date < (CURRENT_DATE + INTERVAL '31 days')
-            GROUP BY
-                CASE
-                    WHEN s.vaccine_code IN ('IPV', 'IPV-1', 'IPV1') THEN 'IPV-1'
-                    WHEN s.vaccine_code IN ('IPV-2', 'IPV2') THEN 'IPV-2'
-                    WHEN s.vaccine_code IN ('MCV1', 'MEASLES', 'MEASLES-1') THEN 'MCV-1'
-                    WHEN s.vaccine_code IN ('MCV2', 'MMR-2', 'MEASLES-2') THEN 'MCV-2'
-                    ELSE s.vaccine_code
-                END,
-                COALESCE(s.vaccine_name, r.vaccine_name, s.vaccine_code)
-            ORDER BY doses_required DESC, vaccine_code ASC
-        `;
-
         const [rows] = await db.execute(aggregationSql, [assignedBarangay, startDate, endDate]);
         const [registeredRows] = await db.execute(registeredSql, [assignedBarangay, startDate, endDate]);
         const [cpabRows] = await db.execute(cpabSql, [assignedBarangay, startDate, endDate]);
         const [ficRows] = await db.execute(ficSql, [assignedBarangay, startDate, endDate]);
-        const [forecastRows] = await db.execute(demandForecastSql, [assignedBarangay]);
 
         const totals = toSexTotals(rows);
         const registered = toSexTotals(registeredRows);
@@ -309,15 +277,6 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
                 cpab,
                 fic
             },
-            forecast: {
-                horizonDays: 30,
-                generatedFrom: toIsoDate(new Date()),
-                data: forecastRows.map(row => ({
-                    vaccine_code: row.vaccine_code,
-                    vaccine_name: row.vaccine_name,
-                    doses_required: Number(row.doses_required || 0)
-                }))
-            },
             totals,
             data: rows.map(row => ({
                 vaccine_code: row.vaccine_code,
@@ -333,12 +292,137 @@ router.get('/immunization-summary', reportAuth, async (req, res) => {
     }
 });
 
+// GET /api/reports/vaccine-drilldown
+// Fetches individual infant lists for a specific vaccine, date range, and gender filter.
+router.get('/vaccine-drilldown', reportAuth, async (req, res) => {
+    try {
+        const defaults = getDefaultReportRange();
+        const startDate = req.query.startDate || defaults.startDate;
+        const endDate = req.query.endDate || defaults.endDate;
+        const vaccineCode = req.query.vaccineCode;
+        const gender = req.query.gender ? String(req.query.gender).toUpperCase() : 'TOTAL';
+
+        if (!vaccineCode) {
+            return res.status(400).json({
+                success: false,
+                error: 'vaccineCode is required.'
+            });
+        }
+
+        if (!isValidDateOnly(startDate) || !isValidDateOnly(endDate)) {
+            return res.status(400).json({
+                success: false,
+                error: 'startDate and endDate must use YYYY-MM-DD format.'
+            });
+        }
+
+        if (new Date(startDate) > new Date(endDate)) {
+            return res.status(400).json({
+                success: false,
+                error: 'startDate cannot be later than endDate.'
+            });
+        }
+
+        const assignedBarangay = req.user.role === ROLES.SUPER_ADMIN
+            ? (req.query.barangay || req.user.assigned_barangay)
+            : req.user.assigned_barangay;
+
+        if (!assignedBarangay) {
+            return res.status(400).json({
+                success: false,
+                error: 'Assigned barangay context is required for report isolation.'
+            });
+        }
+
+        let genderClause = '';
+        if (gender === 'MALE' || gender === 'M') {
+            genderClause = `AND ${maleSexSql('i.sex')}`;
+        } else if (gender === 'FEMALE' || gender === 'F') {
+            genderClause = `AND ${femaleSexSql('i.sex')}`;
+        }
+
+        const drillDownSql = `
+            SELECT
+                i.reference_id,
+                i.first_name,
+                i.last_name,
+                i.sex,
+                v.administered_date
+            FROM vaccinations v
+            JOIN infant_schedules s
+              ON (
+                    (v.schedule_id IS NOT NULL AND s.id = v.schedule_id)
+                    OR (
+                        v.schedule_id IS NULL
+                        AND s.infant_id = v.infant_id
+                        AND s.vaccine_code = v.vaccine_code
+                        AND s.dose_number = v.dose_number
+                    )
+                 )
+            JOIN infants i ON i.id = v.infant_id
+            WHERE i.barangay = ?
+              AND s.status = 'COMPLETED'
+              AND v.administered_date IS NOT NULL
+              AND v.administered_date >= ?::date
+              AND v.administered_date < (?::date + INTERVAL '1 day')
+              AND CASE
+                    WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('IPV', 'IPV-1', 'IPV1') THEN 'IPV-1'
+                    WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('IPV-2', 'IPV2') THEN 'IPV-2'
+                    WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('MCV1', 'MEASLES', 'MEASLES-1') THEN 'MCV-1'
+                    WHEN COALESCE(s.vaccine_code, v.vaccine_code) IN ('MCV2', 'MMR-2', 'MEASLES-2') THEN 'MCV-2'
+                    ELSE COALESCE(s.vaccine_code, v.vaccine_code)
+                  END = ?
+              ${genderClause}
+            ORDER BY v.administered_date DESC, i.last_name ASC, i.first_name ASC
+        `;
+
+        const [rows] = await db.execute(drillDownSql, [assignedBarangay, startDate, endDate, vaccineCode]);
+
+        res.json({
+            success: true,
+            locality: assignedBarangay,
+            startDate,
+            endDate,
+            vaccineCode,
+            gender,
+            data: rows.map(row => ({
+                reference_id: row.reference_id,
+                first_name: row.first_name,
+                last_name: row.last_name,
+                sex: row.sex,
+                administered_date: row.administered_date
+            }))
+        });
+    } catch (error) {
+        console.error('[GET /api/reports/vaccine-drilldown]', error);
+        res.status(500).json({ success: false, error: 'Internal Server Error fetching drill-down data' });
+    }
+});
+
 // GET /api/reports/fhsis
 // Generates FIC/CIC counts from validated vaccination records.
 router.get('/fhsis', reportAuth, async (req, res) => {
     try {
-        const currentMonth = new Date().getMonth() + 1;
-        const currentYear = new Date().getFullYear();
+        const defaults = getDefaultReportRange();
+        const startDate = req.query.startDate || defaults.startDate;
+        const endDate = req.query.endDate || defaults.endDate;
+
+        if (!isValidDateOnly(startDate) || !isValidDateOnly(endDate)) {
+            return res.status(400).json({
+                success: false,
+                error: 'startDate and endDate must use YYYY-MM-DD format.'
+            });
+        }
+
+        if (new Date(startDate) > new Date(endDate)) {
+            return res.status(400).json({
+                success: false,
+                error: 'startDate cannot be later than endDate.'
+            });
+        }
+
+        const currentMonth = new Date(startDate).getMonth() + 1;
+        const currentYear = new Date(startDate).getFullYear();
         const scopedBarangay = req.user.role === ROLES.SUPER_ADMIN
             ? (req.query.barangay || null)
             : req.user.assigned_barangay;
@@ -391,6 +475,8 @@ router.get('/fhsis', reportAuth, async (req, res) => {
                       AND has_opv1 = 1 AND has_opv2 = 1 AND has_opv3 = 1
                       AND has_mcv1 = 1
                       AND completion_date < (dob::timestamptz + INTERVAL '12 months')
+                      AND completion_date >= ?::date
+                      AND completion_date < (?::date + INTERVAL '1 day')
                 )::int AS fic_count,
                 COUNT(*) FILTER (
                     WHERE has_bcg = 1 AND has_hepb = 1
@@ -398,15 +484,19 @@ router.get('/fhsis', reportAuth, async (req, res) => {
                       AND has_opv1 = 1 AND has_opv2 = 1 AND has_opv3 = 1
                       AND has_mcv1 = 1
                       AND completion_date >= (dob::timestamptz + INTERVAL '12 months')
+                      AND completion_date >= ?::date
+                      AND completion_date < (?::date + INTERVAL '1 day')
                 )::int AS cic_count
             FROM flags
         `;
 
-        const [statusResult] = await db.execute(statusQuery, barangayParams);
+        const [statusResult] = await db.execute(statusQuery, [...barangayParams, startDate, endDate, startDate, endDate]);
 
         res.status(200).json({
             report_month: `${currentYear}-${String(currentMonth).padStart(2, '0')}`,
             barangay: scopedBarangay,
+            startDate,
+            endDate,
             fic_count: Number(statusResult[0]?.fic_count || 0),
             cic_count: Number(statusResult[0]?.cic_count || 0),
             generated_at: new Date()

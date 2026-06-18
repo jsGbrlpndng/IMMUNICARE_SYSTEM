@@ -331,6 +331,93 @@ class M1ReportService {
         `;
     }
 
+    _historicValidatedDosesCte({ barangayClause = '' }) {
+        const administrationBarangay = this._administrationBarangayExpr('v', 'i');
+
+        return `
+            historic_canonical_vaccinations AS (
+                SELECT DISTINCT
+                    v.id AS vaccination_id,
+                    v.infant_id,
+                    ${administrationBarangay} AS barangay,
+                    i.dob,
+                    v.administered_date,
+                    COALESCE(v.report_dose_code, ${this._canonicalDoseCase('v')}) AS canonical_code,
+                    v.report_classification AS raw_report_classification,
+                    v.report_age_bucket AS raw_report_age_bucket,
+                    COALESCE(v.report_period_month, EXTRACT(MONTH FROM v.administered_date)::int) AS report_month,
+                    COALESCE(v.report_period_year, EXTRACT(YEAR FROM v.administered_date)::int) AS report_year,
+                    EXTRACT(EPOCH FROM (v.administered_date - i.dob::timestamptz)) / 86400.0 AS age_days,
+                    COALESCE(v.report_age_bucket = 'BIRTH_0_24H', v.administered_date <= (i.dob::timestamptz + INTERVAL '24 hours')) AS within_24_hours
+                FROM vaccinations v
+                JOIN infants i ON i.id = v.infant_id
+                WHERE i.status = 'Active'
+                  AND UPPER(COALESCE(v.validation_status::text, 'VALIDATED')) = 'VALIDATED'
+                  AND COALESCE(v.is_external, FALSE) = FALSE
+                  ${barangayClause}
+            ),
+            historic_validated_doses AS (
+                SELECT
+                    cv.*,
+                    COALESCE(
+                        CASE
+                            WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                            ELSE cv.raw_report_age_bucket
+                        END,
+                        CASE
+                            WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                            WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                            WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                            WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                            WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                            ELSE 'OVER_59M'
+                        END
+                    ) AS report_age_bucket,
+                    CASE
+                        WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN
+                            CASE
+                                WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) IN ('CATCH_UP', 'CATCHUP', 'ORI') THEN 'CATCH_UP'
+                                WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) = 'ROUTINE' THEN 'ROUTINE'
+                                ELSE NULL
+                            END
+                        WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) IN ('CATCH_UP', 'CATCHUP', 'ORI') THEN 'CATCH_UP'
+                        WHEN COALESCE(
+                            CASE
+                                WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                                ELSE cv.raw_report_age_bucket
+                            END,
+                            CASE
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                                WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                                WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                                WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                                ELSE 'OVER_59M'
+                            END
+                        ) = 'AGE_24_59M' THEN 'CATCH_UP'
+                        WHEN COALESCE(
+                            CASE
+                                WHEN cv.raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M') THEN 'AGE_0_12M'
+                                ELSE cv.raw_report_age_bucket
+                            END,
+                            CASE
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') AND cv.within_24_hours THEN 'BIRTH_0_24H'
+                                WHEN cv.canonical_code IN ('BCG', 'HEPB') THEN 'AFTER_24H'
+                                WHEN cv.age_days < 396 THEN 'AGE_0_12M'
+                                WHEN cv.age_days < 731 THEN 'AGE_13_23M'
+                                WHEN cv.age_days < 1827 THEN 'AGE_24_59M'
+                                ELSE 'OVER_59M'
+                            END
+                        ) IN ('AGE_0_12M', 'AGE_13_23M') THEN 'ROUTINE'
+                        WHEN UPPER(REPLACE(COALESCE(cv.raw_report_classification, ''), '-', '_')) = 'ROUTINE' THEN 'ROUTINE'
+                        ELSE NULL
+                    END AS report_classification
+                FROM historic_canonical_vaccinations cv
+                WHERE cv.canonical_code IS NOT NULL
+            )
+        `;
+    }
+
     async _getTargetSchema() {
         if (this._targetSchema) return this._targetSchema;
 
@@ -1268,6 +1355,9 @@ class M1ReportService {
                 endDate,
                 barangayClause: `AND UPPER(TRIM(${this._administrationBarangayExpr('v', 'i')})) = UPPER(TRIM(?))`
             })},
+            ${this._historicValidatedDosesCte({
+                barangayClause: `AND UPPER(TRIM(${this._administrationBarangayExpr('v', 'i')})) = UPPER(TRIM(?))`
+            })},
             bucketed AS (
                 SELECT
                     *,
@@ -1303,7 +1393,7 @@ class M1ReportService {
                         THEN administered_date
                         ELSE NULL
                     END) AS primary_completion_date
-                FROM validated_doses
+                FROM historic_validated_doses
                 GROUP BY infant_id, dob
             ),
             completion_counts AS (
@@ -1314,6 +1404,8 @@ class M1ReportService {
                           AND has_opv1 = 1 AND has_opv2 = 1 AND has_opv3 = 1
                           AND has_mcv1 = 1
                           AND primary_completion_date < (dob::timestamptz + INTERVAL '12 months')
+                          AND primary_completion_date >= ?::timestamptz
+                          AND primary_completion_date < ?::timestamptz
                     )::int AS fic,
                     COUNT(*) FILTER (
                         WHERE has_bcg = 1 AND has_hepb = 1
@@ -1324,6 +1416,8 @@ class M1ReportService {
                               primary_completion_date >= (dob::timestamptz + INTERVAL '12 months')
                               OR COALESCE(has_valid_hepb_birth_dose, 0) = 0
                           )
+                          AND primary_completion_date >= ?::timestamptz
+                          AND primary_completion_date < ?::timestamptz
                     )::int AS cic
                 FROM infant_completion_flags
             )
@@ -1378,7 +1472,13 @@ class M1ReportService {
                 COALESCE(SUM(missing_report_classification), 0)::int AS missing_report_classification_count
             FROM bucketed
             `,
-            [...params, barangay]
+            [
+                startDate, endDate, barangay, // validated_doses
+                barangay,                     // historic_validated_doses
+                startDate, endDate,           // completion_counts (fic)
+                startDate, endDate,           // completion_counts (cic)
+                barangay                      // SELECT
+            ]
         );
 
         let normalizedRows = addNumericFields(rows, MICRO_COLUMNS);

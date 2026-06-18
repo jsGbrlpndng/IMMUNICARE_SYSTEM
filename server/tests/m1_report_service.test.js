@@ -207,7 +207,7 @@ describe('M1ReportService DOH-aligned reporting', () => {
 
             expect(sql).toContain('canonical_vaccinations');
             expect(sql).toContain("report_classification = 'ROUTINE'");
-            expect(params).toEqual(['2026-01-01', '2026-02-01', 'LANGGAM', 'LANGGAM']);
+            expect(params).toEqual(['2026-01-01', '2026-02-01', 'LANGGAM', 'LANGGAM', '2026-01-01', '2026-02-01', '2026-01-01', '2026-02-01', 'LANGGAM']);
             return [[{
                 report_month: 1,
                 barangay: 'LANGGAM',
@@ -255,7 +255,7 @@ describe('M1ReportService DOH-aligned reporting', () => {
             expect(sql).toContain('missing_report_classification');
             expect(sql).toContain("raw_report_age_bucket IN ('AGE_9_12M', 'AGE_12M')");
             expect(sql).toContain("canonical_code = 'MCV1' AND report_classification = 'ROUTINE' AND report_age_bucket = 'AGE_0_12M'");
-            expect(params).toEqual(['2026-01-01', '2026-02-01', 'LANGGAM', 'LANGGAM']);
+            expect(params).toEqual(['2026-01-01', '2026-02-01', 'LANGGAM', 'LANGGAM', '2026-01-01', '2026-02-01', '2026-01-01', '2026-02-01', 'LANGGAM']);
             return [[{
                 report_month: 1,
                 barangay: 'LANGGAM',
@@ -289,7 +289,7 @@ describe('M1ReportService DOH-aligned reporting', () => {
             expect(sql).toContain(`${administrationBarangay} AS barangay`);
             expect(sql).toContain(`AND UPPER(TRIM(${administrationBarangay})) = UPPER(TRIM(?))`);
             expect(sql).not.toContain('AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))');
-            expect(params).toEqual(['2026-01-01', '2026-02-01', 'BARANGAY_A', 'BARANGAY_A']);
+            expect(params).toEqual(['2026-01-01', '2026-02-01', 'BARANGAY_A', 'BARANGAY_A', '2026-01-01', '2026-02-01', '2026-01-01', '2026-02-01', 'BARANGAY_A']);
 
             return [[{
                 report_month: 1,
@@ -330,7 +330,7 @@ describe('M1ReportService DOH-aligned reporting', () => {
                 return [[{ ...defaultTargetRow }]];
             }
             expect(sql).toContain("report_classification = 'CATCH_UP'");
-            expect(params).toEqual(['2026-01-01', '2027-01-01', 'LANGGAM', 'LANGGAM']);
+            expect(params).toEqual(['2026-01-01', '2027-01-01', 'LANGGAM', 'LANGGAM', '2026-01-01', '2027-01-01', '2026-01-01', '2027-01-01', 'LANGGAM']);
             return [[{
                 report_month: null,
                 barangay: 'LANGGAM',

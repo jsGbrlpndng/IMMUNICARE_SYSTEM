@@ -44,6 +44,16 @@ const DelegationModal = ({ isOpen, onClose, infant, onDelegateSuccess }) => {
             });
             const data = await res.json();
             if (res.ok) {
+                const eventDetail = {
+                    infantId: infant.infant_id,
+                    taskId: data.taskId,
+                    assignedBhwName: data.bhwName || null,
+                    timestamp: Date.now()
+                };
+                window.dispatchEvent(new CustomEvent('immunicare:followups-updated', {
+                    detail: eventDetail
+                }));
+                window.localStorage.setItem('immunicare:followups-updated', JSON.stringify(eventDetail));
                 if (onDelegateSuccess) {
                     onDelegateSuccess(data.bhwName);
                 }
