@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart2, FileText, LayoutDashboard, Map as MapIcon, MapPinned, Menu, Users, Layers, Settings } from 'lucide-react';
-import SidebarNav from './SidebarNav';
+import SidebarNav from '../components/SidebarNav';
 import { useAuth } from '../contexts/AuthContext';
-import NotificationBell from './NotificationBell';
+import NotificationBell from '../components/NotificationBell';
 
 const adminNavigation = [
     {
