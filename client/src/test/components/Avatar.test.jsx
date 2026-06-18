@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import Avatar from '../../components/Avatar';
+import Avatar from '../../components/common/Avatar';
 
 describe('Avatar Component', () => {
   describe('Initials Generation', () => {

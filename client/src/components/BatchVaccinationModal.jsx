@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Syringe, CheckCircle, AlertCircle, Users, Search } from 'lucide-react';
 import apiClient from '../services/apiClient';
-import Avatar from './Avatar';
+import Avatar from './common/Avatar';
 
 /**
  * BatchVaccinationModal Component

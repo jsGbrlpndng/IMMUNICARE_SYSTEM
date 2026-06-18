@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Phone, Syringe, MessageSquare } from 'lucide-react';
-import Avatar from './Avatar';
+import Avatar from './common/Avatar';
 
 /**
  * InfantCard Component

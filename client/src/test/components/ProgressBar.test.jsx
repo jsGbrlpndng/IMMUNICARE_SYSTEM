@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import ProgressBar from '../../components/ProgressBar';
+import ProgressBar from '../../components/common/ProgressBar';
 
 describe('ProgressBar Component', () => {
   describe('Basic Rendering', () => {
