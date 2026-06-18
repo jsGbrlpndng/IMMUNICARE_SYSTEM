@@ -10,7 +10,7 @@ import CoverageByDoseChart from '../../components/analytics/CoverageByDoseChart'
 import StatusBreakdownChart from '../../components/analytics/StatusBreakdownChart';
 import TimelinessTrendChart from '../../components/analytics/TimelinessTrendChart';
 import ClinicalOverview from '../../components/ClinicalOverview';
-import StatusBadge from '../../components/StatusBadge';
+import StatusBadge from '../../components/common/StatusBadge';
 
 import { MapContainer, TileLayer, Circle, Popup, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';

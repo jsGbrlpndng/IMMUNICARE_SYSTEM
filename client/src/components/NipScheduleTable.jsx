@@ -7,7 +7,7 @@ import {
     Clock
 } from 'lucide-react';
 import { formatDate, getDoseTimingStatus } from '../utils/formatters';
-import StatusBadge from './StatusBadge';
+import StatusBadge from './common/StatusBadge';
 import { normalizeClinicalStatus } from '../utils/clinicalStatus';
 
 const prepareScheduleForDisplay = (scheduleData) => {

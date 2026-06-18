@@ -18,7 +18,7 @@ import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
 import GlobalInfantSearchModal from '../../components/GlobalInfantSearchModal';
-import StatusBadge from '../../components/StatusBadge';
+import StatusBadge from '../../components/common/StatusBadge';
 import FilterToolbar from '../../components/FilterToolbar';
 
 /**

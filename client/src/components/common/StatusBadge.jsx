@@ -7,7 +7,7 @@ import {
     Clock3,
     FileWarning
 } from 'lucide-react';
-import { getClinicalStatusMeta } from '../utils/clinicalStatus';
+import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
 
 const ICONS = {
     activity: Activity,

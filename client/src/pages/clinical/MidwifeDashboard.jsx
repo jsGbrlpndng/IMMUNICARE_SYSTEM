@@ -40,7 +40,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { formatFullName } from '../../utils/formatFullName';
 import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
-import StatusBadge from '../../components/StatusBadge';
+import StatusBadge from '../../components/common/StatusBadge';
 
 const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
 
