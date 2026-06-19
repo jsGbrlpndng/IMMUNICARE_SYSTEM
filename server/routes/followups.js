@@ -8,6 +8,7 @@ const { performAuditLog } = require('../utils/auditLogger');
 const NIPScheduleService = require('../services/NIPScheduleService');
 const { safeRecordAuditEvent } = require('../utils/auditLedger');
 const DefaulterService = require('../services/DefaulterService');
+const FollowUpTaskService = require('../services/FollowUpTaskService');
 
 router.use(clinicalAuth);
 
@@ -281,14 +282,26 @@ router.post('/:infantId/logs', async (req, res) => {
             ]
         );
 
+        const dbOutcomeMap = {
+            'CONTACTED': 'CONTACTED_RESCHEDULED',
+            'NOT_FOUND': 'NOT_FOUND',
+            'DECLINED': 'DECLINED',
+            'TRANSFERRED': 'TRANSFERRED'
+        };
+        const taskOutcome = dbOutcomeMap[req.body.outcome] || 'CONTACTED_RESCHEDULED';
+
         await db.execute(
             `
             UPDATE follow_up_tasks
-            SET status = 'COMPLETED_PENDING_REVIEW', updated_at = CURRENT_TIMESTAMP
+            SET status = 'COMPLETED_PENDING_REVIEW',
+                outcome = ?,
+                outcome_notes = ?,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
             WHERE infant_id = ?
               AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
             `,
-            [req.params.infantId]
+            [taskOutcome, req.body.notes || null, req.params.infantId]
         );
 
         await performAuditLog(req.user.id, 'FOLLOW_UP_VISIT_LOGGED', 'follow_up_logs', logId, {
@@ -516,6 +529,17 @@ router.post('/:infantId/delegate', async (req, res) => {
     } catch (err) {
         console.error('[DELEGATION_ERR]', err);
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.patch('/tasks/:taskId/acknowledge', async (req, res) => {
+    try {
+        const service = new FollowUpTaskService(db);
+        const result = await service.acknowledgeTask(req.params.taskId, req.user);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[ACKNOWLEDGE_TASK_ROUTE_ERROR]', error);
+        res.status(error.status || 500).json({ success: false, error: error.message });
     }
 });
 

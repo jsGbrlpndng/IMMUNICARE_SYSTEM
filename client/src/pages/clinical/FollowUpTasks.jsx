@@ -22,12 +22,10 @@ import {
 
 const today = new Date().toISOString().slice(0, 10);
 const VISIT_OUTCOME_OPTIONS = [
-    { value: 'NOT_HOME', label: 'Not Home' },
-    { value: 'REFUSED', label: 'Refused' },
-    { value: 'PROMISED_TO_VISIT', label: 'Promised to Visit' },
-    { value: 'TRANSFERRED', label: 'Transferred' },
-    { value: 'RELOCATED', label: 'Relocated' },
-    { value: 'NOT_FOUND', label: 'Not Found' }
+    { value: 'CONTACTED', label: 'Contacted' },
+    { value: 'NOT_FOUND', label: 'Not Found' },
+    { value: 'DECLINED', label: 'Declined' },
+    { value: 'TRANSFERRED', label: 'Transferred' }
 ];
 
 const formatDate = (value) => {
@@ -57,6 +55,7 @@ const FollowUpTasks = () => {
     const [archiveNotes, setArchiveNotes] = useState('');
     const [archiveError, setArchiveError] = useState('');
     const [archivingId, setArchivingId] = useState(null);
+    const [acknowledgingTaskId, setAcknowledgingTaskId] = useState(null);
     const [showClustersOnly, setShowClustersOnly] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showIndividualsOnly, setShowIndividualsOnly] = useState(false);
@@ -167,6 +166,27 @@ const FollowUpTasks = () => {
             ...prev,
             [clusterId]: !prev[clusterId]
         }));
+    };
+
+    const handleAcknowledge = async (taskId) => {
+        if (!taskId) return;
+        setAcknowledgingTaskId(taskId);
+        try {
+            const res = await apiClient.patch(`/follow-ups/tasks/${taskId}/acknowledge`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Failed to acknowledge task.');
+                return;
+            }
+            alert('Task successfully acknowledged.');
+            await loadData();
+            window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
+        } catch (error) {
+            console.error('Failed to acknowledge task:', error);
+            alert('Server connection failed.');
+        } finally {
+            setAcknowledgingTaskId(null);
+        }
     };
 
     // Visit logging is handled directly by the LogVisitModal component
@@ -339,9 +359,24 @@ const FollowUpTasks = () => {
                 </td>
 
                 <td className="px-5 py-4 border-b border-slate-200">
-                    <span className={`inline-flex border px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClasses(infant?.status)}`}>
-                        {infant?.status || '-'}
-                    </span>
+                    <div className="flex flex-col gap-1.5 items-start">
+                        <span className={`inline-flex border px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${statusClasses(infant?.status)}`}>
+                            {infant?.status || '-'}
+                        </span>
+                        {infant?.task_status && (
+                            <span className={`inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] border ${
+                                infant.task_status === 'ASSIGNED'
+                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                    : infant.task_status === 'ACKNOWLEDGED'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : infant.task_status === 'OVERDUE'
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>
+                                Task: {infant.task_status}
+                            </span>
+                        )}
+                    </div>
                 </td>
 
                 <td className="px-5 py-4 border-b border-slate-200">
@@ -360,6 +395,15 @@ const FollowUpTasks = () => {
                                 <span className="inline-flex items-center gap-1.5 rounded bg-amber-50 border border-amber-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-800 shadow-sm">
                                     Midwife Deployed
                                 </span>
+                            ) : infant?.task_status === 'ASSIGNED' ? (
+                                <button
+                                    type="button"
+                                    disabled={acknowledgingTaskId === infant.delegated_task_id}
+                                    onClick={() => handleAcknowledge(infant.delegated_task_id)}
+                                    className="inline-flex items-center gap-2 bg-[#D97706] hover:bg-[#B45309] px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors disabled:opacity-60"
+                                >
+                                    {acknowledgingTaskId === infant.delegated_task_id ? 'Acknowledging...' : 'Acknowledge'}
+                                </button>
                             ) : (
                                 <button
                                     type="button"

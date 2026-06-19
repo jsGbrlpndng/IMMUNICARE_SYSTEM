@@ -3,19 +3,17 @@ import { X, Loader2, ClipboardCheck } from 'lucide-react';
 import apiClient from '../services/apiClient';
 
 const VISIT_OUTCOME_OPTIONS = [
-    { value: 'NOT_HOME', label: 'Not Home' },
-    { value: 'REFUSED', label: 'Refused' },
-    { value: 'PROMISED_TO_VISIT', label: 'Rescheduled / Promised to Visit' },
-    { value: 'ADMINISTERED', label: 'Administered / Vaccinated' },
+    { value: 'CONTACTED', label: 'Contacted' },
     { value: 'NOT_FOUND', label: 'Not Found' },
-    { value: 'RELOCATED', label: 'Relocated / Moved Away' }
+    { value: 'DECLINED', label: 'Declined' },
+    { value: 'TRANSFERRED', label: 'Transferred' }
 ];
 
 const today = new Date().toISOString().slice(0, 10);
 
 const LogVisitModal = ({ isOpen, onClose, infant, onLogSuccess }) => {
     const [visitDate, setVisitDate] = useState(today);
-    const [outcome, setOutcome] = useState('NOT_HOME');
+    const [outcome, setOutcome] = useState('CONTACTED');
     const [notes, setNotes] = useState('');
     const [parentContact, setParentContact] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -25,7 +23,7 @@ const LogVisitModal = ({ isOpen, onClose, infant, onLogSuccess }) => {
         if (infant) {
             setParentContact(infant.parent_contact || infant.caregiver_phone || '');
             setVisitDate(today);
-            setOutcome('NOT_HOME');
+            setOutcome('CONTACTED');
             setNotes('');
             setError('');
         }

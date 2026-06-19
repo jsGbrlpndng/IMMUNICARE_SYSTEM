@@ -33,6 +33,7 @@ const BHWDashboard = () => {
     const [activeDeployments, setActiveDeployments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedInfant, setSelectedInfant] = useState(null);
+    const [acknowledgingTaskId, setAcknowledgingTaskId] = useState(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -163,6 +164,27 @@ const BHWDashboard = () => {
     ];
 
     const returnedCorrections = recentInfants.filter((infant) => infant.status === 'NEEDS_CORRECTION');
+
+    const handleAcknowledge = async (taskId) => {
+        if (!taskId) return;
+        setAcknowledgingTaskId(taskId);
+        try {
+            const res = await apiClient.patch(`/follow-ups/tasks/${taskId}/acknowledge`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Failed to acknowledge task.');
+                return;
+            }
+            alert('Task successfully acknowledged.');
+            await fetchDashboardData();
+            window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
+        } catch (error) {
+            console.error('Failed to acknowledge task:', error);
+            alert('Server connection failed.');
+        } finally {
+            setAcknowledgingTaskId(null);
+        }
+    };
 
     const openRecord = (infant) => {
         const status = infant.status === 'PENDING_VALIDATION'
@@ -454,6 +476,15 @@ const BHWDashboard = () => {
                                             <span className="inline-flex items-center gap-1.5 rounded bg-amber-50 border border-amber-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-800 shadow-sm">
                                                 Midwife Deployed
                                             </span>
+                                        ) : task?.task_status === 'ASSIGNED' ? (
+                                            <button
+                                                type="button"
+                                                disabled={acknowledgingTaskId === task.delegated_task_id}
+                                                onClick={() => handleAcknowledge(task.delegated_task_id)}
+                                                className="inline-flex items-center gap-2 rounded border border-[#D97706] bg-[#D97706] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#B45309] disabled:opacity-60"
+                                            >
+                                                {acknowledgingTaskId === task.delegated_task_id ? 'Acknowledging...' : 'Acknowledge'}
+                                            </button>
                                         ) : (
                                             <button
                                                 type="button"

@@ -86,7 +86,9 @@ class DefaulterService {
                     cluster_assignment.assigned_cluster_bhw_name AS assigned_cluster_bhw_name,
                     delegated_task.assigned_by_midwife_id AS assigned_by_midwife_id,
                     delegated_task.assigned_task_bhw_name AS delegated_task_bhw_name,
-                    delegated_task.task_status AS task_status
+                    delegated_task.task_status AS task_status,
+                    delegated_task.delegated_task_id AS delegated_task_id,
+                    delegated_task.delegated_task_bhw_id AS delegated_task_bhw_id
                 FROM schedule_urgency su
                 LEFT JOIN LATERAL (
                     SELECT id, full_name, assigned_barangay
