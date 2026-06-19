@@ -105,17 +105,17 @@ export default function InfantRecord() {
     };
 
     if (loading) return (
-        <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2E7D32]"></div>
+        <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#064E3B]"></div>
         </div>
     );
 
     if (!data) return (
-        <div className="p-8 text-center bg-white rounded-3xl border border-slate-200">
-            <AlertCircle className="w-16 h-16 text-red-100 mx-auto mb-4" />
+        <div className="border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <AlertCircle className="mx-auto mb-4 h-16 w-16 text-rose-100" />
             <h2 className="text-xl font-black text-slate-800">RECORD NOT FOUND</h2>
-            <p className="text-slate-500 mt-2">The system cannot locate clinical data for this ID.</p>
-            <button onClick={() => navigate(user?.role === 'BHW' ? '/bhw/dashboard' : '/clinical/registry')} className="mt-6 px-6 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">
+            <p className="mt-2 text-slate-500">The system cannot locate clinical data for this ID.</p>
+            <button onClick={() => navigate(user?.role === 'BHW' ? '/bhw/dashboard' : '/clinical/registry')} className="mt-6 border border-slate-200 bg-slate-100 px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-200">
                 Back to Registry
             </button>
         </div>
@@ -147,61 +147,63 @@ export default function InfantRecord() {
     };
 
     return (
-        <div className="flex flex-col gap-8 pb-20">
+        <div className="flex flex-col gap-5 pb-20">
             {/* 1. CLINICAL HEADER (STICKY) */}
-            <div className="sticky top-14 z-30 bg-white/95 backdrop-blur-md -mx-8 px-8 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-                <div className="flex items-center gap-4">
+            <div className="sticky top-14 z-30 -mx-8 flex flex-col justify-between gap-4 border-b border-slate-200 bg-white/95 px-8 py-4 shadow-sm backdrop-blur-md md:flex-row md:items-center">
+                <div className="flex min-w-0 items-start gap-4">
                     <button 
                         onClick={() => navigate(user?.role === 'BHW' ? '/bhw/dashboard' : '/clinical/registry')}
-                        className="p-3 bg-slate-50 text-slate-400 hover:text-[#2E7D32] hover:bg-green-50 rounded-xl transition-all border border-slate-100"
+                        className="border border-slate-200 bg-white p-2.5 text-slate-500 transition-all hover:border-[#064E3B] hover:bg-emerald-50 hover:text-[#064E3B]"
+                        aria-label="Back to registry"
                     >
                         <ChevronLeft size={20} />
                     </button>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Clinical Patient Record</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <h1 className="min-w-0 text-2xl font-black uppercase tracking-tight text-slate-950">
                                 {infant.name}
                             </h1>
                             {infant.status === 'FIC' ? (
-                                <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-200 flex items-center gap-1.5 shadow-md">
+                                <span className="flex items-center gap-1.5 border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800">
                                     <ShieldCheck size={12} /> FIC - Fully Immunized Child
                                 </span>
                             ) : infant.status === 'CIC' ? (
-                                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-200 flex items-center gap-1.5 shadow-md">
+                                <span className="flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800">
                                     <ShieldCheck size={12} /> CIC - Completely Immunized Child
                                 </span>
                             ) : isFullyImmunized ? (
-                                <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100 flex items-center gap-1.5 shadow-sm">
+                                <span className="flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800">
                                     <CheckCircle2 size={12} /> Fully Immunized
                                 </span>
                             ) : isOverdue ? (
-                                <span className="bg-red-50 text-red-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-100 flex items-center gap-1.5 shadow-sm">
+                                <span className="flex items-center gap-1.5 border border-rose-300 bg-rose-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-rose-700">
                                     <AlertCircle size={12} /> DEFAULTER ({summary.defaulter || summary.DEFAULTED || summary.overdue})
                                 </span>
                             ) : summary.due_today > 0 ? (
-                                <span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-orange-100 flex items-center gap-1.5 shadow-sm">
+                                <span className="flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800">
                                     <Clock size={12} /> Due Today ({summary.due_today})
                                 </span>
                             ) : summary.due_soon > 0 ? (
-                                <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-amber-100 flex items-center gap-1.5 shadow-sm">
+                                <span className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
                                     <Clock size={12} /> Due Soon ({summary.due_soon})
                                 </span>
                             ) : (
-                                <span className="bg-teal-50 text-teal-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-teal-100 flex items-center gap-1.5 shadow-sm">
+                                <span className="flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-700">
                                     <Activity size={12} /> On Track
                                 </span>
                             )}
                         </div>
-                        <div className="flex items-center gap-4 mt-0.5 text-[11px] font-bold text-slate-400 tracking-widest">
-                            <span className="flex items-center gap-1"><History size={12} /> ID: {infant.reference_id}</span>
-                            <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(infant.dob).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-                            <span className="flex items-center gap-1 text-[#2E7D32] bg-green-50 px-2 rounded-md"><Clock size={12} /> {age_metrics.ageInMonths} MONTHS OLD</span>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            <span className="flex items-center gap-1 border border-slate-200 bg-slate-50 px-2 py-1"><History size={12} /> ID: {infant.reference_id}</span>
+                            <span className="flex items-center gap-1 border border-slate-200 bg-slate-50 px-2 py-1"><Calendar size={12} /> {new Date(infant.dob).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                            <span className="flex items-center gap-1 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[#064E3B]"><Clock size={12} /> {age_metrics.ageInMonths} MONTHS OLD</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex gap-2">
-                    <button className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2">
+                    <button className="flex items-center gap-2 border border-slate-300 bg-white px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all hover:border-[#064E3B] hover:text-[#064E3B]">
                         <Clipboard size={16} /> Print Record
                     </button>
                 </div>
@@ -216,37 +218,37 @@ export default function InfantRecord() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
                 {/* 2. DEMOGRAPHICS & SPATIAL PANEL */}
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+                <div className="border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex items-center gap-3">
+                        <div className="bg-slate-100 p-2.5 text-slate-700">
                             <Baby size={20} />
                         </div>
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Demos & Spatial</h3>
                     </div>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Biological Sex</span>
                             <span className="text-xs font-bold text-slate-700">{infant.sex === 'M' ? 'MALE' : 'FEMALE'}</span>
                         </div>
-                        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Birth Weight</span>
                             <span className="text-xs font-bold text-slate-700">{infant.birth_weight} KG</span>
                         </div>
-                        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Guardian</span>
                         </div>
-                        <div className="flex flex-col gap-1 border-b border-slate-50 pb-3">
+                        <div className="flex flex-col gap-1 border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Precise Clinical Location</span>
-                            <div className="mt-1">
-                                <span className="text-sm font-black text-emerald-800 block leading-tight">
+                            <div className="mt-1 border-l-4 border-[#064E3B] bg-slate-50 px-3 py-2">
+                                <span className="block text-sm font-black leading-snug text-slate-900">
                                      {infant.exact_address || 'No Registered Street Address'}
                                 </span>
-                                <span className="text-[10px] text-slate-500 font-bold uppercase mt-1 block tracking-tight">
-                                    {infant.landmark || 'No Landmark Recorded'} &bull; Subdiv/Purok Not Defined
+                                <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    Landmark: {infant.landmark || 'No Landmark Recorded'}
                                 </span>
-                                <span className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-1.5 block">Verified Geographic Node</span>
+                                <span className="mt-1.5 block text-[9px] font-bold uppercase tracking-widest text-[#064E3B]">Verified Geographic Node</span>
                             </div>
                         </div>
                     </div>
@@ -254,35 +256,35 @@ export default function InfantRecord() {
 
 
                 {/* 3. CPAB & MATERNAL HISTORY PANEL */}
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-2.5 bg-emerald-50 text-[#2E7D32] rounded-xl">
+                <div className="border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5 flex items-center gap-3">
+                        <div className="bg-emerald-50 p-2.5 text-[#064E3B]">
                             <ShieldCheck size={20} />
                         </div>
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Maternal Health Data</h3>
                     </div>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Maternal TT Status</span>
                             <span className="text-xs font-bold text-slate-700">
                                 {infant.mother_tt_status ? (infant.mother_tt_status.startsWith('TT') ? infant.mother_tt_status : `TT${infant.mother_tt_status}`) : 'Unknown'}
                             </span>
                         </div>
-                        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Last TT Date</span>
                             <span className="text-xs font-bold text-slate-700">{infant.last_tt_date ? new Date(infant.last_tt_date).toLocaleDateString() : 'NO RECORD'}</span>
                         </div>
                         
-                        <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="flex flex-col gap-2 border border-slate-200 bg-slate-50 p-3">
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Birth Detail</span>
-                            <div className="flex items-center justify-between border-b border-slate-200/50 pb-2">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase">Length at Birth</span>
                                 <span className="text-xs font-black text-slate-800">
                                     {infant.length_at_birth_cm !== null && infant.length_at_birth_cm !== undefined ? `${infant.length_at_birth_cm} CM` : 'N/A'}
                                 </span>
                             </div>
 
-                            <div className="flex items-center justify-between border-b border-slate-200/50 pb-2">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase">Immediate Breastfeeding</span>
                                 <span className={`text-xs font-black ${infant.initiated_breastfeeding ? 'text-emerald-600' : 'text-slate-400'}`}>
                                     {infant.initiated_breastfeeding ? 'YES' : 'NO'}
@@ -299,29 +301,29 @@ export default function InfantRecord() {
                 </div>
 
                 {/* 4. CLINICAL SUMMARY PANEL */}
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
-                    <div className="flex items-center gap-3 mb-6 relative z-10">
-                        <div className="p-2.5 bg-emerald-50 text-emerald-800 rounded-xl">
+                <div className="relative overflow-hidden border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="relative z-10 mb-5 flex items-center gap-3">
+                        <div className="bg-emerald-50 p-2.5 text-[#064E3B]">
                             <Activity size={20} />
                         </div>
                         <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">NIP Coverage Summary</h3>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 relative z-10">
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div className="relative z-10 grid grid-cols-2 gap-3">
+                        <div className="border border-slate-200 bg-slate-50 p-4">
                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Completed</span>
-                            <div className="text-2xl font-black mt-1 text-slate-800">{summary.completed} <span className="text-xs text-slate-400">/ {summary.total_doses}</span></div>
+                            <div className="mt-1 text-2xl font-black text-slate-800">{summary.completed} <span className="text-xs text-slate-400">/ {summary.total_doses}</span></div>
                         </div>
-                        <div className={`p-4 rounded-2xl border ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className={`border p-4 ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-slate-50'}`}>
                             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">DEFAULTER</span>
-                            <div className={`text-2xl font-black mt-1 ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'text-red-600' : 'text-slate-800'}`}>{summary.defaulter || summary.DEFAULTED || summary.overdue}</div>
+                            <div className={`mt-1 text-2xl font-black ${(summary.defaulter || summary.DEFAULTED || summary.overdue) > 0 ? 'text-rose-700' : 'text-slate-800'}`}>{summary.defaulter || summary.DEFAULTED || summary.overdue}</div>
                         </div>
-                        <div className="col-span-2 bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100/50 flex items-center justify-between">
+                        <div className="col-span-2 flex items-center justify-between border border-emerald-200 bg-emerald-50 p-4">
                             <div>
                                 <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800 opacity-60">Overall Compliance</span>
-                                <div className="text-xl font-black mt-1 text-emerald-800">{Math.round((summary.completed / summary.total_doses) * 100)}%</div>
+                                <div className="mt-1 text-xl font-black text-emerald-800">{Math.round((summary.completed / summary.total_doses) * 100)}%</div>
                             </div>
-                            <div className="w-16 h-16 relative">
-                                <svg className="w-16 h-16 transform -rotate-90">
+                            <div className="relative h-16 w-16">
+                                <svg className="h-16 w-16 -rotate-90 transform">
                                     <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" className="text-emerald-100/30" />
                                     <circle 
                                         cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="transparent" 
@@ -338,28 +340,28 @@ export default function InfantRecord() {
             </div>
 
             {/* 5. NIP VACCINATION SCHEDULE TABLE */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                        <Syringe size={18} className="text-[#2E7D32]" />
+            <div className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+                    <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-widest text-slate-800">
+                        <Syringe size={18} className="text-[#064E3B]" />
                         National Immunization Program Schedule
                     </h3>
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chronological Sequence</span>
                 </div>
                 
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full min-w-[980px] border-collapse text-left">
                         <thead>
-                            <tr className="bg-slate-50/50 border-b border-slate-100">
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vaccine Name</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Age</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Due Date</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Admn. Date</th>
-                                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
+                            <tr className="border-b border-[#064E3B] bg-[#064E3B]">
+                                <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white">Vaccine Name</th>
+                                <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white">Target Age</th>
+                                <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white">Due Date</th>
+                                <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white">Status</th>
+                                <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white">Admin Date</th>
+                                <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-white">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50 uppercase text-[11px] font-bold">
+                        <tbody className="divide-y divide-slate-100 text-[11px] font-bold uppercase">
                             {data.record.map((vax, idx) => {
                                 const isOverdueRow = ['DEFAULTER', 'DEFAULTED', 'OVERDUE'].includes(vax.original_schedule_status);
                                 const isIneligibleRow = vax.original_schedule_status === 'INELIGIBLE';
@@ -370,50 +372,50 @@ export default function InfantRecord() {
                                 const isPremature = vax.actual_date && vax.earliest_allowed_date && 
                                                    new Date(vax.actual_date) < new Date(vax.earliest_allowed_date);
 
-                                const rowBg = ['DEFAULTER', 'DEFAULTED'].includes(vax.original_schedule_status) ? 'bg-red-100/40' :
-                                              isOverdueRow ? 'bg-red-50/30' : 
-                                              vax.original_schedule_status === 'DUE_TODAY' ? 'bg-orange-50/30' : 
-                                              vax.original_schedule_status === 'DUE_SOON' ? 'bg-amber-50/20' : 
+                                const rowBg = ['DEFAULTER', 'DEFAULTED'].includes(vax.original_schedule_status) ? 'bg-rose-50' :
+                                              isOverdueRow ? 'bg-rose-50/70' : 
+                                              vax.original_schedule_status === 'DUE_TODAY' ? 'bg-amber-50' : 
+                                              vax.original_schedule_status === 'DUE_SOON' ? 'bg-amber-50/60' : 
                                               isIneligibleRow ? 'bg-slate-50' :
                                               isCompletedRow ? 'bg-emerald-50/10' : '';
 
                                 return (
-                                    <tr key={idx} className={`${rowBg} transition-colors group`}>
-                                        <td className="px-6 py-4">
-                                            <div className="text-slate-800 font-black">{vax.vaccine_name}</div>
-                                            <div className="text-[9px] text-slate-400 tracking-widest flex items-center gap-1 mt-0.5">
+                                    <tr key={idx} className={`${rowBg} group transition-colors hover:bg-emerald-50/30`}>
+                                        <td className="px-5 py-3">
+                                            <div className="font-black text-slate-900">{vax.vaccine_name}</div>
+                                            <div className="mt-0.5 flex items-center gap-1 text-[9px] tracking-widest text-slate-400">
                                                 {vax.vaccine_code} &bull; DOSE {vax.dose_number}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-slate-500 font-medium">
+                                        <td className="px-5 py-3 font-bold text-slate-500">
                                             {vax.target_age || '--'}
                                         </td>
-                                        <td className="px-6 py-4 text-slate-600">
+                                        <td className="px-5 py-3 text-slate-600">
                                             {new Date(vax.recommended_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-5 py-3">
                                             {isPremature ? (
                                                 <div className="flex flex-col">
-                                                    <span className="text-red-600 font-black tracking-tighter">INVALID - PREMATURE DOSE</span>
-                                                    <span className="text-[8px] text-red-400 italic font-medium lowercase">administered before min age: {new Date(vax.earliest_allowed_date).toLocaleDateString()}</span>
+                                                    <span className="font-black tracking-tighter text-rose-700">INVALID - PREMATURE DOSE</span>
+                                                    <span className="text-[8px] font-medium lowercase italic text-rose-500">administered before min age: {new Date(vax.earliest_allowed_date).toLocaleDateString()}</span>
                                                 </div>
                                             ) : isCompletedRow ? (
-                                                <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700"><CheckCircle2 size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isPendingRow ? (
-                                                <span className="text-amber-500 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isIneligibleRow ? (
-                                                <span className="text-slate-500 flex items-center gap-1"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-slate-200 bg-slate-50 px-2 py-1 text-slate-500"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : isOverdueRow ? (
-                                                <span className="text-red-600 flex items-center gap-1"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700"><AlertCircle size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : vax.original_schedule_status === 'DUE_TODAY' ? (
-                                                <span className="text-orange-600 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : vax.original_schedule_status === 'DUE_SOON' ? (
-                                                <span className="text-amber-600 flex items-center gap-1"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex items-center gap-1 border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700"><Clock size={12} /> {getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             ) : (
-                                                <span className="text-slate-400">{getClinicalStatusLabel(vax).toUpperCase()}</span>
+                                                <span className="inline-flex border border-slate-200 bg-white px-2 py-1 text-slate-500">{getClinicalStatusLabel(vax).toUpperCase()}</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-slate-500">
+                                        <td className="px-5 py-3 text-slate-500">
                                             {vax.actual_date ? (
                                                 <div className="flex flex-col items-start gap-1">
                                                     <div className="flex flex-wrap items-center gap-2">
@@ -443,7 +445,7 @@ export default function InfantRecord() {
                                                 </div>
                                             ) : '-'}
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-5 py-3 text-right">
                                             {isIneligibleRow ? (
                                                 <div className="flex items-center justify-end gap-2 text-slate-400">
                                                     <span className="text-[9px] font-black uppercase tracking-widest italic">Not Clinically Eligible</span>
@@ -456,7 +458,7 @@ export default function InfantRecord() {
                                                             type="button"
                                                             onClick={() => handleValidatePendingDose(vax)}
                                                             disabled={validatingDoseId === vax.vaccination_id}
-                                                            className="inline-flex items-center gap-1.5 rounded-md bg-[#064E3B] px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#053b2e] disabled:opacity-50"
+                                                            className="inline-flex items-center gap-1.5 border border-[#064E3B] bg-[#064E3B] px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white transition-colors hover:bg-[#053b2e] disabled:opacity-50"
                                                         >
                                                             <ShieldCheck size={12} />
                                                             {validatingDoseId === vax.vaccination_id ? 'Approving...' : 'Approve Dose'}
@@ -464,7 +466,7 @@ export default function InfantRecord() {
                                                         <button
                                                             type="button"
                                                             onClick={() => handleCorrectDose(vax)}
-                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
                                                         >
                                                             <PencilLine size={12} />
                                                             Correct Dose
@@ -475,7 +477,7 @@ export default function InfantRecord() {
                                                         <button
                                                             type="button"
                                                             onClick={() => handleCorrectDose(vax)}
-                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
                                                         >
                                                             <PencilLine size={12} />
                                                             Correct Dose
@@ -493,7 +495,7 @@ export default function InfantRecord() {
                                                         <button
                                                             type="button"
                                                             onClick={() => handleCorrectDose(vax)}
-                                                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
+                                                            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-700 transition-colors hover:border-[#064E3B] hover:text-[#064E3B]"
                                                         >
                                                             <PencilLine size={12} />
                                                             Correct Dose
@@ -512,8 +514,8 @@ export default function InfantRecord() {
                                             ) : (
                                                 <button 
                                                     onClick={() => handleRecordDose(vax)}
-                                                    className={`px-4 py-2 rounded-md text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm ${
-                                                        isOverdueRow ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : 'bg-emerald-800 hover:bg-emerald-900 text-white'
+                                                    className={`px-4 py-2 text-[9px] font-black uppercase tracking-widest shadow-sm transition-all active:scale-95 ${
+                                                        isOverdueRow ? 'animate-pulse border border-rose-700 bg-rose-700 text-white hover:bg-rose-800' : 'border border-[#064E3B] bg-[#064E3B] text-white hover:bg-emerald-900'
                                                     }`}
                                                 >
                                                     Record Dose

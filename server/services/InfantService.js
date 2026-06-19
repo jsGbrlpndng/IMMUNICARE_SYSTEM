@@ -792,7 +792,7 @@ class InfantService {
 
             const [infants] = await this.db.execute(`
                 SELECT 
-                    id, reference_id, first_name, middle_name, last_name, suffix,
+                    id, reference_id, first_name, middle_name, last_name, suffix, has_no_middle_name,
                     mothers_maiden_name, father_name,
                     dob, sex, birth_setting, purok, barangay, current_address, caregiver_phone, 
                     caregiver_relationship, birth_weight, place_of_birth, mother_tt_status, last_tt_date,
@@ -847,7 +847,7 @@ class InfantService {
 
         const [infantRows] = await this.db.execute(`
             SELECT 
-                id, reference_id, first_name, last_name, mothers_maiden_name, father_name,
+                id, reference_id, first_name, middle_name, last_name, suffix, has_no_middle_name, mothers_maiden_name, father_name,
                 dob, sex, birth_setting, purok, barangay, current_address, caregiver_phone, 
                 birth_weight, place_of_birth, mother_tt_status, last_tt_date,
                 pregnancy_order, cpab_status,

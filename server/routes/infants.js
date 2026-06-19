@@ -64,10 +64,19 @@ const getScopedInfantRecord = async (id, barangay) => {
     return rows[0] || null;
 };
 
-const infantTargetName = (infant = {}) => [infant.first_name, infant.middle_name, infant.last_name]
+const isNoMiddleName = (value) => value === true || value === 1 || String(value || '').toLowerCase() === 'true';
+
+const formatInfantLegalName = (infant = {}) => [
+    infant.first_name,
+    isNoMiddleName(infant.has_no_middle_name) ? '' : infant.middle_name,
+    infant.last_name,
+    infant.suffix
+]
     .map((part) => String(part || '').trim())
     .filter(Boolean)
     .join(' ') || infant.infant_name || infant.name || null;
+
+const infantTargetName = formatInfantLegalName;
 
 // Protect all infant routes with canonical token auth and barangay scope.
 router.use(clinicalAuth);
@@ -306,7 +315,12 @@ router.get('/:id/nip-schedule', requireClinicalPrivilege, async (req, res) => {
             data: {
                 infant: {
                     id: infant.id,
-                    name: `${infant.first_name} ${infant.last_name}`,
+                    name: formatInfantLegalName(infant),
+                    first_name: infant.first_name,
+                    middle_name: infant.middle_name,
+                    last_name: infant.last_name,
+                    has_no_middle_name: infant.has_no_middle_name,
+                    suffix: infant.suffix,
                     dob: infant.dob,
                     reference_id: infant.reference_id,
                     registration_status: infant.registration_status
@@ -342,7 +356,7 @@ router.get('/:id/vaccination-record', requireClinicalPrivilege, async (req, res)
             data: {
                 infant: result.infant ? {
                     ...result.infant,
-                    name: `${result.infant.first_name} ${result.infant.last_name}`,
+                    name: formatInfantLegalName(result.infant),
                     registration_date: result.infant.created_at,
                     locality: result.infant.purok,
                     age_months: result.age_metrics?.ageInMonths,

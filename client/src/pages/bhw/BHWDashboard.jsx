@@ -186,24 +186,10 @@ const BHWDashboard = () => {
         }
     };
 
+    const getRegistrationRoute = (infant) => `/bhw/registrations/${infant.id}`;
+
     const openRecord = (infant) => {
-        const status = infant.status === 'PENDING_VALIDATION'
-            ? 'Pending'
-            : infant.status === 'NEEDS_CORRECTION'
-                ? 'Needs Correction'
-                : infant.status === 'APPROVED'
-                    ? 'Approved'
-                    : infant.status;
-
-        if (status === 'Pending' || status === 'Needs Correction' || status === 'DRAFT' || status === 'Draft') {
-            navigate(`/bhw/registrations/${infant.id}`);
-            return;
-        }
-
-        if (status === 'Approved') {
-            const referenceNumber = infant.reference_id || infant.promoted_infant_id;
-            navigate(`/bhw/infants/${referenceNumber}`);
-        }
+        navigate(getRegistrationRoute(infant));
     };
 
     const getStatusPill = (status) => {
@@ -569,16 +555,14 @@ const BHWDashboard = () => {
 
                                         {infant.status === 'DRAFT' || infant.status === 'NEEDS_CORRECTION' ? (
                                             <Link
-                                                to={`/bhw/registrations/${infant.id}`}
+                                                to={getRegistrationRoute(infant)}
                                                 className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-700 transition-colors hover:bg-slate-50"
                                             >
                                                 Continue
                                             </Link>
                                         ) : (
                                             <Link
-                                                to={infant.status === 'APPROVED'
-                                                    ? `/bhw/infants/${infant.reference_id || infant.promoted_infant_id}`
-                                                    : `/bhw/registrations/${infant.id}`}
+                                                to={getRegistrationRoute(infant)}
                                                 className="inline-flex items-center gap-1 rounded border border-[#084C39] bg-[#084C39] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#07362A]"
                                             >
                                                 Open

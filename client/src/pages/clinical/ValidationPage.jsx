@@ -491,7 +491,7 @@ const ValidationPage = () => {
                                             </h4>
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/50 px-1 py-0.5 uppercase">
-                                                    {infant?.barangay} / {infant?.purok}
+                                                    {infant?.barangay || '--'}
                                                 </span>
                                                 {shouldShowSuperAdminBarangay && (
                                                     <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1 py-0.5 uppercase tracking-wider">
@@ -660,9 +660,8 @@ const ValidationPage = () => {
                                     </ClinicalSection>
 
                                     <ClinicalSection icon={<MapPin size={12} className="text-emerald-700" />} title="Address and Locality">
-                                        <div className="chart-grid chart-grid-double">
+                                        <div className="chart-grid chart-grid-single">
                                             <DataField label="Barangay" value={selectedRecord?.barangay} />
-                                            <DataField label="Purok / Sitio" value={selectedRecord?.purok || selectedRecord?.sitio || '--'} />
                                         </div>
                                         <div className="chart-grid chart-grid-single border-t border-slate-300">
                                             <DataField label="Exact Address" value={selectedRecord?.exact_address || '--'} />

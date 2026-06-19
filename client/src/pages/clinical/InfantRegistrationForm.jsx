@@ -572,6 +572,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
     // --- Form Handlers ---
     const handleChange = (e) => {
+        if (isReadOnly) return;
+
         const { name, type, checked, value } = e.target;
         
         if (name === 'exact_address') {
@@ -687,6 +689,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     };
 
     const handleNext = async () => {
+        if (isReadOnly) {
+            setCurrentStep(5);
+            return;
+        }
+
         if (!isStepValid(currentStep, formData, errors)) {
             // Force error display on missing fields
             const stepFields = {
@@ -714,6 +721,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     };
 
     const handleBack = () => {
+        if (isReadOnly) {
+            setCurrentStep(5);
+            return;
+        }
+
         setCurrentStep(prev => Math.max(prev - 1, 1));
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -1261,15 +1273,19 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     </div>
 
                     <div className="bg-slate-50/50 border-t border-slate-200 p-8 flex items-center justify-between">
-                        <button 
-                            onClick={handleBack}
-                            disabled={currentStep === 1 || isSubmitting || isSavingDraft}
-                            className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all ${
-                                currentStep === 1 || isSubmitting || isSavingDraft ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-slate-800'
-                            }`}>
-                            <ChevronLeft className="w-4 h-4" />
-                            Back
-                        </button>
+                        {!isReadOnly ? (
+                            <button
+                                onClick={handleBack}
+                                disabled={currentStep === 1 || isSubmitting || isSavingDraft}
+                                className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all ${
+                                    currentStep === 1 || isSubmitting || isSavingDraft ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-slate-800'
+                                }`}>
+                                <ChevronLeft className="w-4 h-4" />
+                                Back
+                            </button>
+                        ) : (
+                            <div />
+                        )}
 
                         <div className="flex items-center gap-6">
                             {activeRegistrationId && currentStatus === 'DRAFT' && !isReadOnly && (

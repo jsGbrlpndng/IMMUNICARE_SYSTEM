@@ -23,6 +23,10 @@ class EnhancedNIPScheduleEngine {
         this.nipScheduleService = new NIPScheduleService(dbConnection);
     }
 
+    isNoMiddleName(value) {
+        return value === true || value === 1 || String(value || '').toLowerCase() === 'true';
+    }
+
     resolveAgeGroup(ageInMonths) {
         const age = Number(ageInMonths);
         if (!Number.isFinite(age) || age < 0) return 'unknown';
@@ -69,8 +73,8 @@ class EnhancedNIPScheduleEngine {
         }
 
         const compareNames = (a, b) => {
-            const aName = `${a.last_name || ''}, ${a.first_name || ''}`.trim();
-            const bName = `${b.last_name || ''}, ${b.first_name || ''}`.trim();
+            const aName = `${a.last_name || ''}, ${a.first_name || ''} ${this.isNoMiddleName(a.has_no_middle_name) ? '' : (a.middle_name || '')}`.trim();
+            const bName = `${b.last_name || ''}, ${b.first_name || ''} ${this.isNoMiddleName(b.has_no_middle_name) ? '' : (b.middle_name || '')}`.trim();
             return aName.localeCompare(bName);
         };
 
@@ -507,7 +511,7 @@ class EnhancedNIPScheduleEngine {
             const params = barangay ? [infantId, barangay] : [infantId];
             const [infantData] = await this.db.execute(`
                 SELECT 
-                    id, reference_id, first_name, last_name, dob, created_at,
+                    id, reference_id, first_name, middle_name, last_name, suffix, has_no_middle_name, dob, created_at,
                     bcg_status, hepa_b_status,
                     'APPROVED' AS registration_status, barangay,
                     landmark, length_at_birth_cm, initiated_breastfeeding, delivery_facility_name,
@@ -564,7 +568,17 @@ class EnhancedNIPScheduleEngine {
             return {
                 infant: {
                     id:           infant.id,
-                    name:         `${infant.first_name} ${infant.last_name}`,
+                    name:         [
+                        infant.first_name,
+                        this.isNoMiddleName(infant.has_no_middle_name) ? '' : infant.middle_name,
+                        infant.last_name,
+                        infant.suffix
+                    ].map((part) => String(part || '').trim()).filter(Boolean).join(' '),
+                    first_name:   infant.first_name,
+                    middle_name:  infant.middle_name,
+                    last_name:    infant.last_name,
+                    has_no_middle_name: this.isNoMiddleName(infant.has_no_middle_name),
+                    suffix:       infant.suffix,
                     dob:          infant.dob,
                     reference_id: infant.reference_id
                 },
@@ -658,7 +672,7 @@ class EnhancedNIPScheduleEngine {
 
             // Search filter
             if (filters.search) {
-                whereConditions.push("(CONCAT(i.first_name, ' ', i.last_name) LIKE ? OR i.reference_id LIKE ?)");
+                whereConditions.push("(CONCAT_WS(' ', i.first_name, CASE WHEN COALESCE(i.has_no_middle_name, FALSE) THEN NULL ELSE NULLIF(i.middle_name, '') END, i.last_name, NULLIF(i.suffix, '')) LIKE ? OR i.reference_id LIKE ?)");
                 queryParams.push(`%${filters.search}%`, `%${filters.search}%`);
             }
 
@@ -690,7 +704,7 @@ class EnhancedNIPScheduleEngine {
             
             const query = `
                 SELECT 
-                    i.id, i.reference_id, i.first_name, i.last_name, i.dob,
+                    i.id, i.reference_id, i.first_name, i.middle_name, i.last_name, i.suffix, i.has_no_middle_name, i.dob,
                     i.mothers_maiden_name, i.father_name, i.barangay, i.purok, i.exact_address,
                     i.caregiver_phone, 'APPROVED' AS registration_status,
                     i.bcg_status, i.hepa_b_status,
@@ -981,7 +995,10 @@ class EnhancedNIPScheduleEngine {
                     id: infant.id,
                     reference_id: infant.reference_id,
                     first_name: infant.first_name,
+                    middle_name: infant.middle_name,
                     last_name: infant.last_name,
+                    has_no_middle_name: this.isNoMiddleName(infant.has_no_middle_name),
+                    suffix: infant.suffix,
                     dob: infant.dob,
                     age_in_weeks: schedule.age_in_weeks,
                     age_in_months: schedule.age_in_months,

@@ -151,52 +151,77 @@ const AccessPortal = () => {
     };
 
     return (
-        <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-blue-500/10 relative overflow-hidden">
-            {/* Background Elements - matching landing page style */}
-            <div className="absolute -top-24 -right-24 w-96 h-96 bg-blue-50 rounded-full blur-3xl opacity-50 pointer-events-none" />
-            <div className="absolute top-1/2 -left-20 w-72 h-72 bg-emerald-50 rounded-full blur-3xl opacity-40 pointer-events-none" />
-
+        <div className="relative min-h-screen overflow-hidden bg-slate-50 font-sans text-slate-900 selection:bg-emerald-500/10">
             {/* Header */}
-            <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-lg border-b border-slate-100 py-4">
-                <div className="max-w-7xl mx-auto px-6 lg:px-8 flex items-center justify-between">
+            <nav className="fixed top-0 z-50 w-full border-b border-slate-200 bg-white/95 py-3 shadow-sm backdrop-blur-lg">
+                <div className="mx-auto flex max-w-7xl items-center justify-between px-5 lg:px-8">
                     {/* Logo */}
-                    <Link to="/" className="flex items-center space-x-2 group">
-                        <div className="w-8 h-8 bg-[#0061FF] rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
-                            <Activity className="text-white w-5 h-5" />
+                    <Link to="/" className="group flex items-center space-x-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-gradient-to-br from-emerald-600 to-[#064E3B] shadow-sm transition-transform group-hover:scale-105">
+                            <Activity className="h-5 w-5 text-white" />
                         </div>
-                        <span className="text-xl font-bold tracking-tight text-slate-900">ImmuniCare</span>
+                        <div className="flex flex-col leading-none">
+                            <span className="text-lg font-black tracking-tight text-[#064E3B]">ImmuniCare</span>
+                            <span className="mt-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-emerald-600">RHU Portal</span>
+                        </div>
                     </Link>
 
                     {/* Back to Home */}
                     <Link
                         to="/"
-                        className="flex items-center space-x-2 text-slate-500 hover:text-[#0061FF] transition-colors group"
+                        className="group flex items-center space-x-2 text-slate-500 transition-colors hover:text-[#064E3B]"
                     >
-                        <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-                        <span className="text-sm font-medium">Back to Home</span>
+                        <ArrowLeft size={18} className="transition-transform group-hover:-translate-x-1" />
+                        <span className="text-sm font-bold">Back to Home</span>
                     </Link>
                 </div>
             </nav>
 
             {/* Main Content */}
-            <div className="flex items-center justify-center min-h-screen pt-20 pb-12 px-6">
-                <div className="w-full max-w-md relative z-10">
-                    {/* Login Card */}
-                    <div className="bg-white rounded-[2.5rem] shadow-large border border-slate-50 p-10 relative overflow-hidden">
-                        {/* Subtle gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-blue-50/30 to-transparent pointer-events-none" />
-
-                        <div className="relative z-10">
-                            {/* Header */}
-                            <div className="text-center mb-10">
-                                <div className="w-16 h-16 bg-[#0061FF] rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25 mx-auto mb-6">
-                                    <ShieldCheck className="text-white w-8 h-8" />
+            <div className="flex min-h-screen items-center justify-center px-5 pb-12 pt-24">
+                <div className="grid w-full max-w-5xl grid-cols-1 overflow-hidden border border-slate-200 bg-white shadow-sm lg:grid-cols-[1fr_440px]">
+                    <aside className="hidden border-r border-slate-200 bg-[#064E3B] p-8 text-white lg:flex lg:flex-col lg:justify-between">
+                        <div>
+                            <div className="inline-flex items-center gap-2 border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-50">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                Secure Staff Access
+                            </div>
+                            <h1 className="mt-8 max-w-md text-4xl font-black leading-tight tracking-tight">
+                                Immunization operations for RHU and barangay teams.
+                            </h1>
+                            <p className="mt-4 max-w-md text-sm font-semibold leading-6 text-emerald-50/80">
+                                Sign in to manage infant registry work, NIP schedules, validations, follow-ups, and coverage monitoring.
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            {[
+                                ['Infant Registry', Users],
+                                ['NIP Monitoring', Activity],
+                                ['Validation Queue', ShieldCheck],
+                                ['Role-Based Access', Lock]
+                            ].map(([label, Icon]) => (
+                                <div key={label} className="border border-white/15 bg-white/10 p-4">
+                                    <Icon className="mb-3 h-5 w-5 text-emerald-100" />
+                                    <p className="text-xs font-black uppercase tracking-wider text-white">{label}</p>
                                 </div>
-                                <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Welcome Back</h1>
-                                <p className="text-slate-500 text-sm">Access your ImmuniCare portal</p>
+                            ))}
+                        </div>
+                    </aside>
+
+                    <div className="relative z-10 w-full p-6 sm:p-8 lg:p-10">
+                    {/* Login Card */}
+                    <div>
+                            {/* Header */}
+                            <div className="mb-8">
+                                <div className="mb-5 flex h-14 w-14 items-center justify-center border border-emerald-900 bg-[#064E3B] shadow-sm">
+                                    <ShieldCheck className="h-7 w-7 text-white" />
+                                </div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Staff Portal</p>
+                                <h1 className="mt-2 text-3xl font-black text-slate-950">Welcome Back</h1>
+                                <p className="mt-2 text-sm font-semibold text-slate-500">Access your ImmuniCare workspace with your assigned staff credentials.</p>
                             </div>
 
-                            <form onSubmit={handleStaffLogin} className="space-y-6">
+                            <form onSubmit={handleStaffLogin} className="space-y-5">
                                 {location.state?.securityMessage && (
                                     <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
                                         {location.state.securityMessage}
@@ -205,7 +230,7 @@ const AccessPortal = () => {
 
                                 {/* User ID Input */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-700">Staff ID</label>
+                                    <label className="text-xs font-black uppercase tracking-wider text-slate-600">Staff ID</label>
                                     <div className="relative">
                                         <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                                         <input
@@ -213,7 +238,7 @@ const AccessPortal = () => {
                                             value={userId}
                                             onChange={(e) => setUserId(e.target.value)}
                                             placeholder="Enter your staff ID"
-                                            className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder-slate-400 focus:border-[#0061FF] focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                                            className="w-full border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-[#064E3B] focus:bg-white focus:ring-4 focus:ring-emerald-900/10"
                                             required
                                         />
                                     </div>
@@ -221,7 +246,7 @@ const AccessPortal = () => {
 
                                 {/* Password Input */}
                                 <div className="space-y-2">
-                                    <label className="text-sm font-semibold text-slate-700">Password</label>
+                                    <label className="text-xs font-black uppercase tracking-wider text-slate-600">Password</label>
                                     <div className="relative">
                                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                                         <input
@@ -229,7 +254,7 @@ const AccessPortal = () => {
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
                                             placeholder="Enter your password"
-                                            className="w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder-slate-400 focus:border-[#0061FF] focus:bg-white focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                                            className="w-full border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-12 font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-[#064E3B] focus:bg-white focus:ring-4 focus:ring-emerald-900/10"
                                             required
                                         />
                                         <button
@@ -244,7 +269,7 @@ const AccessPortal = () => {
 
                                 {/* Forgot Password */}
                                 <div className="text-right">
-                                    <a href="#" className="text-sm text-[#0061FF] hover:text-blue-700 font-medium transition-colors">
+                                    <a href="#" className="text-sm font-bold text-[#064E3B] transition-colors hover:text-emerald-700">
                                         Forgot password?
                                     </a>
                                 </div>
@@ -253,7 +278,7 @@ const AccessPortal = () => {
                                 <button
                                     type="submit"
                                     disabled={loading || !userId}
-                                    className="w-full btn-primary h-14 !rounded-xl text-base font-semibold shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden"
+                                    className="group relative h-13 w-full overflow-hidden border border-[#064E3B] bg-[#064E3B] px-5 py-3.5 text-sm font-black uppercase tracking-wider text-white shadow-sm transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                                     {loading ? (
@@ -268,21 +293,21 @@ const AccessPortal = () => {
                             </form>
 
                             {/* Footer */}
-                            <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+                            <div className="mt-8 border-t border-slate-200 pt-5 text-center">
                                 <div className="flex items-center justify-center space-x-2 text-slate-400">
                                     <ShieldCheck size={16} />
-                                    <span className="text-xs font-medium">Secure Healthcare Portal</span>
+                                    <span className="text-xs font-bold">Authorized healthcare staff only</span>
                                 </div>
                             </div>
-                        </div>
                     </div>
 
                     {/* Additional Info */}
-                    <div className="mt-8 text-center">
-                        <p className="text-sm text-slate-500">
+                    <div className="mt-6 text-center">
+                        <p className="text-sm font-semibold text-slate-500">
                             Need help? Contact your system administrator
                         </p>
                     </div>
+                </div>
                 </div>
             </div>
         </div>

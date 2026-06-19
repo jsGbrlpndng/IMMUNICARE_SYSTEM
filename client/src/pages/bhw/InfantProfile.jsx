@@ -17,6 +17,7 @@ import {
     CheckCircle2,
     ShieldAlert,
     MapPin,
+    Syringe,
     X
 } from 'lucide-react';
 import NipScheduleTable from '../../components/NipScheduleTable';
@@ -96,46 +97,98 @@ const InfantProfile = () => {
         }
     };
 
-    if (loading) return <div className="p-8 text-center text-gray-500 font-medium tracking-tight">Loading profile...</div>;
-    if (error) return <div className="p-8 text-center text-red-500 font-medium">{error}</div>;
-    if (!infant) return <div className="p-8 text-center text-gray-500 font-medium">Infant not found</div>;
+    if (loading) return <div className="border border-slate-200 bg-white p-8 text-center text-sm font-bold tracking-tight text-slate-500">Loading profile...</div>;
+    if (error) return <div className="border border-rose-200 bg-rose-50 p-8 text-center text-sm font-bold text-rose-700">{error}</div>;
+    if (!infant) return <div className="border border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-500">Infant not found</div>;
 
     const isClinicalStaff = false;
+    const isApproved = ['APPROVED', 'Approved'].includes(infant.registration_status);
+    const scheduleRows = Array.isArray(schedule?.record) ? schedule.record : [];
+    const completedDoseCount = scheduleRows.filter((dose) => ['COMPLETED', 'COMPLETED_VALIDATED'].includes(dose.status)).length;
+    const pendingDoseCount = scheduleRows.filter((dose) => dose.status === 'PENDING_VALIDATION').length;
+    const upcomingDoseCount = Math.max(scheduleRows.length - completedDoseCount - pendingDoseCount, 0);
+    const statCards = [
+        {
+            label: 'Date of Birth',
+            value: formatDate(infant.dob),
+            icon: Calendar
+        },
+        {
+            label: 'Current Age',
+            value: formatAge(schedule?.age_metrics?.ageInMonths, schedule?.age_metrics?.ageInWeeks),
+            icon: User
+        },
+        {
+            label: 'Exact Address',
+            value: infant.exact_address || 'Address not geocoded',
+            icon: MapPin
+        },
+        {
+            label: 'NIP Coverage',
+            value: `${completedDoseCount}/${scheduleRows.length || 0} completed`,
+            icon: Syringe
+        }
+    ];
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             {/* Header */}
-            <div className="flex items-center gap-4 mb-6">
+            <div className="border border-slate-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-4">
                 <button onClick={() => {
                     if (location.pathname.startsWith('/clinical')) {
                         navigate('/clinical/dashboard');
                     } else {
                         navigate('/bhw/dashboard');
                     }
-                }} className="p-2 hover:bg-gray-100 rounded-full transition">
-                    <ChevronLeft className="w-6 h-6 text-gray-600" />
+                        }} className="mt-0.5 border border-slate-200 bg-white p-2 text-slate-500 transition hover:border-[#064E3B] hover:bg-emerald-50 hover:text-[#064E3B]" aria-label="Back to dashboard">
+                            <ChevronLeft className="h-5 w-5" />
                 </button>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{infant.name}</h1>
-                    <div className="flex items-center gap-2">
-                        <p className="text-gray-500">Reference ID: {infant.reference_id}</p>
-                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md ${infant.registration_status === 'Approved'
-                            ? 'bg-green-50 text-green-700 border border-green-100'
-                            : 'bg-blue-50 text-blue-700 border border-blue-100'
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Infant Clinical Profile</p>
+                            <h1 className="mt-1 truncate text-2xl font-black tracking-tight text-slate-950">{infant.name}</h1>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600">Reference ID: {infant.reference_id}</span>
+                                <span className={`border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${isApproved
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-amber-200 bg-amber-50 text-amber-800'
                             }`}>
                             {infant.registration_status || 'Pending'}
                         </span>
+                                {infant.barangay && (
+                                    <span className="border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-500">Barangay {infant.barangay}</span>
+                                )}
+                            </div>
+                        </div>
                     </div>
+                    <div className="grid grid-cols-3 gap-2 text-right sm:min-w-[260px]">
+                        <div className="border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-lg font-black text-slate-950">{completedDoseCount}</p>
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Completed</p>
+                        </div>
+                        <div className="border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-lg font-black text-amber-700">{pendingDoseCount}</p>
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Pending</p>
+                        </div>
+                        <div className="border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-lg font-black text-[#064E3B]">{upcomingDoseCount}</p>
+                            <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Open</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-slate-50 px-5 py-3 text-xs font-semibold text-slate-500">
+                    Profile values are shown from the approved infant record and vaccination schedule.
                 </div>
             </div>
 
             {/* Registration Pending Banner */}
-            {infant.registration_status !== 'Approved' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-500">
-                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            {!isApproved && (
+                <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 p-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
                     <div>
-                        <p className="text-amber-900 font-bold text-sm">Registration Pending Midwife Validation</p>
-                        <p className="text-amber-700 text-xs mt-0.5">
+                        <p className="text-sm font-black text-amber-900">Registration Pending Midwife Validation</p>
+                        <p className="mt-0.5 text-xs font-semibold text-amber-700">
                             This infant's record is currently provisional. Local dose recording is disabled until a midwife approves the registration.
                         </p>
                     </div>
@@ -143,36 +196,23 @@ const InfantProfile = () => {
             )}
 
             {/* Infant Details Card */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-8">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
-                        <Calendar className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Date of Birth</p>
-                        <p className="font-medium text-gray-900">{formatDate(infant.dob)}</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
-                        <User className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Age</p>
-                        <p className="font-medium text-gray-900">
-                            {formatAge(schedule?.age_metrics?.ageInMonths, schedule?.age_metrics?.ageInWeeks)}
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
-                        <MapPin className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Exact Address</p>
-                        <p className="font-medium text-gray-900">{infant.exact_address || 'Address not geocoded'}</p>
-                    </div>
-                </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {statCards.map((card) => {
+                    const Icon = card.icon;
+                    return (
+                        <div key={card.label} className="border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{card.label}</p>
+                                    <p className="mt-2 text-sm font-black leading-snug text-slate-950">{card.value}</p>
+                                </div>
+                                <div className="bg-emerald-50 p-2 text-[#064E3B]">
+                                    <Icon className="h-4 w-4" />
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* NIP Schedule Table Component */}
@@ -187,16 +227,16 @@ const InfantProfile = () => {
 
             {/* Success Toast */}
             {showSuccessToast && (
-                <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-4 bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500 border border-white/10">
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                        <CheckCircle2 className="w-5 h-5 text-white" />
+                <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-4 border border-emerald-900 bg-slate-950 px-5 py-4 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-500">
+                    <div className="flex h-8 w-8 items-center justify-center bg-emerald-600">
+                        <CheckCircle2 className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <p className="font-bold text-sm tracking-tight text-white">Record Saved</p>
-                        <p className="text-xs text-gray-400 font-medium">Vaccination recorded successfully.</p>
+                        <p className="text-sm font-black tracking-tight text-white">Record Saved</p>
+                        <p className="text-xs font-semibold text-slate-300">Vaccination recorded successfully.</p>
                     </div>
-                    <button onClick={() => setShowSuccessToast(false)} className="ml-4 text-gray-500 hover:text-white transition-colors">
-                        <X className="w-4 h-4" />
+                    <button onClick={() => setShowSuccessToast(false)} className="ml-4 text-slate-400 transition-colors hover:text-white">
+                        <X className="h-4 w-4" />
                     </button>
                 </div>
             )}
