@@ -141,6 +141,22 @@ const deriveClusterBarangay = (points) => {
     return sorted.length > 0 ? sorted[0][0] : null;
 };
 
+/**
+ * Derives a comma-separated list of all involved barangays in a cluster,
+ * sorted by frequency descending.
+ */
+const deriveClusterBarangayLabel = (points) => {
+    if (!points || points.length === 0) return 'Unknown';
+    const tally = {};
+    points.forEach((pt) => {
+        const brgy = (pt.barangay || '').trim().toUpperCase();
+        if (brgy) tally[brgy] = (tally[brgy] || 0) + 1;
+    });
+    const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) return 'Unknown';
+    return sorted.map(([brgy]) => brgy).join(', ');
+};
+
 /* ─── MapBoundsController ─── */
 /* Placed inside <MapContainer> to reactively pan/zoom the map when filters or data change. */
 
@@ -867,7 +883,7 @@ export default function SuperAdminMap() {
                                                     if (hull.length < 3) return null;
 
                                                     // PART 3a: Append barangay name to cluster description
-                                                    const clusterBrgy = deriveClusterBarangay(cluster.points);
+                                                    const clusterBrgy = deriveClusterBarangayLabel(cluster.points);
                                                     const locationLabel = cluster.locality
                                                         ? (clusterBrgy ? `${cluster.locality}, Brgy. ${clusterBrgy}` : cluster.locality)
                                                         : (clusterBrgy ? `Brgy. ${clusterBrgy}` : `Hotspot ${index + 1}`);
@@ -930,6 +946,7 @@ export default function SuperAdminMap() {
                                                 const clusterId = cluster.clusterId || `CL-${index}`;
                                                 const isNotified = notifiedBarangays.has(clusterId);
                                                 const predominantBarangay = deriveClusterBarangay(cluster.points) || 'Unknown';
+                                                const involvedBarangays = deriveClusterBarangayLabel(cluster.points);
                                                 return (
                                                     <div key={clusterId} className="border-b border-slate-300 p-4">
                                                         <div className="flex items-start justify-between gap-4">
@@ -939,10 +956,10 @@ export default function SuperAdminMap() {
                                                                 </span>
                                                                 <div className="min-w-0">
                                                                     <p className="text-sm font-black text-slate-950">
-                                                                        Cluster {index} <span className="font-semibold text-slate-500">({predominantBarangay})</span>
+                                                                        Cluster {index} <span className="font-semibold text-slate-500">({involvedBarangays})</span>
                                                                     </p>
                                                                     <p className="mt-1 text-xs font-semibold text-slate-500">
-                                                                        {cluster.total_infants} defaulter{cluster.total_infants !== 1 ? 's' : ''}
+                                                                        {cluster.total_infants} defaulter{cluster.total_infants !== 1 ? 's' : ''} • {cluster.total_defaulter_doses || 0} overdue dose{cluster.total_defaulter_doses !== 1 ? 's' : ''}
                                                                     </p>
                                                                 </div>
                                                             </div>

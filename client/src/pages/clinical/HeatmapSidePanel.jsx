@@ -452,11 +452,11 @@ const HeatmapSidePanel = ({
                         <div className="px-2">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-2">Action Roster</h4>
                             <div className="flex flex-col gap-1">
-                                {[...selectedCluster.points]
-                                    .filter(pt => activeFilters.statuses.includes(pt.urgency))
+                                {Array.from(new Map((selectedCluster.points || []).map(pt => [pt.id, pt])).values())
+                                    .filter(pt => activeFilters.statuses.includes(pt.urgency || 'defaulter'))
                                     .sort((a, b) => {
                                         const urgencyOrder = { 'defaulter': 1, 'overdue': 1, 'due_today': 2, 'due_soon': 3, 'upcoming': 4, 'completed': 5 };
-                                        return (urgencyOrder[a.urgency] || 99) - (urgencyOrder[b.urgency] || 99);
+                                        return (urgencyOrder[a.urgency || 'defaulter'] || 99) - (urgencyOrder[b.urgency || 'defaulter'] || 99);
                                     }).map(pt => <InfantRow key={pt.id} pt={pt} onFocus={handleFocusInfant} />)}
                             </div>
                         </div>
@@ -468,7 +468,7 @@ const HeatmapSidePanel = ({
             <div className="bg-slate-50 p-5 flex-shrink-0 border-t border-slate-200">
                 <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Triage Count</span>
-                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest">{selectedCluster ? selectedCluster.points.filter(p => activeFilters.statuses.includes(p.urgency)).length : (mapState?.all_infants?.filter(p => activeFilters.statuses.includes(p.urgency)).length || 0)} Infants</span>
+                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest">{selectedCluster ? Array.from(new Map((selectedCluster.points || []).map(pt => [pt.id, pt])).values()).filter(p => activeFilters.statuses.includes(p.urgency || 'defaulter')).length : (mapState?.all_infants?.filter(p => activeFilters.statuses.includes(p.urgency || 'defaulter')).length || 0)} Infants</span>
                 </div>
             </div>
         </div>

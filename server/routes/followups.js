@@ -543,4 +543,15 @@ router.patch('/tasks/:taskId/acknowledge', async (req, res) => {
     }
 });
 
+router.patch('/tasks/:taskId/confirm', async (req, res) => {
+    try {
+        const service = new FollowUpTaskService(db);
+        const result = await service.confirmTask(req.params.taskId, req.user, req.body);
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('[CONFIRM_TASK_ROUTE_ERROR]', error);
+        res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;

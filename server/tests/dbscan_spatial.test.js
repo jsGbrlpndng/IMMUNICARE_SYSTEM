@@ -146,4 +146,23 @@ describe('DBSCAN Spatial Analytics & Boundary Integrity', () => {
         const dbscan = new DBSCANService(300, 2, db);
         expect(dbscan.minPts).toBe(3);
     });
+
+    test('DBSCANService restricts clustering scope to a single barangay when parameter is passed', async () => {
+        const dbscan = new DBSCANService(300, 3, db);
+        
+        const points = [
+            { id: infantId1, lat: 15.10000, lng: 121.10000, barangay: 'LANGGAM' },
+            { id: infantId2, lat: 15.10010, lng: 121.10010, barangay: 'LANGGAM' },
+            { id: infantId3, lat: 15.10020, lng: 121.10020, barangay: 'RIVERSIDE' }
+        ];
+
+        // 1. Run with barangay = 'LANGGAM' (2 points in scope, minPts = 3) -> should NOT form a cluster
+        const localClusters = await dbscan.cluster(db, points, 'LANGGAM');
+        expect(localClusters.length).toBe(0);
+
+        // 2. Run with barangay = null (3 points in scope, minPts = 3) -> should form a cluster of 3
+        const globalClusters = await dbscan.cluster(db, points, null);
+        expect(globalClusters.length).toBe(1);
+        expect(globalClusters[0].length).toBe(3);
+    });
 });

@@ -19,9 +19,13 @@ router.get('/langgam', async (req, res) => {
         const eps = parseInt(req.query.eps) || 300;
         const minPts = parseInt(req.query.minPts) || 3;
         const scope = req.query.scope || 'defaulter';
-        const barangay = req.user.role === ROLES.SUPER_ADMIN
+        let rawBarangay = req.user.role === ROLES.SUPER_ADMIN
             ? (req.query.barangay || req.user.assigned_barangay || null)
             : req.user.assigned_barangay;
+        if (rawBarangay && rawBarangay.toLowerCase() === 'all') {
+            rawBarangay = null;
+        }
+        const barangay = rawBarangay;
 
         if (!barangay) {
             return res.status(400).json({

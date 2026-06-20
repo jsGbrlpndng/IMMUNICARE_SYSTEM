@@ -62,6 +62,9 @@ const FollowUpTasks = () => {
     const [showUrgentOnly, setShowUrgentOnly] = useState(false);
     const [delegationTarget, setDelegationTarget] = useState(null);
     const [expandedClusters, setExpandedClusters] = useState({});
+    const [confirmTarget, setConfirmTarget] = useState(null);
+    const [reviewNotes, setReviewNotes] = useState('');
+    const [confirmingId, setConfirmingId] = useState(null);
 
     const isBhw = user?.role === 'BHW';
     const isMidwifeView = user?.role === 'Midwife' || user?.role === 'Super Admin';
@@ -186,6 +189,36 @@ const FollowUpTasks = () => {
             alert('Server connection failed.');
         } finally {
             setAcknowledgingTaskId(null);
+        }
+    };
+
+    const openConfirmModal = (infant) => {
+        setConfirmTarget(infant);
+        setReviewNotes('');
+    };
+
+    const handleConfirmSubmit = async (e) => {
+        e.preventDefault();
+        if (!confirmTarget?.delegated_task_id || confirmingId) return;
+        setConfirmingId(confirmTarget.delegated_task_id);
+        try {
+            const res = await apiClient.patch(`/follow-ups/tasks/${confirmTarget.delegated_task_id}/confirm`, {
+                review_notes: reviewNotes
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Failed to confirm follow-up outcome.');
+                return;
+            }
+            alert('Follow-up outcome successfully confirmed.');
+            setConfirmTarget(null);
+            await loadData();
+            window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
+        } catch (error) {
+            console.error('Failed to confirm follow-up outcome:', error);
+            alert('Server connection failed.');
+        } finally {
+            setConfirmingId(null);
         }
     };
 
@@ -371,9 +404,11 @@ const FollowUpTasks = () => {
                                     ? 'bg-amber-50 text-amber-700 border-amber-200'
                                     : infant.task_status === 'OVERDUE'
                                     ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : infant.task_status === 'COMPLETED_PENDING_REVIEW'
+                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
                                     : 'bg-slate-50 text-slate-600 border-slate-200'
                             }`}>
-                                Task: {infant.task_status}
+                                Task: {infant.task_status === 'COMPLETED_PENDING_REVIEW' ? 'PENDING REVIEW' : infant.task_status}
                             </span>
                         )}
                     </div>
@@ -394,6 +429,10 @@ const FollowUpTasks = () => {
                             infant?.assigned_cluster_bhw_role === 'Midwife' ? (
                                 <span className="inline-flex items-center gap-1.5 rounded bg-amber-50 border border-amber-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-amber-800 shadow-sm">
                                     Midwife Deployed
+                                </span>
+                            ) : infant?.task_status === 'COMPLETED_PENDING_REVIEW' ? (
+                                <span className="inline-flex items-center gap-1.5 rounded bg-blue-50 border border-blue-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-blue-800 shadow-sm">
+                                    Pending Review
                                 </span>
                             ) : infant?.task_status === 'ASSIGNED' ? (
                                 <button
@@ -423,7 +462,16 @@ const FollowUpTasks = () => {
                                 >
                                     View History
                                 </button>
-                                {isMidwifeView && !infant?.cluster_priority && (
+                                {isMidwifeView && infant?.task_status === 'COMPLETED_PENDING_REVIEW' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => openConfirmModal(infant)}
+                                        className="inline-flex items-center gap-2 bg-[#D97706] hover:bg-[#B45309] px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors"
+                                    >
+                                        Confirm Outcome
+                                    </button>
+                                )}
+                                {isMidwifeView && !infant?.cluster_priority && infant?.task_status !== 'COMPLETED_PENDING_REVIEW' && (
                                     <button
                                         type="button"
                                         onClick={() => setDelegationTarget(infant)}
@@ -787,6 +835,57 @@ const FollowUpTasks = () => {
                             </button>
                             <button type="submit" disabled={archivingId === archiveTarget?.infant_id || !archiveReason} className="rounded-md bg-rose-700 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-rose-800 disabled:opacity-60">
                                 {archivingId === archiveTarget?.infant_id ? 'Archiving...' : 'Confirm Archive'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {confirmTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+                    <form onSubmit={handleConfirmSubmit} className="w-full max-w-lg rounded-md border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-900">Confirm Follow-Up Outcome</h3>
+                                <p className="mt-1 text-sm font-semibold text-slate-500">{infantName(confirmTarget)}</p>
+                            </div>
+                            <button type="button" onClick={() => setConfirmTarget(null)} className="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50">
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 px-5 py-5">
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                                <div className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">BHW Visit Log Summary</div>
+                                <div className="mt-2 text-xs font-semibold text-slate-600">
+                                    Logged by {confirmTarget.assigned_bhw_name} on {formatDate(confirmTarget.last_visit_date)}
+                                </div>
+                                <div className="mt-1 text-xs font-bold text-slate-700">
+                                    Outcome: {confirmTarget.last_visit_outcome}
+                                </div>
+                                <p className="mt-2 text-sm font-medium leading-relaxed text-slate-700">
+                                    {confirmTarget.last_bhw_note || 'No notes provided by BHW.'}
+                                </p>
+                            </div>
+
+                            <label className="block">
+                                <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">Review Notes (Optional)</span>
+                                <textarea
+                                    value={reviewNotes}
+                                    onChange={(e) => setReviewNotes(e.target.value)}
+                                    rows={4}
+                                    className="mt-2 w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-800"
+                                    placeholder="Add any verification comments or review notes."
+                                />
+                            </label>
+                        </div>
+
+                        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 bg-slate-50">
+                            <button type="button" onClick={() => setConfirmTarget(null)} className="border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 hover:bg-slate-50">
+                                Cancel
+                            </button>
+                            <button type="submit" disabled={confirmingId === confirmTarget.delegated_task_id} className="rounded-md bg-[#084C39] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-emerald-950 disabled:opacity-60">
+                                {confirmingId === confirmTarget.delegated_task_id ? 'Confirming...' : 'Confirm Outcome'}
                             </button>
                         </div>
                     </form>

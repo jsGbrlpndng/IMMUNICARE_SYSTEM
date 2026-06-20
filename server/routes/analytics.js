@@ -73,9 +73,13 @@ router.get('/locality-status', async (req, res) => {
 router.get('/dashboard-stats', async (req, res) => {
     try {
         const engine = new EnhancedNIPScheduleEngine(db);
-        const barangay = req.user?.role === ROLES.SUPER_ADMIN
-            ? ((req.query.barangay || '').trim() || null)
-            : (req.user?.assigned_barangay || '').trim() || null;
+        let rawBarangay = req.user?.role === ROLES.SUPER_ADMIN
+            ? (req.query.barangay || null)
+            : req.user?.assigned_barangay;
+        if (rawBarangay && rawBarangay.toLowerCase() === 'all') {
+            rawBarangay = null;
+        }
+        const barangay = rawBarangay ? rawBarangay.trim() : null;
 
         // 1. Core clinical counts from the shared schedule engine
         const stats = await engine.calculateStatistics(barangay);
@@ -98,7 +102,7 @@ router.get('/dashboard-stats', async (req, res) => {
             );
             if (overdueWithGeo.length > 1) {
                 const dbscan = new DBSCANService(300, MIN_CLUSTER_INFANTS, db);
-                const clusters = (await dbscan.cluster(db, overdueWithGeo))
+                const clusters = (await dbscan.cluster(db, overdueWithGeo, barangay))
                     .filter(clusterPoints => Array.isArray(clusterPoints) && clusterPoints.length >= MIN_CLUSTER_INFANTS);
                 clusterCount = clusters.length;
             }
@@ -491,7 +495,16 @@ router.get('/dbscan', async (req, res) => {
     try {
         const { eps = 300, minPts = 3 } = req.query;
         const safeMinPts = Math.max(parseInt(minPts, 10) || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
-        const scheduleData = await engine.getApprovedInfantsWithSchedule({ urgency: 'all', barangay: req.query.barangay || null }, 1000, 0);
+        
+        let rawBarangay = req.user?.role === ROLES.SUPER_ADMIN
+            ? (req.query.barangay || null)
+            : req.user?.assigned_barangay;
+        if (rawBarangay && rawBarangay.toLowerCase() === 'all') {
+            rawBarangay = null;
+        }
+        const barangay = rawBarangay ? rawBarangay.trim() : null;
+
+        const scheduleData = await engine.getApprovedInfantsWithSchedule({ urgency: 'all', barangay }, 1000, 0);
         const overdueWithGeo = (scheduleData.infants || []).filter(i => (i.urgency === 'overdue' || i.urgency === 'defaulter') && i.lat && i.lng);
 
         if (overdueWithGeo.length < safeMinPts) {
@@ -499,7 +512,7 @@ router.get('/dbscan', async (req, res) => {
         }
 
         const dbscan = new DBSCANService(parseInt(eps, 10), safeMinPts, db);
-        const clusters = (await dbscan.cluster(db, overdueWithGeo))
+        const clusters = (await dbscan.cluster(db, overdueWithGeo, barangay))
             .filter(clusterPoints => Array.isArray(clusterPoints) && clusterPoints.length >= safeMinPts);
 
         const summaries = clusters.map((clusterPoints, index) => {

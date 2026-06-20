@@ -13,11 +13,12 @@ const requireSuperAdminOnly = requireRole(
     'Only Super Admins can access municipality-wide geospatial intelligence.'
 );
 
-const getScopedBarangay = (req) => (
-    req.user.role === ROLES.SUPER_ADMIN
+const getScopedBarangay = (req) => {
+    const brgy = req.user.role === ROLES.SUPER_ADMIN
         ? (req.query.barangay || null)
-        : req.user.assigned_barangay
-);
+        : req.user.assigned_barangay;
+    return brgy && brgy.toLowerCase() === 'all' ? null : brgy;
+};
 
 router.use(clinicalAuth);
 router.use(requireRole(

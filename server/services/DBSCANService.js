@@ -39,13 +39,15 @@ class DBSCANService {
 
     /**
      * Run DBSCAN clustering using PostGIS ST_ClusterDBSCAN in the database.
-     * Evaluates clusters at a global/municipal level first to prevent the boundary blindspot.
+     * Evaluates clusters at a global/municipal level first to prevent the boundary blindspot,
+     * or restricts to a specific barangay if parameter is provided.
      *
      * @param {object} dbConnection - Active database connection client
      * @param {Array} points - Array of objects with {id, lat, lng, ...otherData}
+     * @param {string|null} barangay - Optional barangay filter to enforce local-only clustering
      * @returns {Promise<Array>} - Array of clusters
      */
-    async cluster(dbConnection, points = null) {
+    async cluster(dbConnection, points = null, barangay = null) {
         const conn = dbConnection || this.db;
         if (!conn) {
             console.warn('[DBSCAN] No DB connection. Falling back to empty clusters.');
@@ -87,8 +89,8 @@ class DBSCANService {
 
             if (validPoints.length <= 1) return [];
 
-            // 2. Execute global PostGIS DBSCAN clustering.
-            // Performs ST_ClusterDBSCAN at a global/municipal level to prevent boundary blindspots.
+            // 2. Execute global or barangay-scoped PostGIS DBSCAN clustering.
+            // Performs ST_ClusterDBSCAN at a global/municipal level or barangay-scoped level.
             const dbscanQuery = `
                 WITH map_defaulters AS (
                     SELECT 
@@ -100,6 +102,7 @@ class DBSCANService {
                     WHERE i.status = 'Active'
                       AND i.latitude IS NOT NULL
                       AND i.longitude IS NOT NULL
+                      ${barangay ? 'AND UPPER(TRIM(i.barangay)) = UPPER(TRIM(?))' : ''}
                     GROUP BY i.id, i.location
                     HAVING COALESCE(
                         MAX(CASE WHEN COALESCE(s.earliest_allowed_date, s.recommended_date)::date < CURRENT_DATE THEN 'DEFAULTER' END),
@@ -116,7 +119,13 @@ class DBSCANService {
                 FROM clustered_defaulters
             `;
 
-            const [dbscanRows] = await conn.execute(dbscanQuery, [epsVal, minPtsVal]);
+            const queryParams = [];
+            if (barangay) {
+                queryParams.push(barangay);
+            }
+            queryParams.push(epsVal, minPtsVal);
+
+            const [dbscanRows] = await conn.execute(dbscanQuery, queryParams);
 
             const clusterMap = new Map();
             if (Array.isArray(dbscanRows)) {

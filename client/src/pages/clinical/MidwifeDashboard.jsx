@@ -42,7 +42,7 @@ import { formatFullName } from '../../utils/formatFullName';
 import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
 import StatusBadge from '../../components/common/StatusBadge';
 
-const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
+const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE', 'COMPLETED_PENDING_REVIEW'];
 
 // Fix Leaflet default marker icons
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -705,9 +705,10 @@ export default function MidwifeDashboard() {
                                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                             displayStatus === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                                                             displayStatus === 'ACKNOWLEDGED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                                            displayStatus === 'COMPLETED_PENDING_REVIEW' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                                                             'bg-green-50 text-green-700 border border-green-200'
                                                         }`}>
-                                                            {displayStatus}
+                                                            {displayStatus === 'COMPLETED_PENDING_REVIEW' ? 'Pending Review' : displayStatus}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-5 text-right align-middle">

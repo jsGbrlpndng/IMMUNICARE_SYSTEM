@@ -380,21 +380,47 @@ class ClusterDeploymentService {
                     '[]'::json
                 ) AS infant_ids,
                 COALESCE(
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'id', i.id,
-                            'reference_id', i.reference_id,
-                            'first_name', i.first_name,
-                            'middle_name', i.middle_name,
-                            'last_name', i.last_name,
-                            'barangay', i.barangay,
-                            'purok', i.purok,
-                            'exact_address', i.exact_address,
-                            'lat', i.latitude,
-                            'lng', i.longitude
+                    (
+                        SELECT JSON_AGG(
+                            JSON_BUILD_OBJECT(
+                                'id', i2.id,
+                                'reference_id', i2.reference_id,
+                                'first_name', i2.first_name,
+                                'middle_name', i2.middle_name,
+                                'last_name', i2.last_name,
+                                'patient_name', TRIM(CONCAT(i2.first_name, ' ', i2.last_name)),
+                                'barangay', i2.barangay,
+                                'purok', i2.purok,
+                                'exact_address', i2.exact_address,
+                                'lat', i2.latitude,
+                                'lng', i2.longitude,
+                                'mapping_readiness', CASE WHEN i2.latitude IS NOT NULL AND i2.longitude IS NOT NULL THEN (CASE WHEN i2.is_location_verified = TRUE THEN 'Verified' ELSE 'Approximate' END) ELSE 'Unmapped' END,
+                                'urgency', COALESCE(
+                                    (
+                                        SELECT COALESCE(
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date < CURRENT_DATE THEN 'defaulter' END),
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date = CURRENT_DATE THEN 'due_soon' END),
+                                            MAX(CASE
+                                                WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date > CURRENT_DATE
+                                                 AND COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date <= CURRENT_DATE + INTERVAL '7 days'
+                                                THEN 'due_soon'
+                                            END),
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date > CURRENT_DATE + INTERVAL '7 days' THEN 'on_track' END),
+                                            'completed'
+                                        )
+                                        FROM infant_schedules s2
+                                        WHERE s2.infant_id = i2.id
+                                          AND s2.status NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
+                                    ),
+                                    'completed'
+                                )
+                            )
+                            ORDER BY i2.last_name, i2.first_name
                         )
-                        ORDER BY i.last_name, i.first_name
-                    ) FILTER (WHERE i.id IS NOT NULL),
+                        FROM cluster_assignment_members cam2
+                        JOIN infants i2 ON i2.id = cam2.infant_id
+                        WHERE cam2.assignment_id = ca.id
+                    ),
                     '[]'::json
                 ) AS points
             FROM cluster_assignments ca
@@ -579,19 +605,47 @@ class ClusterDeploymentService {
                     '[]'::json
                 ) AS infant_ids,
                 COALESCE(
-                    JSON_AGG(
-                        JSON_BUILD_OBJECT(
-                            'id', i.id,
-                            'reference_id', i.reference_id,
-                            'first_name', i.first_name,
-                            'last_name', i.last_name,
-                            'barangay', i.barangay,
-                            'purok', i.purok,
-                            'lat', i.latitude,
-                            'lng', i.longitude
+                    (
+                        SELECT JSON_AGG(
+                            JSON_BUILD_OBJECT(
+                                'id', i2.id,
+                                'reference_id', i2.reference_id,
+                                'first_name', i2.first_name,
+                                'middle_name', i2.middle_name,
+                                'last_name', i2.last_name,
+                                'patient_name', TRIM(CONCAT(i2.first_name, ' ', i2.last_name)),
+                                'barangay', i2.barangay,
+                                'purok', i2.purok,
+                                'exact_address', i2.exact_address,
+                                'lat', i2.latitude,
+                                'lng', i2.longitude,
+                                'mapping_readiness', CASE WHEN i2.latitude IS NOT NULL AND i2.longitude IS NOT NULL THEN (CASE WHEN i2.is_location_verified = TRUE THEN 'Verified' ELSE 'Approximate' END) ELSE 'Unmapped' END,
+                                'urgency', COALESCE(
+                                    (
+                                        SELECT COALESCE(
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date < CURRENT_DATE THEN 'defaulter' END),
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date = CURRENT_DATE THEN 'due_soon' END),
+                                            MAX(CASE
+                                                WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date > CURRENT_DATE
+                                                 AND COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date <= CURRENT_DATE + INTERVAL '7 days'
+                                                THEN 'due_soon'
+                                            END),
+                                            MAX(CASE WHEN COALESCE(s2.earliest_allowed_date, s2.recommended_date)::date > CURRENT_DATE + INTERVAL '7 days' THEN 'on_track' END),
+                                            'completed'
+                                        )
+                                        FROM infant_schedules s2
+                                        WHERE s2.infant_id = i2.id
+                                          AND s2.status NOT IN ('COMPLETED', 'INELIGIBLE', 'EXPIRED', 'PENDING_VALIDATION')
+                                    ),
+                                    'completed'
+                                )
+                            )
+                            ORDER BY i2.last_name, i2.first_name
                         )
-                        ORDER BY i.last_name, i.first_name
-                    ) FILTER (WHERE i.id IS NOT NULL),
+                        FROM cluster_assignment_members cam2
+                        JOIN infants i2 ON i2.id = cam2.infant_id
+                        WHERE cam2.assignment_id = ca.id
+                    ),
                     '[]'::json
                 ) AS points
             FROM cluster_assignments ca

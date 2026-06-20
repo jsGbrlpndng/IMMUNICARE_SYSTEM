@@ -1352,7 +1352,7 @@ class InfantService {
         // 4. Run DBSCAN
         const dbscanStart = performance.now();
         const dbscan = new DBSCANService(epsilonMeters, safeMinPts, this.db);
-        const rawClusters = dssDataset.length >= safeMinPts ? await dbscan.cluster(this.db, dssDataset) : [];
+        const rawClusters = dssDataset.length >= safeMinPts ? await dbscan.cluster(this.db, dssDataset, barangay) : [];
         const dbscanEnd = performance.now();
         console.log(`[PERF] ID-110 DBSCAN Clustering executed in: ${(dbscanEnd - dbscanStart).toFixed(2)}ms`);
 
