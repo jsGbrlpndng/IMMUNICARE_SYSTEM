@@ -22,6 +22,14 @@ export const validateField = (name, value, formData = {}) => {
             if (!value) return "Required";
             if (nameRegex.test(value)) return "Invalid characters";
             return null;
+        case 'suffix':
+            if (formData?.suffix_is_other === true && !String(value || '').trim()) {
+                return "Custom suffix is required";
+            }
+            if (String(value || '').trim().toUpperCase() === 'OTHER') {
+                return "Enter the custom suffix instead of Other";
+            }
+            return null;
         case 'dob':
             if (!value) return "Required";
             if (inputDate > today) return "Future dates not allowed";
@@ -107,6 +115,9 @@ export const isStepValid = (step, formData, errors) => {
         const basicFields = ['first_name', 'last_name', 'dob', 'sex'];
         const hasMissingBasic = basicFields.some(field => !formData[field] || errors[field]);
         if (hasMissingBasic) return false;
+        if (errors.exact_address || errors.suffix) return false;
+        if (formData.suffix_is_other === true && !String(formData.suffix || '').trim()) return false;
+        if (formData.out_of_barangay_exception_confirmed === true && !String(formData.out_of_barangay_exception_reason || '').trim()) return false;
         if (formData.has_no_middle_name !== true && (!formData.middle_name || errors.middle_name)) return false;
         
         return true;

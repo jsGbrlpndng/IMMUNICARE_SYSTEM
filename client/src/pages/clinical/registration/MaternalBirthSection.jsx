@@ -1,7 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { InputWrapper, inputClasses } from './FormComponents';
 
 const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isReadOnly = false }) => {
+    const hasExistingBhwNotes = Boolean((formData.bhw_intake_notes || '').trim());
+    const [showBhwNotes, setShowBhwNotes] = useState(hasExistingBhwNotes);
+    const bhwNotesEnabled = showBhwNotes || hasExistingBhwNotes;
+
+    useEffect(() => {
+        if (hasExistingBhwNotes) setShowBhwNotes(true);
+    }, [hasExistingBhwNotes]);
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="col-span-full border-b border-slate-100 pb-2">
@@ -54,7 +62,7 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isRe
             <InputWrapper label="Birth Status (Auto-calculated)">
                 <input 
                     name="birth_status" 
-                    value={formData.birth_status} 
+                    value={formData.birth_status || 'Pending birth weight'}
                     readOnly 
                     className={`${inputClasses} bg-slate-50 text-slate-500 cursor-not-allowed`} 
                 />
@@ -127,23 +135,45 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isRe
                 </div>
             </div>
 
-            <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-6">
-                <div className="mb-3">
-                    <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em]">BHW Intake Notes</h3>
-                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Historical context from the baby book, outside clinic records, or caregiver interview.
-                    </p>
-                </div>
-                <textarea
-                    name="bhw_intake_notes"
-                    value={formData.bhw_intake_notes || ''}
-                    onChange={handleChange}
-                    placeholder="Document external dose history, discrepancies in the baby book, or clinical context for Midwife review..."
-                    rows="4"
-                    className={`${inputClasses} min-h-[120px] resize-y`}
-                    disabled={isReadOnly}
-                    readOnly={isReadOnly}
-                />
+            <div className="col-span-full rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
+                <label className="flex items-start gap-3">
+                    <input
+                        type="checkbox"
+                        checked={bhwNotesEnabled}
+                        onChange={(event) => setShowBhwNotes(event.target.checked)}
+                        disabled={isReadOnly || hasExistingBhwNotes}
+                        className="mt-1 h-5 w-5 rounded border-emerald-300 text-[#065f46] focus:ring-[#065f46]"
+                    />
+                    <span>
+                        <span className="block text-[11px] font-black uppercase tracking-[0.16em] text-[#065f46]">
+                            Child has vaccine dose history from another clinic, baby book, or caregiver interview.
+                        </span>
+                        <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Enable BHW intake notes when external dose history or caregiver-provided context needs review.
+                        </span>
+                    </span>
+                </label>
+
+                {bhwNotesEnabled && (
+                    <div className="mt-4 rounded-xl border border-emerald-100 bg-white p-4">
+                        <div className="mb-3">
+                            <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em]">BHW Intake Notes</h3>
+                            <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                Historical context from the baby book, outside clinic records, or caregiver interview.
+                            </p>
+                        </div>
+                        <textarea
+                            name="bhw_intake_notes"
+                            value={formData.bhw_intake_notes || ''}
+                            onChange={handleChange}
+                            placeholder="Document external dose history, discrepancies in the baby book, or clinical context for Midwife review..."
+                            rows="4"
+                            className={`${inputClasses} min-h-[120px] resize-y rounded border border-slate-200`}
+                            disabled={isReadOnly}
+                            readOnly={isReadOnly}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

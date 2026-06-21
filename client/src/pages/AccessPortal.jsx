@@ -223,8 +223,14 @@ const AccessPortal = () => {
 
                             <form onSubmit={handleStaffLogin} className="space-y-5">
                                 {location.state?.securityMessage && (
-                                    <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-                                        {location.state.securityMessage}
+                                    <div className="flex items-start gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm">
+                                        <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-700" />
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-800">
+                                                Security Update Complete
+                                            </p>
+                                            <p className="mt-1 font-bold">{location.state.securityMessage}</p>
+                                        </div>
                                     </div>
                                 )}
 

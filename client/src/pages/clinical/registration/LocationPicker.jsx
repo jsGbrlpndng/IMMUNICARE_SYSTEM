@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, MapPin, Maximize2, Minimize2, Search } from 'lucide-react';
+import { AlertTriangle, Loader2, MapPin, Maximize2, Minimize2, Search } from 'lucide-react';
 import { GeoJSON, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
 import { InputWrapper, inputClasses } from './FormComponents';
@@ -145,6 +145,13 @@ const LocationPicker = ({
     onAddressInputChange,
     showSuggestions = false,
     assignedBarangay = '',
+    pendingOutOfBarangayLocation = null,
+    outOfBarangayReason = '',
+    outOfBarangayConfirmed = false,
+    onOutOfBarangayReasonChange,
+    onOutOfBarangayConfirmChange,
+    onConfirmOutOfBarangayLocation,
+    onCancelOutOfBarangayLocation,
     isReadOnly = false
 }) => {
     const safeMapCenter = getSafeCenter(mapCenter);
@@ -259,6 +266,73 @@ const LocationPicker = ({
                     />
                 </div>
             </InputWrapper>
+
+            {pendingOutOfBarangayLocation && !isReadOnly && (
+                <section className="rounded-xl border border-amber-300 bg-amber-50 p-5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-white text-amber-700 shadow-sm">
+                            <AlertTriangle className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-900">
+                                Out-of-Barangay Registration Exception
+                            </p>
+                            <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
+                                The selected location is outside your assigned barangay. This may affect barangay reports,
+                                defaulter tracking, and clustering. Continue only if this child is being handled by your
+                                facility due to referral, temporary residence, staffing shortage, or service coverage exception.
+                            </p>
+                            <div className="mt-3 grid gap-2 text-xs font-bold text-slate-700 sm:grid-cols-2">
+                                <span>Assigned Barangay: <strong className="text-slate-950">{normalizeBarangay(assignedBarangay) || '--'}</strong></span>
+                                <span>Selected Barangay: <strong className="text-slate-950">{pendingOutOfBarangayLocation.barangay || '--'}</strong></span>
+                            </div>
+
+                            <label className="mt-4 block">
+                                <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">
+                                    Exception Reason
+                                </span>
+                                <textarea
+                                    value={outOfBarangayReason}
+                                    onChange={(event) => onOutOfBarangayReasonChange?.(event.target.value)}
+                                    rows="3"
+                                    placeholder="Example: referral, temporary residence, staffing shortage, transfer, or service coverage exception."
+                                    className="mt-2 min-h-[96px] w-full rounded-lg border border-amber-200 bg-white p-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[#064E3B] focus:ring-2 focus:ring-emerald-900/10"
+                                />
+                            </label>
+
+                            <label className="mt-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-white p-3">
+                                <input
+                                    type="checkbox"
+                                    checked={outOfBarangayConfirmed}
+                                    onChange={(event) => onOutOfBarangayConfirmChange?.(event.target.checked)}
+                                    className="mt-1 h-4 w-4 rounded border-amber-300 text-[#064E3B] focus:ring-[#064E3B]"
+                                />
+                                <span className="text-xs font-black uppercase tracking-[0.08em] text-slate-700">
+                                    I confirm this is an authorized out-of-barangay registration.
+                                </span>
+                            </label>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={onConfirmOutOfBarangayLocation}
+                                    disabled={!outOfBarangayConfirmed || !outOfBarangayReason.trim()}
+                                    className="rounded-lg bg-[#064E3B] px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                >
+                                    Confirm Exception
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onCancelOutOfBarangayLocation}
+                                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-600 transition hover:border-slate-500"
+                                >
+                                    Cancel Selection
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            )}
 
             <div
                 className={

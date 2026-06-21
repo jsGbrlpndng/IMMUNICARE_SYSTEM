@@ -58,7 +58,6 @@ const AccountSecurityPage = () => {
     }, []);
 
     const assignmentLabel = profile?.assigned_barangay || 'Not assigned';
-    const emailLabel = profile?.email || 'Not on file';
 
     return (
         <div className="px-4 py-5 lg:px-6 lg:py-6">
@@ -93,7 +92,7 @@ const AccountSecurityPage = () => {
                             </div>
                             <div className="chart-grid chart-grid-double border-t border-slate-300">
                                 <ProfileField label="Barangay / Assignment" value={assignmentLabel} />
-                                <ProfileField label="Email" value={emailLabel} />
+                                <ProfileField label="Staff ID" value={profile?.id || profile?.user_id} highlight />
                             </div>
                             <div className="chart-grid chart-grid-double border-t border-slate-300">
                                 <ProfileField label="Creation Date" value={formatDateTime(profile?.created_at)} />

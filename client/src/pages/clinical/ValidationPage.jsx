@@ -447,6 +447,33 @@ const ValidationPage = () => {
 
     return (
         <div className="min-h-screen bg-[#F4F7F9] flex flex-col font-sans antialiased text-slate-900">
+            <header className="border-b border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div className="mx-auto flex w-full max-w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center bg-[#064E3B] text-white shadow-sm">
+                            <Shield className="h-6 w-6" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">Clinical Queue</p>
+                            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Registration Validation</h1>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">
+                                Review pending infant registrations for approval, return, or rejection.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                        <div className="border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Pending Queue</p>
+                            <p className="mt-1 text-xl font-black text-slate-950">{pendingRegistrations.length}</p>
+                        </div>
+                        <div className="border border-emerald-200 bg-emerald-50 px-4 py-3">
+                            <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-800">Processed Today</p>
+                            <p className="mt-1 text-xl font-black text-emerald-900">{stats?.processed_today || 0}</p>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
             <main className="mx-auto flex w-full max-w-full flex-1 gap-2 overflow-hidden px-2 py-2">
                 {/* Left: Validation Queue */}
                 <div className="w-80 flex flex-shrink-0 flex-col gap-2">
@@ -670,6 +697,20 @@ const ValidationPage = () => {
                                             <DataField label="Landmark" value={selectedRecord?.landmark || '--'} />
                                         </div>
                                     </ClinicalSection>
+
+                                    {selectedRecord?.out_of_barangay_exception_confirmed === true && (
+                                        <ClinicalSection icon={<AlertCircle size={12} className="text-amber-700" />} title="Out-of-Barangay Exception">
+                                            <div className="border border-amber-300 bg-amber-50">
+                                                <div className="chart-grid chart-grid-double">
+                                                    <DataField label="Status" value="Confirmed" highlight />
+                                                    <DataField label="Exception Barangay" value={selectedRecord?.out_of_barangay_exception_barangay || '--'} />
+                                                </div>
+                                                <div className="chart-grid chart-grid-single border-t border-amber-300">
+                                                    <DataField label="Reason" value={selectedRecord?.out_of_barangay_exception_reason || 'No reason recorded.'} />
+                                                </div>
+                                            </div>
+                                        </ClinicalSection>
+                                    )}
                                 </div>
 
                                 {/* Column 2: Parent & Clinical */}

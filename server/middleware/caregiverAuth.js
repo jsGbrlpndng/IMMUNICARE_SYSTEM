@@ -14,6 +14,8 @@ const caregiverAuth = (req, res, next) => {
 
     req.caregiver = {
         id: verified.caregiver_id,
+        infant_id: verified.infant_id,
+        reference_id: verified.reference_id,
         mobile_number: verified.mobile_number,
         role: ROLES.CAREGIVER
     };

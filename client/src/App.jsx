@@ -4,7 +4,9 @@ import MidwifeDashboard from './pages/clinical/MidwifeDashboard';
 import ValidationPage from './pages/clinical/ValidationPage';
 import NIPSchedulePage from './pages/clinical/NIPSchedulePage';
 import Heatmap from './pages/clinical/Heatmap';
-import CaregiverPortal from './pages/CaregiverPortal';
+import CaregiverLogin from './pages/caregiver/CaregiverLogin';
+import CaregiverDashboard from './pages/caregiver/CaregiverDashboard';
+import CaregiverCard from './pages/caregiver/CaregiverCard';
 import Reports from './pages/clinical/Reports';
 import LandingPage from './pages/LandingPage';
 import AccessPortal from './pages/AccessPortal';
@@ -16,6 +18,7 @@ import SMSCampaigns from './pages/clinical/SMSCampaigns';
 import { AuthProvider } from './contexts/AuthContext';
 import { IdleSessionProvider } from './contexts/IdleSessionContext';
 import ProtectedRoute from './components/routing/ProtectedRoute';
+import CaregiverRoute from './components/routing/CaregiverRoute';
 import AdminRoute from './components/routing/AdminRoute';
 import AdminLayout from './layouts/AdminLayout';
 import PublicHealthDashboard from './pages/admin/PublicHealthDashboard';
@@ -56,7 +59,24 @@ function App() {
                     <Route path="/force-password-change" element={<ForcePasswordChange />} />
 
                     {/* Secure Caregiver Records */}
-                    <Route path="/caregiver" element={<CaregiverPortal />} />
+                    <Route path="/caregiver" element={<Navigate to="/caregiver/login" replace />} />
+                    <Route path="/caregiver/login" element={<CaregiverLogin />} />
+                    <Route
+                        path="/caregiver/dashboard"
+                        element={
+                            <CaregiverRoute>
+                                <CaregiverDashboard />
+                            </CaregiverRoute>
+                        }
+                    />
+                    <Route
+                        path="/caregiver/infants/:id/card"
+                        element={
+                            <CaregiverRoute>
+                                <CaregiverCard />
+                            </CaregiverRoute>
+                        }
+                    />
 
                     {/* Protected Clinical Workspace */}
                     <Route

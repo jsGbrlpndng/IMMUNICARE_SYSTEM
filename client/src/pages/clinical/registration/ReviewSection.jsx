@@ -3,6 +3,37 @@ import { AlertTriangle } from 'lucide-react';
 import { SummaryItem } from './FormComponents';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
+const ReviewGroup = ({ title, children }) => (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-emerald-100 bg-emerald-50/70 px-5 py-3">
+            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[#065f46]">{title}</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 p-5 md:grid-cols-2">
+            {children}
+        </div>
+    </section>
+);
+
+const OutOfBarangayExceptionSummary = ({ data }) => {
+    if (data?.out_of_barangay_exception_confirmed !== true) return null;
+
+    return (
+        <section className="overflow-hidden rounded-2xl border border-amber-300 bg-amber-50 shadow-sm">
+            <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-100/70 px-5 py-3 text-amber-900">
+                <AlertTriangle className="h-4 w-4" />
+                <h3 className="text-[11px] font-black uppercase tracking-[0.2em]">Out-of-Barangay Exception</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-5 p-5 md:grid-cols-2">
+                <SummaryItem label="Status" value="Confirmed" />
+                <SummaryItem label="Exception Barangay" value={data.out_of_barangay_exception_barangay || 'Not recorded'} />
+                <div className="md:col-span-2">
+                    <SummaryItem label="Reason" value={data.out_of_barangay_exception_reason || 'No reason recorded.'} />
+                </div>
+            </div>
+        </section>
+    );
+};
+
 const ReviewSection = ({ 
     formData, 
     duplicateMatches, 
@@ -13,20 +44,26 @@ const ReviewSection = ({
     isReadOnly
 }) => {
     return (
-        <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-8">
-            <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-                <div className="col-span-full mb-2">
-                    <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em] border-b border-green-200 pb-2">Master Patient Index</h3>
-                </div>
+        <div className="animate-in fade-in slide-in-from-right-4 space-y-6 duration-300">
+            <div className="rounded-2xl border border-[#065f46] bg-[#064E3B] p-5 text-white shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-100">Registration Review</p>
+                <h2 className="mt-2 text-2xl font-black leading-tight">{formatFullNameFromObject(formData) || 'Infant Registration'}</h2>
+                <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-emerald-50/80">
+                    Confirm the infant identity, guardian details, birth profile, and at-birth immunization entries before submission.
+                </p>
+            </div>
+
+            <ReviewGroup title="Master Patient Index">
                 <SummaryItem label="Full Name" value={formatFullNameFromObject(formData)} />
                 <SummaryItem label="Sex / DOB" value={`${formData.sex} | ${formData.dob ? new Date(formData.dob).toLocaleDateString() : 'N/A'}`} />
                 <SummaryItem label="Location" value={`${formData.locality || 'N/A'}, ${formData.barangay}`} />
                 <SummaryItem label="Full Address" value={formData.exact_address} />
                 <SummaryItem label="Landmark" value={formData.landmark} />
-                
-                <div className="col-span-full mb-2 mt-4">
-                    <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em] border-b border-green-200 pb-2">Clinical Profile</h3>
-                </div>
+            </ReviewGroup>
+
+            <OutOfBarangayExceptionSummary data={formData} />
+
+            <ReviewGroup title="Clinical Profile">
                 <SummaryItem label="Mother's Maiden Name" value={formData.mothers_maiden_name} />
                 <SummaryItem label="Father" value={formData.father_name} />
                 <SummaryItem label="Contact" value={formData.caregiver_phone} />
@@ -47,10 +84,10 @@ const ReviewSection = ({
                 <div className="col-span-full">
                     <SummaryItem label="BHW Intake Notes" value={formData.bhw_intake_notes || 'No intake notes recorded.'} />
                 </div>
-            </div>
+            </ReviewGroup>
 
             {duplicateMatches.length > 0 && (
-                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-8 animate-in shake duration-700">
+                <div className="animate-in shake rounded-2xl border-2 border-amber-200 bg-amber-50 p-6 duration-700">
                     <div className="flex items-start gap-5 text-amber-800">
                         <AlertTriangle className="w-8 h-8 flex-shrink-0 mt-1" />
                         <div className="flex-1">
@@ -85,7 +122,7 @@ const ReviewSection = ({
             )}
 
             {(userRole?.toUpperCase() === 'MIDWIFE' || userRole?.toUpperCase() === 'ADMIN') && (
-                <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-8 space-y-6">
+                <div className="space-y-6 rounded-2xl border-2 border-red-100 bg-red-50 p-6">
                     <div className="flex items-center gap-3 text-red-800">
                         <div className="p-2 bg-red-100 rounded-lg">
                             <AlertTriangle className="w-5 h-5" />

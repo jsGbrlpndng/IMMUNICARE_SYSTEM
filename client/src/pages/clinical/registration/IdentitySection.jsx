@@ -19,8 +19,26 @@ const IdentitySection = ({
     handleAddressSearchSubmit,
     handleAddressInputChange,
     showSuggestions,
+    assignedBarangay,
+    pendingOutOfBarangayLocation,
+    outOfBarangayReason,
+    outOfBarangayConfirmed,
+    onOutOfBarangayReasonChange,
+    onOutOfBarangayConfirmChange,
+    onConfirmOutOfBarangayLocation,
+    onCancelOutOfBarangayLocation,
     isReadOnly = false
 }) => {
+    const standardSuffixes = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+    const suffixValue = formData.suffix || '';
+    const suffixSelectValue = formData.suffix_is_other || (!standardSuffixes.includes(suffixValue) && suffixValue) ? 'Other' : suffixValue;
+    const showOtherSuffix = suffixSelectValue === 'Other';
+
+    const handleSuffixSelect = (event) => {
+        const value = event.target.value;
+        handleChange({ target: { name: 'suffix_select', value } });
+    };
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <InputWrapper label="First Name" required hasError={!!errors.first_name} errorMessage={errors.first_name}>
@@ -55,8 +73,38 @@ const IdentitySection = ({
                     />
                 </div>
             </InputWrapper>
-            <InputWrapper label="Suffix">
-                <input name="suffix" value={formData.suffix} onChange={handleChange} onBlur={handleBlur} autoComplete="new-password" placeholder="e.g. Jr, III" className={inputClasses} disabled={isReadOnly} readOnly={isReadOnly} />
+            <InputWrapper label="Suffix" hasError={!!errors.suffix} errorMessage={errors.suffix}>
+                <div className="space-y-2 bg-white p-2">
+                    <select
+                        name="suffix_select"
+                        value={suffixSelectValue}
+                        onChange={handleSuffixSelect}
+                        className={`${inputClasses} rounded border border-slate-200 bg-slate-50`}
+                        disabled={isReadOnly}
+                    >
+                        <option value="">None</option>
+                        <option value="Jr.">Jr.</option>
+                        <option value="Sr.">Sr.</option>
+                        <option value="II">II</option>
+                        <option value="III">III</option>
+                        <option value="IV">IV</option>
+                        <option value="V">V</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    {showOtherSuffix && (
+                        <input
+                            name="suffix"
+                            value={suffixValue}
+                            onChange={handleChange}
+                            onBlur={handleBlur}
+                            autoComplete="new-password"
+                            placeholder="Enter suffix"
+                            className={`${inputClasses} rounded border border-slate-200 bg-white`}
+                            disabled={isReadOnly}
+                            readOnly={isReadOnly}
+                        />
+                    )}
+                </div>
             </InputWrapper>
             <InputWrapper label="Date of Birth" required hasError={!!errors.dob} errorMessage={errors.dob}>
                 <input type="date" name="dob" value={formData.dob} onChange={handleChange} required className={inputClasses} disabled={isReadOnly} />
@@ -86,7 +134,14 @@ const IdentitySection = ({
                 onMarkerDragEnd={handleDragEnd}
                 onAddressInputChange={handleAddressInputChange}
                 showSuggestions={showSuggestions}
-                assignedBarangay={formData.barangay}
+                assignedBarangay={assignedBarangay || formData.barangay}
+                pendingOutOfBarangayLocation={pendingOutOfBarangayLocation}
+                outOfBarangayReason={outOfBarangayReason}
+                outOfBarangayConfirmed={outOfBarangayConfirmed}
+                onOutOfBarangayReasonChange={onOutOfBarangayReasonChange}
+                onOutOfBarangayConfirmChange={onOutOfBarangayConfirmChange}
+                onConfirmOutOfBarangayLocation={onConfirmOutOfBarangayLocation}
+                onCancelOutOfBarangayLocation={onCancelOutOfBarangayLocation}
                 isReadOnly={isReadOnly}
             />
 

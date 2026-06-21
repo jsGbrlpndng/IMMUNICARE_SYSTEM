@@ -127,6 +127,36 @@ export const getBarangayBoundaryGeoJson = (barangay) => {
     return feature;
 };
 
+export const isPointInBarangayBoundary = (lat, lng, barangay) => {
+    const feature = getBarangayBoundaryGeoJson(barangay);
+    const polygon = feature?.geometry?.coordinates?.[0];
+    const latitude = Number(lat);
+    const longitude = Number(lng);
+
+    if (!polygon?.length || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return false;
+    }
+
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i][0];
+        const yi = polygon[i][1];
+        const xj = polygon[j][0];
+        const yj = polygon[j][1];
+        const intersects = ((yi > latitude) !== (yj > latitude)) &&
+            (longitude < ((xj - xi) * (latitude - yi)) / (yj - yi) + xi);
+
+        if (intersects) inside = !inside;
+    }
+
+    return inside;
+};
+
+export const getBarangayNameForPoint = (lat, lng) => {
+    const entries = Object.keys(BARANGAY_BOUNDARY_GEOJSON);
+    return entries.find((barangay) => isPointInBarangayBoundary(lat, lng, barangay)) || null;
+};
+
 export const barangayBoundaryStyle = {
     color: '#059669',
     weight: 2,

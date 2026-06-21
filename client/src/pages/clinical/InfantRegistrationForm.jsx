@@ -18,7 +18,9 @@ import ReviewSection from './registration/ReviewSection';
 // Validation Logic
 import { validateField, isStepValid } from '../../utils/registrationValidation';
 import { getBarangayCenter } from '../../utils/barangayConfig';
+import { getBarangayBoundaryGeoJson, getBarangayNameForPoint, isPointInBarangayBoundary } from '../../utils/barangayBoundaries';
 import {
+    SAN_PEDRO_SYSTEM_BARANGAYS,
     getBarangayFromAddress,
     isInsideSanPedro,
     normalizeAddressResult,
@@ -27,6 +29,7 @@ import {
 } from '../../utils/addressGeocoding';
 import { hasValidCoordinate, toDecimalFloat } from './registration/LocationPicker';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { normalizeDisplayText } from '../../utils/textNormalization';
 
 const initialFormState = {
     first_name: '',
@@ -34,11 +37,12 @@ const initialFormState = {
     middle_name: '',
     last_name: '',
     suffix: '',
+    suffix_is_other: false,
     dob: '',
     sex: '',
     birth_weight: '',
     length_at_birth_cm: '',
-    birth_status: 'Normal',
+    birth_status: 'Pending birth weight',
     mothers_maiden_name: '',
     father_name: '',
     caregiver_relationship: '',
@@ -48,6 +52,9 @@ const initialFormState = {
     landmark: '',
     current_address: '',
     exact_address: '',
+    out_of_barangay_exception_confirmed: false,
+    out_of_barangay_exception_reason: '',
+    out_of_barangay_exception_barangay: '',
     mother_tt_status: '0', 
     pregnancy_order: '',
     last_tt_date: '',
@@ -158,6 +165,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const [addressLookupWarning, setAddressLookupWarning] = useState('');
     const [mapCenter, setMapCenter] = useState([14.3596, 121.0426]); 
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [pendingOutOfBarangayLocation, setPendingOutOfBarangayLocation] = useState(null);
+    const [outOfBarangayReason, setOutOfBarangayReason] = useState('');
+    const [outOfBarangayConfirmed, setOutOfBarangayConfirmed] = useState(false);
     const searchDebounceRef = useRef(null);
     const searchAbortRef = useRef(null);
     const STEPS = useMemo(() => [
@@ -167,6 +177,48 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         { id: 4, title: 'Doses' },
         { id: 5, title: 'Review' }
     ], []);
+    const assignedBarangayName = (user?.assigned_barangay || '').trim().toUpperCase();
+    const normalizeBarangayName = useCallback((value) => String(value || '').trim().toUpperCase(), []);
+    const isAllowedCoverageBarangay = useCallback((value) => (
+        SAN_PEDRO_SYSTEM_BARANGAYS.includes(normalizeBarangayName(value))
+    ), [normalizeBarangayName]);
+
+    const getAssignedBarangayError = useCallback(() => (
+        assignedBarangayName
+            ? `Selected location is outside your assigned barangay. Please choose a location within ${assignedBarangayName}.`
+            : 'Selected location is outside your assigned barangay.'
+    ), [assignedBarangayName]);
+
+    const getCoverageError = useCallback(() => (
+        'Selected location is outside RHU 2 San Pedro barangay coverage.'
+    ), []);
+
+    const isWithinAssignedBarangay = useCallback((lat, lng, barangayLabel = '') => {
+        if (!assignedBarangayName) return true;
+
+        const normalizedLabel = String(barangayLabel || '').trim().toUpperCase();
+        if (normalizedLabel) {
+            return normalizedLabel === assignedBarangayName;
+        }
+
+        const hasBoundary = Boolean(getBarangayBoundaryGeoJson(assignedBarangayName));
+        if (hasBoundary) {
+            return isPointInBarangayBoundary(lat, lng, assignedBarangayName);
+        }
+
+        return false;
+    }, [assignedBarangayName]);
+
+    const resolveLocationBarangay = useCallback((lat, lng, barangayLabel = '') => {
+        const normalizedLabel = normalizeBarangayName(barangayLabel);
+        if (normalizedLabel) return normalizedLabel;
+        return getBarangayNameForPoint(lat, lng) || '';
+    }, [normalizeBarangayName]);
+
+    const hasAuthorizedOutOfBarangayException = useCallback((data = formData) => (
+        data.out_of_barangay_exception_confirmed === true &&
+        Boolean(String(data.out_of_barangay_exception_reason || '').trim())
+    ), [formData]);
 
     const resetForm = useCallback(() => {
         const targetName = user?.assigned_barangay || 'MUNICIPALITY';
@@ -183,6 +235,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setRegisteredInfantInfo(null);
         setSearchResults([]);
         setShowSuggestions(false);
+        setPendingOutOfBarangayLocation(null);
+        setOutOfBarangayReason('');
+        setOutOfBarangayConfirmed(false);
         setMapCenter([center.lat, center.lng]);
     }, [user?.assigned_barangay]);
 
@@ -338,7 +393,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
 
 
-    const updateLocationFields = useCallback((locationData = {}) => {
+    const updateLocationFields = useCallback((locationData = {}, options = {}) => {
         const lat = toDecimalFloat(locationData.latitude ?? locationData.lat);
         const lng = toDecimalFloat(locationData.longitude ?? locationData.lng ?? locationData.lon);
 
@@ -353,12 +408,38 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             return false;
         }
 
+        const locationBarangay = resolveLocationBarangay(lat, lng, locationData.barangay || locationData.locality);
+        if (!isAllowedCoverageBarangay(locationBarangay)) {
+            const message = getCoverageError();
+            setAddressLookupError(message);
+            setErrors(prev => ({ ...prev, exact_address: message }));
+            return false;
+        }
+
+        const outsideAssignedBarangay = !isWithinAssignedBarangay(lat, lng, locationBarangay);
+        if (outsideAssignedBarangay && !options.allowOutOfBarangayException) {
+            setPendingOutOfBarangayLocation({
+                ...locationData,
+                latitude: lat,
+                longitude: lng,
+                barangay: locationBarangay
+            });
+            setOutOfBarangayReason('');
+            setOutOfBarangayConfirmed(false);
+            setAddressLookupError('');
+            setErrors(prev => ({ ...prev, exact_address: null }));
+            return false;
+        }
+
         setFormData(prev => ({
             ...prev,
             ...(locationData.exact_address ? { exact_address: locationData.exact_address } : {}),
             ...(locationData.current_address ? { current_address: locationData.current_address } : {}),
             ...(locationData.locality ? { locality: locationData.locality } : {}),
-            ...(locationData.barangay ? { barangay: locationData.barangay } : {}),
+            ...(locationData.barangay && !user?.assigned_barangay ? { barangay: locationData.barangay } : {}),
+            out_of_barangay_exception_confirmed: outsideAssignedBarangay ? true : false,
+            out_of_barangay_exception_reason: outsideAssignedBarangay ? (options.exceptionReason || prev.out_of_barangay_exception_reason || '') : '',
+            out_of_barangay_exception_barangay: outsideAssignedBarangay ? locationBarangay : '',
             latitude: lat,
             longitude: lng,
             precision: locationData.precision || prev.precision || 'approximate',
@@ -366,15 +447,22 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             is_location_verified: locationData.is_location_verified ?? true
         }));
         setErrors(prev => ({ ...prev, exact_address: '' }));
+        setPendingOutOfBarangayLocation(null);
+        setOutOfBarangayConfirmed(false);
+        setOutOfBarangayReason('');
         setMapCenter([lat, lng]);
         return true;
-    }, []);
+    }, [getCoverageError, isAllowedCoverageBarangay, isWithinAssignedBarangay, resolveLocationBarangay, user?.assigned_barangay]);
 
-    const buildRegistrationPayload = useCallback((data, overrides = {}) => ({
+    const buildRegistrationPayload = useCallback((data, overrides = {}) => {
+        const { suffix_is_other, ...payloadData } = data;
+
+        return {
         data: {
-            ...data,
+            ...payloadData,
             has_no_middle_name: data.has_no_middle_name === true,
             middle_name: data.has_no_middle_name ? '' : (data.middle_name || ''),
+            suffix: String(data.suffix || '').trim().toUpperCase() === 'OTHER' ? '' : (data.suffix || ''),
             sex: data.sex === 'M' || data.sex === 'F' ? data.sex : '',
             latitude: toDecimalFloat(data.latitude),
             longitude: toDecimalFloat(data.longitude),
@@ -383,7 +471,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             registration_status: data.registration_status,
             ...overrides
         }
-    }), []);
+    };
+    }, []);
 
     const applyRegistrationResponseToState = useCallback((payload, fallbackData = formData) => {
         const reg = payload?.data || payload || {};
@@ -416,7 +505,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         const lat = toDecimalFloat(normalizedResult.lat);
         const lon = toDecimalFloat(normalizedResult.lon);
         const address = normalizedResult.display_name;
-        const identifiedBarangay = normalizedResult.barangay || user?.assigned_barangay || formData.barangay || '';
+        const identifiedBarangay = normalizedResult.barangay || getBarangayNameForPoint(lat, lon) || '';
         const precision = normalizedResult.precision || 'approximate';
         const assignedBarangay = (user?.assigned_barangay || '').toUpperCase();
         const isBarangayMismatch = assignedBarangay && identifiedBarangay && assignedBarangay !== identifiedBarangay.toUpperCase();
@@ -426,7 +515,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 ? 'Address label is approximate. Click the exact map location if needed.'
                 : '';
 
-        updateLocationFields({
+        const locationUpdated = updateLocationFields({
             exact_address: address,
             current_address: address,
             locality: identifiedBarangay,
@@ -437,10 +526,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             barangay: identifiedBarangay,
             is_location_verified: true
         });
-        
+
         setSearchResults([]);
         setShowSuggestions(false);
         setNoResultsFound(false);
+        if (!locationUpdated) return;
+
         setAddressLookupError('');
         setAddressLookupWarning(isBarangayMismatch ? 'Location is inside San Pedro but outside your assigned barangay.' : lowPrecisionWarning);
     };
@@ -475,9 +566,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     return;
                 }
 
-                const fallbackBarangay = user?.assigned_barangay || formData.barangay || 'San Pedro';
+                const fallbackBarangay = getBarangayNameForPoint(lat, lon) || '';
+                if (!fallbackBarangay) {
+                    setAddressLookupError(getCoverageError());
+                    return;
+                }
                 const fallbackAddress = `Pinned GPS point, ${fallbackBarangay}, San Pedro, Laguna, Philippines`;
-                updateLocationFields({
+                const locationUpdated = updateLocationFields({
                     exact_address: fallbackAddress,
                     current_address: fallbackAddress,
                     locality: fallbackBarangay,
@@ -488,6 +583,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     barangay: fallbackBarangay,
                     is_location_verified: true
                 });
+                if (!locationUpdated) return;
                 setSearchResults([]);
                 setShowSuggestions(false);
                 setNoResultsFound(false);
@@ -496,7 +592,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             }
 
             const address = result.display_name;
-            const identifiedBarangay = result.barangay || getBarangayFromAddress(result) || user?.assigned_barangay || formData.barangay || '';
+            const identifiedBarangay = result.barangay || getBarangayFromAddress(result) || getBarangayNameForPoint(lat, lon) || '';
             const precision = result.precision || 'approximate';
             const assignedBarangay = (user?.assigned_barangay || '').toUpperCase();
             const isBarangayMismatch = assignedBarangay && identifiedBarangay && assignedBarangay !== identifiedBarangay.toUpperCase();
@@ -504,7 +600,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 ? 'Exact GPS point saved. Address label is approximate.'
                 : '';
 
-            updateLocationFields({
+            const locationUpdated = updateLocationFields({
                 exact_address: address,
                 current_address: address,
                 locality: identifiedBarangay,
@@ -515,6 +611,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 barangay: identifiedBarangay,
                 is_location_verified: true
             });
+            if (!locationUpdated) return;
             setSearchResults([]);
             setShowSuggestions(false);
             setNoResultsFound(false);
@@ -523,9 +620,13 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             if (err.name !== 'AbortError') {
                 console.error("Reverse geocoding error:", err);
                 if (isInsideSanPedro(lat, lon)) {
-                    const fallbackBarangay = user?.assigned_barangay || formData.barangay || 'San Pedro';
+                    const fallbackBarangay = getBarangayNameForPoint(lat, lon) || '';
+                    if (!fallbackBarangay) {
+                        setAddressLookupError(getCoverageError());
+                        return;
+                    }
                     const fallbackAddress = `Pinned GPS point, ${fallbackBarangay}, San Pedro, Laguna, Philippines`;
-                    updateLocationFields({
+                    const locationUpdated = updateLocationFields({
                         exact_address: fallbackAddress,
                         current_address: fallbackAddress,
                         locality: fallbackBarangay,
@@ -536,6 +637,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         barangay: fallbackBarangay,
                         is_location_verified: true
                     });
+                    if (!locationUpdated) return;
                     setAddressLookupWarning('Exact GPS point saved. Address label is approximate.');
                 } else {
                     setAddressLookupError('Selected location is outside San Pedro, Laguna.');
@@ -554,7 +656,6 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setSearchResults([]);
         setShowSuggestions(false);
         setNoResultsFound(false);
-        updateLocationFields({ latitude, longitude, precision: 'approximate', location_precision: 'approximate', is_location_verified: true });
         handleReverseGeocode(latitude, longitude);
     };
 
@@ -566,8 +667,32 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         setSearchResults([]);
         setShowSuggestions(false);
         setNoResultsFound(false);
-        updateLocationFields({ latitude, longitude, precision: 'approximate', location_precision: 'approximate', is_location_verified: true });
         handleReverseGeocode(latitude, longitude);
+    };
+
+    const handleConfirmOutOfBarangayLocation = () => {
+        if (!pendingOutOfBarangayLocation) return;
+
+        const reason = outOfBarangayReason.trim();
+        if (!outOfBarangayConfirmed || !reason) {
+            const message = 'Confirm the out-of-barangay exception and provide a reason before continuing.';
+            setAddressLookupError(message);
+            setErrors(prev => ({ ...prev, exact_address: message }));
+            return;
+        }
+
+        updateLocationFields(pendingOutOfBarangayLocation, {
+            allowOutOfBarangayException: true,
+            exceptionReason: reason
+        });
+        setAddressLookupWarning('Out-of-barangay exception confirmed for this registration.');
+    };
+
+    const handleCancelOutOfBarangayLocation = () => {
+        setPendingOutOfBarangayLocation(null);
+        setOutOfBarangayReason('');
+        setOutOfBarangayConfirmed(false);
+        setAddressLookupWarning('');
     };
 
     // --- Form Handlers ---
@@ -580,12 +705,23 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             setAddressLookupWarning('');
             setSearchResults([]);
             setShowSuggestions(false);
+            setPendingOutOfBarangayLocation(null);
+            setOutOfBarangayReason('');
+            setOutOfBarangayConfirmed(false);
         }
 
         let newFormData = {
             ...formData,
             [name]: type === 'checkbox' ? checked : value
         };
+
+        if (name === 'suffix_select') {
+            newFormData = {
+                ...formData,
+                suffix_is_other: value === 'Other',
+                suffix: value === 'Other' ? '' : value
+            };
+        }
 
         if (name === 'has_no_middle_name') {
             newFormData = {
@@ -602,7 +738,10 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 longitude: null,
                 precision: '',
                 location_precision: '',
-                is_location_verified: false
+                is_location_verified: false,
+                out_of_barangay_exception_confirmed: false,
+                out_of_barangay_exception_reason: '',
+                out_of_barangay_exception_barangay: ''
             };
         }
 
@@ -620,7 +759,9 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         // --- Clinical Automation: Birth Status ---
         if (name === 'birth_weight') {
             const weight = parseFloat(value);
-            if (!isNaN(weight)) {
+            if (!String(value || '').trim() || !Number.isFinite(weight)) {
+                newFormData.birth_status = 'Pending birth weight';
+            } else {
                 newFormData.birth_status = weight < 2.5 ? 'Low Birth Weight' : weight > 4.0 ? 'Macrosomia' : 'Normal';
             }
         }
@@ -648,10 +789,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         }
 
         setFormData(newFormData);
-        const errorMessage = validateField(name, type === 'checkbox' ? checked : value, newFormData);
+        const validationName = name === 'suffix_select' ? 'suffix' : name;
+        const validationValue = validationName === 'suffix' ? newFormData.suffix : (type === 'checkbox' ? checked : value);
+        const errorMessage = validateField(validationName, validationValue, newFormData);
         setErrors(prev => ({
             ...prev,
-            [name]: errorMessage,
+            [validationName]: errorMessage,
             ...(name === 'has_no_middle_name' && checked ? { middle_name: null } : {})
         }));
     };
@@ -680,11 +823,21 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
     const handleBlur = (e) => {
         const { name, value } = e.target;
-        const nameFields = ['first_name', 'last_name', 'middle_name', 'suffix', 'mothers_maiden_name', 'father_name', 'exact_address'];
-        if (nameFields.includes(name) && value) {
+        const safeDisplayFields = [
+            'first_name',
+            'last_name',
+            'middle_name',
+            'suffix',
+            'mothers_maiden_name',
+            'father_name',
+            'exact_address',
+            'delivery_facility_name',
+            'locality',
+            'landmark'
+        ];
+        if (safeDisplayFields.includes(name) && value) {
             if (name === 'middle_name' && formData.has_no_middle_name) return;
-            const titleCased = value.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-            setFormData(prev => ({ ...prev, [name]: titleCased }));
+            setFormData(prev => ({ ...prev, [name]: normalizeDisplayText(value) }));
         }
     };
 
@@ -694,10 +847,17 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             return;
         }
 
+        if (currentStep === 1 && pendingOutOfBarangayLocation) {
+            const message = 'Confirm the out-of-barangay exception and provide a reason before continuing.';
+            setAddressLookupError(message);
+            setErrors(prev => ({ ...prev, exact_address: message }));
+            return;
+        }
+
         if (!isStepValid(currentStep, formData, errors)) {
             // Force error display on missing fields
             const stepFields = {
-                1: ['first_name', 'middle_name', 'last_name', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
+                1: ['first_name', 'middle_name', 'last_name', 'suffix', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
                 2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone'],
                 3: ['birth_weight', 'length_at_birth_cm'],
                 4: ['bcg_status', 'hepatitis_b_status']
@@ -707,7 +867,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             stepFields.forEach(f => {
                 const fieldError = validateField(f, formData[f], formData);
                 if (fieldError) newErrors[f] = fieldError;
-                else if ((formData[f] === '' || formData[f] === null || formData[f] === undefined) && !(f === 'middle_name' && formData.has_no_middle_name === true)) {
+                else if ((formData[f] === '' || formData[f] === null || formData[f] === undefined) && !['suffix'].includes(f) && !(f === 'middle_name' && formData.has_no_middle_name === true)) {
                     newErrors[f] = "Required";
                 }
             });
@@ -869,6 +1029,39 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 exact_address: formData.exact_address || '',
                 current_address: formData.current_address || formData.exact_address || ''
             };
+
+            const suffixError = validateField('suffix', normalizedFormData.suffix, normalizedFormData);
+            if (suffixError) {
+                setErrors(prev => ({ ...prev, suffix: suffixError }));
+                setSubmissionError(suffixError);
+                setCurrentStep(1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+
+            const selectedBarangay = resolveLocationBarangay(
+                normalizedFormData.latitude,
+                normalizedFormData.longitude,
+                normalizedFormData.out_of_barangay_exception_barangay || normalizedFormData.locality || normalizedFormData.barangay
+            );
+            if (!isAllowedCoverageBarangay(selectedBarangay)) {
+                const message = getCoverageError();
+                setErrors(prev => ({ ...prev, exact_address: message }));
+                setAddressLookupError(message);
+                setSubmissionError(message);
+                setCurrentStep(1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+            if (!isWithinAssignedBarangay(normalizedFormData.latitude, normalizedFormData.longitude, selectedBarangay) && !hasAuthorizedOutOfBarangayException(normalizedFormData)) {
+                const message = 'Confirm the out-of-barangay exception and provide a reason before submitting.';
+                setErrors(prev => ({ ...prev, exact_address: message }));
+                setAddressLookupError(message);
+                setSubmissionError(message);
+                setCurrentStep(1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
 
             if (userRole === 'BHW' && !overrideDuplicate) {
                 const duplicateGate = await runSubmissionDuplicateGate(normalizedFormData);
@@ -1253,6 +1446,14 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                 showSuggestions={showSuggestions}
                                 handleMapClick={handleMapClick}
                                 handleDragEnd={handleDragEnd}
+                                assignedBarangay={user?.assigned_barangay}
+                                pendingOutOfBarangayLocation={pendingOutOfBarangayLocation}
+                                outOfBarangayReason={outOfBarangayReason}
+                                outOfBarangayConfirmed={outOfBarangayConfirmed}
+                                onOutOfBarangayReasonChange={setOutOfBarangayReason}
+                                onOutOfBarangayConfirmChange={setOutOfBarangayConfirmed}
+                                onConfirmOutOfBarangayLocation={handleConfirmOutOfBarangayLocation}
+                                onCancelOutOfBarangayLocation={handleCancelOutOfBarangayLocation}
                                 isReadOnly={isReadOnly}
                             />
                         )}
