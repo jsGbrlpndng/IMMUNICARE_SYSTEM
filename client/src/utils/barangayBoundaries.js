@@ -1,4 +1,6 @@
-// Note: Polygon coordinates are approximated for prototype rendering. Replace with official municipal shapefiles for production.
+import { normalizeBarangayKey } from './barangayCanonical';
+
+// Approximate prototype polygons only. Replace with official LGU/RHU GeoJSON/KML/shapefile data before claiming production-level boundary accuracy.
 const createBoundaryFeature = (name, coordinates) => ({
     type: 'Feature',
     properties: { name },
@@ -121,7 +123,7 @@ export const BARANGAY_BOUNDARY_GEOJSON = {
 
 export const getBarangayBoundaryGeoJson = (barangay) => {
     if (!barangay) return null;
-    const key = barangay.toString().trim().toUpperCase();
+    const key = normalizeBarangayKey(barangay);
     const feature = BARANGAY_BOUNDARY_GEOJSON[key];
     if (!feature?.geometry?.coordinates?.[0]?.length) return null;
     return feature;

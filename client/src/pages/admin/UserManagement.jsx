@@ -28,6 +28,7 @@ const labelClass = 'text-xs font-black uppercase tracking-[0.14em] text-slate-60
 const inputClass = 'mt-2 w-full border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-800';
 const primaryButtonClass = 'inline-flex items-center justify-center gap-2 bg-[#084C39] px-4 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-[#07362A] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500';
 const secondaryButtonClass = 'inline-flex items-center justify-center gap-2 border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50';
+const duplicateFullNameMessage = 'A staff account with this full name already exists. Please verify the staff identity. Multiple staff may be assigned to the same barangay, but each staff account must have a unique full name and Staff ID.';
 
 const Toast = ({ message, onDismiss }) => {
     useEffect(() => {
@@ -382,7 +383,9 @@ const UserManagement = () => {
             const data = await response.json().catch(() => ({}));
 
             if (!response.ok) {
-                setFormError(data?.message || data?.error || 'Failed to create staff account.');
+                const serverMessage = data?.message || data?.error || '';
+                const isDuplicateFullName = response.status === 409 && /full name|name|already exists/i.test(serverMessage);
+                setFormError(isDuplicateFullName ? duplicateFullNameMessage : (serverMessage || 'Failed to create staff account.'));
                 return;
             }
 

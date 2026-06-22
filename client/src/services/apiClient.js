@@ -31,6 +31,7 @@ class ApiClient {
         // Only redirect if not already on login/portal pages
         if (!window.location.pathname.includes('/portal') && 
             !window.location.pathname.includes('/login') &&
+            !window.location.pathname.includes('/password-update-success') &&
             window.location.pathname !== '/') {
             window.location.href = '/portal';
         }

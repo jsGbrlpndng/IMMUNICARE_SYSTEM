@@ -55,6 +55,31 @@ const MySubmissions = () => {
         }
     };
 
+    const counts = {
+        all: infants.length,
+        draft: infants.filter((inf) => inf.status === 'DRAFT').length,
+        pending: infants.filter((inf) => inf.status === 'PENDING_VALIDATION').length,
+        approved: infants.filter((inf) => inf.status === 'APPROVED').length,
+        needsCorrection: infants.filter((inf) => inf.status === 'NEEDS_CORRECTION').length
+    };
+
+    const getFilterLabel = (status) => {
+        switch (status) {
+            case 'All':
+                return `All (${counts.all})`;
+            case 'Draft':
+                return `Draft (${counts.draft})`;
+            case 'Pending':
+                return `Pending (${counts.pending})`;
+            case 'Approved':
+                return `Approved (${counts.approved})`;
+            case 'Needs Correction':
+                return `Needs Correction (${counts.needsCorrection})`;
+            default:
+                return status;
+        }
+    };
+
     const filteredInfants = infants.filter((infant) => {
         const matchesSearch =
             formatFullNameFromObject(infant).toLowerCase().includes(searchTerm.toLowerCase());
@@ -164,7 +189,7 @@ const MySubmissions = () => {
                                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                             >
-                                {status}
+                                {getFilterLabel(status)}
                             </button>
                         ))}
                     </div>

@@ -1,3 +1,6 @@
+import { RHU2_BARANGAY_KEYS, normalizeBarangayKey } from './barangayCanonical';
+import { formatFullAddress } from './addressFormatting';
+
 const SAN_PEDRO_BOUNDS = {
     minLat: 14.30,
     maxLat: 14.39,
@@ -5,48 +8,12 @@ const SAN_PEDRO_BOUNDS = {
     maxLng: 121.08
 };
 
-export const SAN_PEDRO_SYSTEM_BARANGAYS = [
-    'BAGONG SILANG',
-    'CALENDOLA',
-    'ESTRELLA',
-    'GSIS',
-    'LANGGAM',
-    'LARAM',
-    'MAGSAYSAY',
-    'NARRA',
-    'RIVERSIDE',
-    'SAMPAGUITA',
-    'UB',
-    'UBL'
-];
-
-const BARANGAY_ALIASES = [
-    { canonical: 'LANGGAM', aliases: ['LANGGAM', 'LANNGAM'] },
-    { canonical: 'UBL', aliases: ['UBL', 'UNITED BAYANIHAN', 'UNITED BETTER LIVING'] },
-    { canonical: 'UB', aliases: ['UB', 'UNITED BAYANIHAN'] },
-    { canonical: 'SAMPAGUITA', aliases: ['SAMPAGUITA'] },
-    { canonical: 'CALENDOLA', aliases: ['CALENDOLA'] },
-    { canonical: 'MAGSAYSAY', aliases: ['MAGSAYSAY'] },
-    { canonical: 'NARRA', aliases: ['NARRA'] },
-    { canonical: 'GSIS', aliases: ['GSIS'] },
-    { canonical: 'RIVERSIDE', aliases: ['RIVERSIDE'] },
-    { canonical: 'SANTO NINO', aliases: ['SANTO NINO', 'SANTO NIÑO'] },
-    { canonical: 'LARAM', aliases: ['LARAM'] },
-    { canonical: 'ESTRELLA', aliases: ['ESTRELLA'] },
-    { canonical: 'BAGONG SILANG', aliases: ['BAGONG SILANG'] }
-];
+export const SAN_PEDRO_SYSTEM_BARANGAYS = RHU2_BARANGAY_KEYS;
 
 const normalizeText = (value) => (value || '').toString().trim().toUpperCase();
 
 const findBarangayAlias = (value) => {
-    const normalized = normalizeText(value);
-    if (!normalized) return null;
-
-    const match = BARANGAY_ALIASES.find(({ aliases }) => (
-        aliases.some((alias) => normalized.includes(normalizeText(alias)))
-    ));
-
-    return match?.canonical || null;
+    return normalizeBarangayKey(value);
 };
 
 const getAddressText = (address) => {
@@ -144,7 +111,7 @@ export const isInsideSanPedro = (latOrResult, lngValue, addressValue) => {
         label.includes('LAGUNA') ||
         label.includes('CALABARZON') ||
         label.includes('PHILIPPINES') ||
-        Boolean(findBarangayAlias(label));
+        Boolean(normalizeBarangayKey(label));
 
     return hasSanPedroContext || isInsideBounds;
 };
@@ -179,15 +146,37 @@ export const normalizeAddressResult = (result) => {
     };
 };
 
+const cleanReverseDisplayName = (result) => {
+    const barangay = normalizeBarangayKey(result?.barangay || getBarangayFromAddress(result));
+    const source = String(result?.source || '').toLowerCase();
+
+    if (source.startsWith('local')) {
+        return barangay
+            ? `Selected location in ${barangay}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna';
+    }
+
+    if (source === 'fallback' && result?.display_name) {
+        return result.display_name;
+    }
+
+    return formatFullAddress({
+        exactAddress: result?.display_name || '',
+        barangay
+    }) || (barangay
+        ? `Selected location in ${barangay}, San Pedro, Laguna`
+        : 'Selected location, San Pedro, Laguna');
+};
+
 export const rankSuggestions = (results, query = '', assignedBarangay = '') => {
     const normalizedQuery = normalizeText(query);
-    const assigned = normalizeText(assignedBarangay);
+    const assigned = normalizeBarangayKey(assignedBarangay);
 
     return [...results]
         .filter(isInsideSanPedro)
         .sort((a, b) => {
-            const aBarangay = normalizeText(a.barangay || getBarangayFromAddress(a));
-            const bBarangay = normalizeText(b.barangay || getBarangayFromAddress(b));
+            const aBarangay = normalizeBarangayKey(a.barangay || getBarangayFromAddress(a));
+            const bBarangay = normalizeBarangayKey(b.barangay || getBarangayFromAddress(b));
             const aLabel = normalizeText(a.display_name);
             const bLabel = normalizeText(b.display_name);
 
@@ -209,11 +198,11 @@ export const rankSuggestions = (results, query = '', assignedBarangay = '') => {
 };
 
 export const reverseGeocodeLatLng = async ({ apiClient, lat, lng, signal, clicked = false }) => {
-    const response = await apiClient.get(`/geo/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`, { signal });
+    const response = await apiClient.get(`/geo/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&source=pin`, { signal });
     if (!response.ok) return null;
 
     const result = normalizeAddressResult(await response.json());
     return result && isInsideSanPedro(result)
-        ? { ...result, precision: getAddressPrecision(result, { clicked }) }
+        ? { ...result, display_name: cleanReverseDisplayName(result), precision: getAddressPrecision(result, { clicked }) }
         : null;
 };

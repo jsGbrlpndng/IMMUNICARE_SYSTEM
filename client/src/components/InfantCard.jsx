@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { MapPin, Phone, Syringe, MessageSquare } from 'lucide-react';
 import Avatar from './common/Avatar';
+import { formatFullAddress } from '../utils/addressFormatting';
 
 /**
  * InfantCard Component
@@ -17,6 +18,10 @@ const InfantCard = ({
   onRecordVaccination
 }) => {
   const navigate = useNavigate();
+  const displayAddress = formatFullAddress({
+    exactAddress: infant.exact_address || infant.current_address,
+    barangay: infant.barangay
+  });
 
   const handleViewRecord = () => {
     navigate(`/clinical/infants/${infant.id}`);
@@ -109,7 +114,7 @@ const InfantCard = ({
           <div className="space-y-1.5 mb-3">
             <p className="text-sm text-slate-600 flex items-center gap-2 group-hover:text-slate-700 transition-colors">
               <MapPin className="w-4 h-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
-              <span className="font-medium">{infant.exact_address || infant.barangay || 'Location not recorded'}</span>
+              <span className="font-medium">{displayAddress || infant.barangay || 'Location not recorded'}</span>
             </p>
             {infant.caregiver_phone && (
               <p className="text-sm text-slate-600 flex items-center gap-2 group-hover:text-slate-700 transition-colors">

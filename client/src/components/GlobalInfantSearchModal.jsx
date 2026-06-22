@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRightLeft, Calendar, Loader2, MapPin, Search, ShieldCheck, UserRound, X } from 'lucide-react';
 import apiClient from '../services/apiClient';
 import { formatFullNameFromObject } from '../utils/formatFullName';
+import { formatFullAddress } from '../utils/addressFormatting';
 
 const emptySearch = {
     reference_id: '',
@@ -310,7 +311,12 @@ export default function GlobalInfantSearchModal({
                                             </p>
                                             {!isBhw && (
                                                 <>
-                                                    <p className="mt-1 line-clamp-2">{infant.exact_address || infant.current_address || infant.locality || 'Address N/A'}</p>
+                                                    <p className="mt-1 line-clamp-2">
+                                                        {formatFullAddress({
+                                                            exactAddress: infant.exact_address || infant.current_address,
+                                                            barangay: infant.current_barangay || infant.barangay || infant.locality
+                                                        }) || 'Address N/A'}
+                                                    </p>
                                                     <p className="mt-1 text-slate-400">Last dose: {infant.last_vaccination_date || 'N/A'} · Next: {infant.next_due_vaccine || 'N/A'}</p>
                                                 </>
                                             )}

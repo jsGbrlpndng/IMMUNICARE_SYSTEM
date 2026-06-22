@@ -276,7 +276,7 @@ class InfantRegistrationService {
         const barangay = this._normalizeDuplicateText(actor?.assigned_barangay || data?.barangay);
 
         if (!firstName || !lastName || !dob || !barangay || (!hasNoMiddleName && !middleName)) {
-            return { strictMatches: [], crossBarangayAlert: null, allMatches: [] };
+            return { strictMatches: [], probableMatches: [], crossBarangayAlert: null, allMatches: [] };
         }
 
         const registrationParams = [firstName, lastName, hasNoMiddleName, hasNoMiddleName, middleName, dob];
@@ -1457,15 +1457,31 @@ class InfantRegistrationService {
             throw this._httpError('Assigned barangay is required to load registration statistics.', 400);
         }
 
-        const query = `
-            SELECT
-                status,
-                COUNT(*)::int AS count
-            FROM infant_registrations
-            ${isSuperAdmin ? '' : 'WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))'}
-            GROUP BY status
-        `;
-        const params = isSuperAdmin ? [] : [scopedBarangay];
+        let query;
+        let params;
+
+        if (actor?.role === ROLES.BHW) {
+            query = `
+                SELECT
+                    status,
+                    COUNT(*)::int AS count
+                FROM infant_registrations
+                WHERE created_by = ?
+                GROUP BY status
+            `;
+            params = [actor.id];
+        } else {
+            query = `
+                SELECT
+                    status,
+                    COUNT(*)::int AS count
+                FROM infant_registrations
+                ${isSuperAdmin ? '' : 'WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))'}
+                GROUP BY status
+            `;
+            params = isSuperAdmin ? [] : [scopedBarangay];
+        }
+
         const [rows] = await this.db.execute(query, params);
 
         const stats = {

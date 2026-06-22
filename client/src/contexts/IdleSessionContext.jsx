@@ -7,7 +7,7 @@ const IdleSessionContext = createContext();
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 3000;
 const LOCK_STORAGE_KEY = 'immunicare_idle_locked';
-const PUBLIC_PATHS = ['/', '/portal', '/login', '/force-password-change', '/caregiver'];
+const PUBLIC_PATHS = ['/', '/portal', '/login', '/password-update-success', '/force-password-change', '/caregiver'];
 
 const isPublicPath = (path) => {
     return PUBLIC_PATHS.some((publicPath) => path === publicPath || (publicPath !== '/' && path.startsWith(publicPath)));

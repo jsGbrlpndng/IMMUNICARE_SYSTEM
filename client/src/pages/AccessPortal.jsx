@@ -223,13 +223,25 @@ const AccessPortal = () => {
 
                             <form onSubmit={handleStaffLogin} className="space-y-5">
                                 {location.state?.securityMessage && (
-                                    <div className="flex items-start gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm">
-                                        <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-700" />
-                                        <div>
-                                            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-800">
-                                                Security Update Complete
-                                            </p>
-                                            <p className="mt-1 font-bold">{location.state.securityMessage}</p>
+                                    <div
+                                        role="status"
+                                        aria-live="polite"
+                                        className="relative overflow-hidden border border-emerald-300 bg-gradient-to-r from-emerald-50 via-white to-slate-50 px-4 py-4 text-sm text-emerald-950 shadow-sm ring-1 ring-emerald-900/5"
+                                    >
+                                        <div className="absolute inset-y-0 left-0 w-1 bg-[#064E3B]" />
+                                        <div className="flex items-start gap-3 pl-1">
+                                            <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center border border-emerald-200 bg-white text-emerald-800 shadow-sm">
+                                                <ShieldCheck className="h-5 w-5" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-800">
+                                                    Security Update Complete
+                                                </p>
+                                                <p className="mt-1 text-base font-black text-slate-950">{location.state.securityMessage}</p>
+                                                <p className="mt-1 text-xs font-semibold text-slate-600">
+                                                    For your protection, your previous session has been closed.
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

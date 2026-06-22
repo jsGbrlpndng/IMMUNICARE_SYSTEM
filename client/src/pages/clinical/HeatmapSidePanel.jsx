@@ -342,7 +342,7 @@ const HeatmapSidePanel = ({
                                             </span>
                                         </div>
                                         <div className="mt-3 border-t border-slate-200 pt-3 text-[11px] font-bold leading-5 text-slate-600">
-                                            Assigned to: <span className="text-slate-900">{assignedName}</span> - Status: <span className="text-[#084C39]">{status}</span>
+                                            Assigned Healthcare Worker: <span className="text-slate-900">{assignedName}</span> — Status: <span className="text-[#084C39]">{status}</span>
                                         </div>
                                     </button>
                                 );
@@ -378,7 +378,7 @@ const HeatmapSidePanel = ({
                             </div>
 
                             <div className="mb-4 border border-[#084C39]/20 bg-[#084C39]/10 p-3 text-[11px] font-bold leading-5 text-[#084C39]">
-                                Assigned to: <span className="text-slate-950">{getAssignedDisplay(selectedCluster)}</span> - Status: <span>{selectedCluster?.cluster_status || getDeployment(selectedCluster)?.cluster_status || 'Pending'}</span>
+                                Assigned Healthcare Worker: <span className="text-slate-950">{getAssignedDisplay(selectedCluster)}</span> — Status: <span>{selectedCluster?.cluster_status || getDeployment(selectedCluster)?.cluster_status || 'Pending'}</span>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4 mb-4">

@@ -85,6 +85,14 @@ function DeploymentReportModal({ cluster, onClose, onSubmitSuccess }) {
                             <p className="text-xs text-slate-500 font-medium">
                                 {cluster.cluster_label || 'Priority Area'} &bull; {cluster.barangay} &bull; {outcomes.length} Infant(s)
                             </p>
+                            <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                                Assigned Healthcare Worker:{' '}
+                                <span className="text-slate-700 font-bold">
+                                    {cluster.assigned_user_name || cluster.assigned_bhw_name
+                                        ? `${cluster.assigned_user_name || cluster.assigned_bhw_name}${cluster.assigned_user_role ? ` (${cluster.assigned_user_role})` : ''}`
+                                        : 'Not assigned'}
+                                </span>
+                            </p>
                         </div>
                     </div>
                     <button

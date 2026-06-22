@@ -1,3 +1,5 @@
+import { normalizeBarangayKey } from './barangayCanonical';
+
 export const BARANGAY_COORDINATES = {
     'LANGGAM': { lat: 14.3261, lng: 121.0179, zoom: 17 },
     'CALENDOLA': { lat: 14.3416, lng: 121.0345, zoom: 17 },
@@ -18,6 +20,6 @@ export const DEFAULT_MUNICIPAL_CENTER = BARANGAY_COORDINATES['MUNICIPALITY'];
 
 export const getBarangayCenter = (barangayName) => {
     if (!barangayName) return DEFAULT_MUNICIPAL_CENTER;
-    const normalized = barangayName.toUpperCase();
+    const normalized = normalizeBarangayKey(barangayName);
     return BARANGAY_COORDINATES[normalized] || DEFAULT_MUNICIPAL_CENTER;
 };

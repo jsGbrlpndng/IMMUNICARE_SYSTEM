@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import InfantRegistrationForm from '../../pages/clinical/InfantRegistrationForm';
+import { getBarangayCenter } from '../../utils/barangayConfig';
 
 const mockNavigate = vi.fn();
 const mockPost = vi.fn();
@@ -102,7 +103,7 @@ describe('InfantRegistrationForm submission-time duplicate gate', () => {
     window.scrollTo = vi.fn();
   });
 
-  const reachReviewAndSubmit = async () => {
+  const reachReviewAndSubmit = async (coordinates = getBarangayCenter('Langgam'), { submit = true } = {}) => {
     const user = userEvent.setup();
     render(<InfantRegistrationForm userRole="BHW" />);
 
@@ -120,14 +121,58 @@ describe('InfantRegistrationForm submission-time duplicate gate', () => {
     await user.click(screen.getByRole('button', { name: /next step/i }));
     await user.click(screen.getByRole('button', { name: /next step/i }));
     await user.click(screen.getByRole('button', { name: /next step/i }));
-    await user.type(screen.getByLabelText('Latitude'), '14.3211');
-    await user.type(screen.getByLabelText('Longitude'), '121.0412');
+    await user.type(screen.getByLabelText('Latitude'), coordinates.lat.toString());
+    await user.type(screen.getByLabelText('Longitude'), coordinates.lng.toString());
     const submitButton = screen.getByRole('button', { name: /submit for validation/i });
+    if (!submit) return { user, submitButton };
+
     await waitFor(() => expect(submitButton).toBeEnabled());
     await user.click(submitButton);
 
-    return user;
+    return { user, submitButton };
   };
+
+  test('outside assigned barangay blocks before duplicate checking', async () => {
+    const { submitButton } = await reachReviewAndSubmit({ lat: 14.3211, lng: 121.0412 }, { submit: false });
+
+    expect(submitButton).toBeDisabled();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  test('saves a minimum draft without requiring final submission fields', async () => {
+    mockPost.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        id: 'draft-1',
+        reference_id: 'LG-2026-0001',
+        status: 'DRAFT'
+      })
+    });
+
+    const user = userEvent.setup();
+    render(<InfantRegistrationForm userRole="BHW" />);
+
+    await user.type(screen.getByLabelText('First Name'), 'Gabriel');
+    await user.type(screen.getByLabelText('Middle Name'), 'Luis');
+    await user.type(screen.getByLabelText('Last Name'), 'Pendangs');
+    await user.type(screen.getByLabelText('Sex'), 'M');
+    await user.click(screen.getByRole('button', { name: /save draft/i }));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/registrations', expect.objectContaining({
+        data: expect.objectContaining({
+          first_name: 'Gabriel',
+          middle_name: 'Luis',
+          last_name: 'Pendangs',
+          sex: 'M',
+          status: 'DRAFT',
+          registration_status: 'DRAFT'
+        })
+      }));
+    });
+
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
 
   test('Scenario A: same-barangay duplicate triggers a hard block and halts registration', async () => {
     mockPost.mockResolvedValueOnce({
@@ -249,7 +294,7 @@ describe('InfantRegistrationForm submission-time duplicate gate', () => {
       })
     });
 
-    const user = await reachReviewAndSubmit();
+    const { user } = await reachReviewAndSubmit();
 
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledTimes(1);

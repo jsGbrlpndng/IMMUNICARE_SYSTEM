@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { SummaryItem } from './FormComponents';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
+import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
 
 const ReviewGroup = ({ title, children }) => (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -43,6 +44,16 @@ const ReviewSection = ({
     handleChange,
     isReadOnly
 }) => {
+    const exactAddress = formatExactAddress(formData.exact_address, { barangay: formData.barangay });
+    const fullAddress = formatFullAddress({
+        exactAddress: formData.exact_address,
+        barangay: formData.barangay
+    });
+    const locationValue = [formData.locality, formData.barangay]
+        .filter(Boolean)
+        .filter((value, index, values) => values.findIndex((item) => String(item).trim().toUpperCase() === String(value).trim().toUpperCase()) === index)
+        .join(', ') || 'N/A';
+
     return (
         <div className="animate-in fade-in slide-in-from-right-4 space-y-6 duration-300">
             <div className="rounded-2xl border border-[#065f46] bg-[#064E3B] p-5 text-white shadow-sm">
@@ -56,8 +67,9 @@ const ReviewSection = ({
             <ReviewGroup title="Master Patient Index">
                 <SummaryItem label="Full Name" value={formatFullNameFromObject(formData)} />
                 <SummaryItem label="Sex / DOB" value={`${formData.sex} | ${formData.dob ? new Date(formData.dob).toLocaleDateString() : 'N/A'}`} />
-                <SummaryItem label="Location" value={`${formData.locality || 'N/A'}, ${formData.barangay}`} />
-                <SummaryItem label="Full Address" value={formData.exact_address} />
+                <SummaryItem label="Location" value={locationValue} />
+                <SummaryItem label="Exact Address" value={exactAddress || 'Not recorded'} />
+                <SummaryItem label="Full Address" value={fullAddress || 'Not recorded'} />
                 <SummaryItem label="Landmark" value={formData.landmark} />
             </ReviewGroup>
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const db = require('../db');
+const { RHU2_BARANGAYS, normalizeBarangayName } = require('../constants/rhu2Barangays');
 
 const router = express.Router();
 
@@ -19,47 +20,7 @@ const BARANGAY_CENTERS = {
     NARRA: { lat: 14.3312, lng: 121.0259 }
 };
 
-const SYSTEM_BARANGAYS = [
-    'BAGONG SILANG',
-    'CALENDOLA',
-    'ESTRELLA',
-    'GSIS',
-    'LANGGAM',
-    'LARAM',
-    'MAGSAYSAY',
-    'NARRA',
-    'RIVERSIDE',
-    'SAMPAGUITA',
-    'UB',
-    'UBL'
-];
-
-const BRGY_ALIASES = [
-    { canonical: 'LANGGAM', aliases: ['LANGGAM', 'LANNGAM'] },
-    { canonical: 'UBL', aliases: ['UBL', 'UNITED BAYANIHAN', 'UNITED BETTER LIVING'] },
-    { canonical: 'UB', aliases: ['UB', 'UNITED BAYANIHAN'] },
-    { canonical: 'SAN ANTONIO', aliases: ['SAN ANTONIO'] },
-    { canonical: 'SAN VICENTE', aliases: ['SAN VICENTE'] },
-    { canonical: 'PACITA', aliases: ['PACITA'] },
-    { canonical: 'NUEVA', aliases: ['NUEVA'] },
-    { canonical: 'LANDAYAN', aliases: ['LANDAYAN'] },
-    { canonical: 'CUYAB', aliases: ['CUYAB'] },
-    { canonical: 'SAMPAGUITA', aliases: ['SAMPAGUITA'] },
-    { canonical: 'ROSARIO', aliases: ['ROSARIO'] },
-    { canonical: 'CALENDOLA', aliases: ['CALENDOLA'] },
-    { canonical: 'MAGSAYSAY', aliases: ['MAGSAYSAY'] },
-    { canonical: 'NARRA', aliases: ['NARRA'] },
-    { canonical: 'CHRYSANTHEMUM', aliases: ['CHRYSANTHEMUM'] },
-    { canonical: 'FATIMA', aliases: ['FATIMA'] },
-    { canonical: 'GSIS', aliases: ['GSIS'] },
-    { canonical: 'MAHARLIKA', aliases: ['MAHARLIKA'] },
-    { canonical: 'RIVERSIDE', aliases: ['RIVERSIDE'] },
-    { canonical: 'SAN LORENZO RUIZ', aliases: ['SAN LORENZO RUIZ'] },
-    { canonical: 'SANTO NINO', aliases: ['SANTO NINO', 'SANTO NIÑO'] },
-    { canonical: 'LARAM', aliases: ['LARAM'] },
-    { canonical: 'ESTRELLA', aliases: ['ESTRELLA'] },
-    { canonical: 'BAGONG SILANG', aliases: ['BAGONG SILANG'] }
-];
+const SYSTEM_BARANGAYS = RHU2_BARANGAYS;
 
 const SAN_PEDRO_BOUNDS = {
     minLat: 14.30,
@@ -71,19 +32,7 @@ const SAN_PEDRO_BOUNDS = {
 const normalize = (value) => (value || '').toString().trim().toUpperCase();
 
 const findBarangayAlias = (value) => {
-    const normalized = normalize(value);
-    if (!normalized) return null;
-
-    const match = BRGY_ALIASES.find(({ aliases }) => (
-        aliases.some((alias) => normalized.includes(normalize(alias)))
-    ));
-
-    return match?.canonical || null;
-};
-
-const normalizeBarangayName = (value) => {
-    const normalized = normalize(value).replace(/_/g, ' ');
-    return findBarangayAlias(normalized) || normalized || null;
+    return normalizeBarangayName(value);
 };
 
 const getAddressText = (result) => {
@@ -256,17 +205,175 @@ const buildSearchVariants = (query) => {
     ].filter(Boolean)));
 };
 
-const buildDisplayName = (row, fallbackBarangay = null) => {
-    const pieces = [
-        row.exact_address,
-        row.current_address,
-        row.landmark,
-        row.purok ? `Purok ${row.purok}` : null,
-        row.barangay || fallbackBarangay,
-        'San Pedro, Laguna'
-    ].filter(Boolean);
+const addressPartKey = (value) => normalize(value).replace(/\s+/g, ' ').trim();
 
-    return pieces.join(', ');
+const isPostalCodePart = (value) => /^\d{4,5}$/.test(String(value || '').trim());
+
+const isAddressNoisePart = (part, barangay = null) => {
+    const key = addressPartKey(part);
+    if (!key) return true;
+    if (isPostalCodePart(part)) return true;
+    if (['SAN PEDRO', 'CITY OF SAN PEDRO', 'LAGUNA', 'CALABARZON', 'REGION IV-A', 'REGION IVA', 'PHILIPPINES'].includes(key)) return true;
+    if (barangay && key === normalizeBarangayName(barangay)) return true;
+    return false;
+};
+
+const smartAddressText = (value) => {
+    const text = String(value || '').trim().replace(/\s+/g, ' ');
+    if (!text || /[a-z]/.test(text)) return text;
+    return text.toLowerCase().replace(/\b([a-z])([a-z0-9.'-]*)/g, (_, first, rest) => first.toUpperCase() + rest);
+};
+
+const cleanAddressParts = (value, barangay = null) => {
+    const seen = new Set();
+    const output = [];
+    String(value || '').split(',').forEach((part) => {
+        const trimmed = part.trim();
+        const key = addressPartKey(trimmed);
+        if (!key || seen.has(key) || isAddressNoisePart(trimmed, barangay)) return;
+        seen.add(key);
+        output.push(smartAddressText(trimmed));
+    });
+    return output;
+};
+
+const cleanReverseLabel = (value, barangay = null) => {
+    const parts = cleanAddressParts(value, barangay);
+    if (parts.length === 0) return '';
+    return parts.join(', ');
+};
+
+const buildDisplayName = (row, fallbackBarangay = null) => {
+    const barangay = row.barangay || fallbackBarangay;
+    const localParts = [
+        ...cleanAddressParts(row.exact_address, barangay),
+        ...cleanAddressParts(row.current_address, barangay),
+        ...cleanAddressParts(row.landmark, barangay),
+        ...(row.purok ? cleanAddressParts(`Purok ${row.purok}`, barangay) : [])
+    ];
+    const pieces = [...localParts, barangay, 'San Pedro', 'Laguna'].filter(Boolean);
+    const seen = new Set();
+
+    return pieces
+        .filter((part) => {
+            const key = addressPartKey(part);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .map(smartAddressText)
+        .join(', ');
+};
+
+const buildCleanReverseFallback = (lat, lon) => {
+    const numericLat = Number(lat);
+    const numericLon = Number(lon);
+    const barangayName = Number.isFinite(numericLat) && Number.isFinite(numericLon)
+        ? nearestBarangay(numericLat, numericLon)
+        : null;
+
+    return {
+        display_name: barangayName
+            ? `Selected location in ${barangayName}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna',
+        lat: Number.isFinite(numericLat) ? numericLat.toString() : String(lat || ''),
+        lon: Number.isFinite(numericLon) ? numericLon.toString() : String(lon || ''),
+        precision: 'approximate',
+        source: 'fallback',
+        address: {
+            barangay: barangayName || null,
+            city: 'San Pedro',
+            state: 'Laguna',
+            country: 'Philippines'
+        }
+    };
+};
+
+const buildCleanSearchFallback = (query, assignedBarangay = '') => {
+    const barangayName = guessBarangay(query) || normalizeBarangayName(assignedBarangay);
+    const center = barangayName ? BARANGAY_CENTERS[barangayName.replaceAll(' ', '_')] : null;
+    const fallbackCenter = center || { lat: 14.3596, lng: 121.0426 };
+
+    return {
+        display_name: barangayName
+            ? `Selected location in ${barangayName}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna',
+        lat: fallbackCenter.lat.toString(),
+        lon: fallbackCenter.lng.toString(),
+        precision: barangayName ? 'barangay' : 'approximate',
+        source: 'fallback',
+        address: {
+            barangay: barangayName || null,
+            city: 'San Pedro',
+            state: 'Laguna',
+            country: 'Philippines'
+        }
+    };
+};
+
+const sanitizeReverseResult = (result) => {
+    if (!result) return null;
+    const barangay = getBarangayFromAddress(result);
+    const cleanLabel = cleanReverseLabel(result.display_name, barangay);
+
+    return {
+        ...result,
+        display_name: cleanLabel || (barangay
+            ? `Selected location in ${barangay}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna'),
+        source: result.source || 'external',
+        address: {
+            ...(result.address || {}),
+            barangay: barangay || result.address?.barangay || null
+        }
+    };
+};
+
+const sanitizeSearchResult = (result) => {
+    if (!result) return null;
+    const normalized = normalizeAddressResult(result);
+    if (!normalized) return null;
+
+    const barangay = getBarangayFromAddress(normalized);
+    const source = result.source || 'external';
+    if (String(source).toLowerCase().startsWith('local') || String(source).toLowerCase() === 'fallback') {
+        return {
+            display_name: normalized.display_name,
+            lat: normalized.lat,
+            lon: normalized.lon,
+            precision: normalized.precision || getAddressPrecision(normalized),
+            source,
+            place_id: normalized.place_id,
+            address: {
+                barangay: barangay || normalized.address?.barangay || null,
+                city: normalized.address?.city || normalized.address?.town || normalized.address?.municipality || 'San Pedro',
+                state: normalized.address?.state || 'Laguna',
+                country: normalized.address?.country || 'Philippines'
+            }
+        };
+    }
+
+    const cleanLabel = cleanReverseLabel(normalized.display_name, barangay);
+
+    return {
+        display_name: cleanLabel || (barangay
+            ? `Selected location in ${barangay}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna'),
+        lat: normalized.lat,
+        lon: normalized.lon,
+        precision: normalized.precision || getAddressPrecision(normalized),
+        source,
+        place_id: normalized.place_id,
+        address: {
+            barangay: barangay || normalized.address?.barangay || null,
+            road: normalized.address?.road || normalized.address?.pedestrian || normalized.address?.footway || normalized.address?.path || null,
+            neighbourhood: normalized.address?.neighbourhood || normalized.address?.quarter || null,
+            suburb: normalized.address?.suburb || normalized.address?.village || null,
+            city: normalized.address?.city || normalized.address?.town || normalized.address?.municipality || 'San Pedro',
+            state: normalized.address?.state || 'Laguna',
+            country: normalized.address?.country || 'Philippines'
+        }
+    };
 };
 
 const guessBarangay = (query) => {
@@ -333,16 +440,16 @@ const localSearch = async (q) => {
             const lon = row.longitude || fallbackCenter?.lng || null;
 
             return {
-            display_name: buildDisplayName(row),
-            lat: lat != null ? lat.toString() : null,
-            lon: lon != null ? lon.toString() : null,
-            address: {
-                barangay,
-                exact_address: row.exact_address,
-                current_address: row.current_address,
-                landmark: row.landmark,
-                purok: row.purok
-            }
+                display_name: barangay
+                    ? `Selected location in ${barangay}, San Pedro, Laguna`
+                    : 'Selected location, San Pedro, Laguna',
+                lat: lat != null ? lat.toString() : null,
+                lon: lon != null ? lon.toString() : null,
+                precision: 'approximate',
+                source: 'local-sanitized',
+                address: {
+                    barangay
+                }
             };
         })
         .filter((row) => row.lat && row.lon);
@@ -409,25 +516,24 @@ const localReverse = async (lat, lon, { allowFallback = false } = {}) => {
 
     if (rows.length > 0) {
         const row = rows[0];
+        const barangay = row.barangay || nearestBarangay(numericLat, numericLon);
+        const displayName = barangay
+            ? `Selected location in ${barangay}, San Pedro, Laguna`
+            : 'Selected location, San Pedro, Laguna';
         return {
-            display_name: buildDisplayName(row),
-            lat: row.latitude?.toString() || numericLat.toString(),
-            lon: row.longitude?.toString() || numericLon.toString(),
+            display_name: displayName,
+            lat: numericLat.toString(),
+            lon: numericLon.toString(),
+            source: 'local-sanitized',
             precision: getAddressPrecision({
-                display_name: buildDisplayName(row),
+                display_name: displayName,
                 address: {
-                    barangay: row.barangay,
-                    exact_address: row.exact_address,
-                    current_address: row.current_address,
-                    landmark: row.landmark,
+                    barangay,
                     purok: row.purok
                 }
             }),
             address: {
-                barangay: row.barangay,
-                exact_address: row.exact_address,
-                current_address: row.current_address,
-                landmark: row.landmark,
+                barangay,
                 purok: row.purok
             }
         };
@@ -435,21 +541,7 @@ const localReverse = async (lat, lon, { allowFallback = false } = {}) => {
 
     if (!allowFallback) return null;
 
-    const barangayName = nearestBarangay(numericLat, numericLon);
-    return {
-        display_name: barangayName
-            ? `Unnamed location, ${barangayName}, San Pedro, Laguna, Philippines`
-            : `Unnamed location, San Pedro, Laguna, Philippines`,
-        lat: numericLat.toString(),
-        lon: numericLon.toString(),
-        precision: 'approximate',
-        address: {
-            barangay: barangayName || null,
-            city: 'San Pedro',
-            state: 'Laguna',
-            country: 'Philippines'
-        }
-    };
+    return buildCleanReverseFallback(numericLat, numericLon);
 };
 
 const externalSearch = async (q, assignedBarangay = '', scope = {}) => {
@@ -520,30 +612,39 @@ const externalReverse = async (lat, lon) => {
     });
 
     const result = normalizeAddressResult(response.data);
-    return result ? { ...result, precision: getAddressPrecision(result, { clicked: true }) } : null;
+    return result ? sanitizeReverseResult({ ...result, precision: getAddressPrecision(result, { clicked: true }) }) : null;
 };
 
 // GET /api/geo/search - Local-first autocomplete with external fallback
 router.get('/search', async (req, res) => {
     try {
-        const { q, barangay, city = 'San Pedro', state = 'Laguna', country = 'Philippines', addressdetails = '1' } = req.query;
+        const { q, barangay, city = 'San Pedro', state = 'Laguna', country = 'Philippines', addressdetails = '1', includeLocal = 'false' } = req.query;
         if (!q) {
             return res.status(400).json({ error: 'Query parameter q is required' });
         }
 
-        const localResults = await localSearch(q);
+        const localSearchEnabled = String(includeLocal).toLowerCase() === 'true';
 
         try {
             const externalResults = await externalSearch(q, barangay, { city, state, country, addressdetails });
-            const merged = [...localResults, ...externalResults]
-                .map(normalizeAddressResult)
+            const cleanExternalResults = externalResults
+                .map(sanitizeSearchResult)
                 .filter(Boolean);
-            const ranked = rankSuggestions(merged, q, barangay);
+            const localResults = localSearchEnabled
+                ? (await localSearch(q)).map(sanitizeSearchResult).filter(Boolean)
+                : [];
+            const ranked = rankSuggestions([...cleanExternalResults, ...localResults], q, barangay);
 
             return res.json(ranked);
         } catch (externalError) {
-            console.warn('[GEO] External search unavailable, returning local matches only:', externalError.message);
-            return res.json(rankSuggestions(localResults.map(normalizeAddressResult).filter(Boolean), q, barangay));
+            console.warn('[GEO] External search unavailable, returning clean fallback:', externalError.message);
+            if (localSearchEnabled) {
+                const localResults = (await localSearch(q)).map(sanitizeSearchResult).filter(Boolean);
+                if (localResults.length > 0) {
+                    return res.json(rankSuggestions(localResults, q, barangay));
+                }
+            }
+            return res.json([buildCleanSearchFallback(q, barangay)]);
         }
     } catch (error) {
         console.error('[GEO ERROR]', error.message);
@@ -555,7 +656,7 @@ router.get('/search', async (req, res) => {
     }
 });
 
-// GET /api/geo/reverse - Local-first reverse geocoding with external fallback
+// GET /api/geo/reverse - External-first reverse geocoding for manual map pin placement
 router.get('/reverse', async (req, res) => {
     try {
         const { lat, lon } = req.query;
@@ -563,22 +664,20 @@ router.get('/reverse', async (req, res) => {
             return res.status(400).json({ error: 'Parameters lat and lon are required' });
         }
 
-        const localResult = await localReverse(lat, lon);
-        if (localResult) {
-            return res.json(localResult);
+        if (!isInsideSanPedro(lat, lon)) {
+            return res.status(422).json({ error: 'Selected location is outside San Pedro, Laguna.' });
         }
 
         try {
             const externalResult = await externalReverse(lat, lon);
             if (externalResult && isInsideSanPedro(externalResult)) {
-                return res.json(externalResult);
+                return res.json(sanitizeReverseResult(externalResult));
             }
 
-            const fallback = await localReverse(lat, lon, { allowFallback: true });
-            return res.json(fallback);
+            return res.json(buildCleanReverseFallback(lat, lon));
         } catch (externalError) {
             console.warn('[GEO] External reverse unavailable, returning fallback:', externalError.message);
-            return res.json(await localReverse(lat, lon, { allowFallback: true }));
+            return res.json(buildCleanReverseFallback(lat, lon));
         }
     } catch (error) {
         console.error('[GEO REVERSE ERROR]', error.message);

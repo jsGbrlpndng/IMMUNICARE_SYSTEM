@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import NipScheduleTable from '../../components/NipScheduleTable';
 import { formatDate, formatAge } from '../../utils/formatters';
+import { formatFullAddress } from '../../utils/addressFormatting';
 
 const InfantProfile = () => {
     const { id } = useParams();
@@ -107,6 +108,10 @@ const InfantProfile = () => {
     const completedDoseCount = scheduleRows.filter((dose) => ['COMPLETED', 'COMPLETED_VALIDATED'].includes(dose.status)).length;
     const pendingDoseCount = scheduleRows.filter((dose) => dose.status === 'PENDING_VALIDATION').length;
     const upcomingDoseCount = Math.max(scheduleRows.length - completedDoseCount - pendingDoseCount, 0);
+    const displayAddress = formatFullAddress({
+        exactAddress: infant.exact_address || infant.current_address,
+        barangay: infant.barangay
+    });
     const statCards = [
         {
             label: 'Date of Birth',
@@ -120,7 +125,7 @@ const InfantProfile = () => {
         },
         {
             label: 'Exact Address',
-            value: infant.exact_address || 'Address not geocoded',
+            value: displayAddress || 'Address not geocoded',
             icon: MapPin
         },
         {

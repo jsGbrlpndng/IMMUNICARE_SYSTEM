@@ -213,6 +213,13 @@ export default function InfantRegistry() {
                         <span className="text-orange-600 font-black text-[10px] tracking-wider uppercase">Medium Risk</span>
                     </div>
                 );
+            case 'completed':
+                return (
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-slate-400" />
+                        <span className="text-slate-500 font-black text-[10px] tracking-wider uppercase">No Active Risk</span>
+                    </div>
+                );
             default:
                 return (
                     <div className="flex items-center gap-1.5">

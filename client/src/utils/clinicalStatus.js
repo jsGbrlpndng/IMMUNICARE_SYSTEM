@@ -30,8 +30,8 @@ export const CLINICAL_STATUS_CONFIG = Object.freeze({
         icon: 'check'
     },
     [CLINICAL_STATUS.UP_TO_DATE]: {
-        label: 'Up-to-Date',
-        shortLabel: 'Up-to-Date',
+        label: 'On Track',
+        shortLabel: 'On Track',
         badgeClassName: 'bg-sky-50 text-sky-700 border border-sky-200',
         emphasisBadgeClassName: 'bg-sky-600 text-white border border-sky-700',
         panelClassName: 'bg-sky-50 border-sky-200 text-sky-800',

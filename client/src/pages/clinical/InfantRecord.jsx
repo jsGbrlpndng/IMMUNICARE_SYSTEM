@@ -24,6 +24,7 @@ import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import RecordVaccinationModal from '../../components/RecordVaccinationModal';
 import DoseCorrectionModal from '../../components/DoseCorrectionModal';
+import { formatFullAddress } from '../../utils/addressFormatting';
 
 /**
  * InfantRecord - High-density clinical patient profile.
@@ -122,6 +123,10 @@ export default function InfantRecord() {
     );
 
     const { infant, record, summary, age_metrics } = data;
+    const displayAddress = formatFullAddress({
+        exactAddress: infant?.exact_address || infant?.current_address,
+        barangay: infant?.barangay
+    });
     const isOverdue = (summary.defaulter || summary.DEFAULTED || summary.overdue) > 0;
     const isFullyImmunized = summary.completed === summary.total_doses;
     const isArchived = infant?.status === 'Archived';
@@ -243,7 +248,7 @@ export default function InfantRecord() {
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Precise Clinical Location</span>
                             <div className="mt-1 border-l-4 border-[#064E3B] bg-slate-50 px-3 py-2">
                                 <span className="block text-sm font-black leading-snug text-slate-900">
-                                     {infant.exact_address || 'No Registered Street Address'}
+                                     {displayAddress || 'No Registered Street Address'}
                                 </span>
                                 <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                     Landmark: {infant.landmark || 'No Landmark Recorded'}

@@ -168,7 +168,7 @@ const FilterToolbar = ({
             <option value="defaulter">Defaulted</option>
             <option value="due_today">Due Today</option>
             <option value="due_soon">Due Soon</option>
-            <option value="upcoming">Up-to-Date</option>
+            <option value="upcoming">On Track</option>
           </select>
         )}
 

@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import apiClient from '../services/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -47,6 +47,67 @@ const PasswordField = memo(({ id, label, value, visible, onToggle, onChange, aut
 
 PasswordField.displayName = 'PasswordField';
 
+export const PasswordSuccessInterstitial = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const successType = new URLSearchParams(location.search).get('type');
+    const fallbackMessage = successType === 'set'
+        ? 'Password set successfully. Please log in again.'
+        : 'Password changed successfully. Please log in again.';
+    const securityMessage = location.state?.securityMessage || fallbackMessage;
+
+    const goToLogin = () => {
+        navigate('/login', {
+            replace: true,
+            state: { securityMessage }
+        });
+    };
+
+    return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-8 text-slate-950">
+            <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="password-success-title"
+                aria-describedby="password-success-message"
+                className="w-full max-w-md border border-emerald-900/20 bg-white shadow-xl"
+            >
+                <div className="border-b border-emerald-100 bg-[#ECFDF5] px-6 py-5">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center bg-[#084C39] text-white shadow-sm">
+                            <CheckCircle2 className="h-7 w-7" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">
+                                ImmuniCare Security
+                            </p>
+                            <h1 id="password-success-title" className="mt-1 text-2xl font-black text-slate-950">
+                                Security Update Complete
+                            </h1>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-5 px-6 py-6">
+                    <p id="password-success-message" className="text-base font-black leading-relaxed text-slate-900">
+                        {securityMessage}
+                    </p>
+                    <p className="text-sm font-semibold leading-relaxed text-slate-600">
+                        For your protection, your previous session has been closed.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={goToLogin}
+                        className="inline-flex w-full items-center justify-center bg-[#084C39] px-5 py-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-[#07362A] focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:ring-offset-2"
+                    >
+                        Go to Login
+                    </button>
+                </div>
+            </section>
+        </main>
+    );
+};
+
 const SecurityProfileForm = ({
     forced = false,
     onSuccess,
@@ -54,8 +115,7 @@ const SecurityProfileForm = ({
     subtitle = 'Update your account password.',
     compact = false
 }) => {
-    const { logout, auditLogout } = useAuth();
-    const navigate = useNavigate();
+    const { clearAuthSession, logout, auditLogout } = useAuth();
     const [form, setForm] = useState({
         current_password: '',
         new_password: '',
@@ -118,15 +178,21 @@ const SecurityProfileForm = ({
                 new_password: '',
                 confirm_password: ''
             });
-            setSuccess(payload?.message || 'Password changed successfully. Please sign in again.');
+            const securityMessage = forced
+                ? 'Password set successfully. Please log in again.'
+                : 'Password changed successfully. Please log in again.';
+
+            setSuccess(payload?.message || securityMessage);
 
             if (onSuccess) onSuccess(payload);
             auditLogout?.();
-            logout();
-            navigate('/login', {
-                replace: true,
-                state: { securityMessage: 'Password changed successfully. Please sign in again.' }
-            });
+            if (clearAuthSession) {
+                clearAuthSession({ updateState: false });
+            } else {
+                logout();
+            }
+            const successType = forced ? 'set' : 'changed';
+            window.location.replace(`/password-update-success?type=${successType}`);
         } catch (requestError) {
             console.error('[SECURITY_PROFILE_CHANGE_PASSWORD]', requestError);
             setError(requestError.message || 'Unable to change password.');

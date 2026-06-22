@@ -12,6 +12,7 @@ import LandingPage from './pages/LandingPage';
 import AccessPortal from './pages/AccessPortal';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import AccountSecurityPage from './pages/AccountSecurityPage';
+import { PasswordSuccessInterstitial } from './components/SecurityProfileForm';
 import StaffLayout from './layouts/StaffLayout';
 import InfantRegistrationForm from './pages/clinical/InfantRegistrationForm';
 import SMSCampaigns from './pages/clinical/SMSCampaigns';
@@ -54,6 +55,7 @@ function App() {
                     <Route path="/" element={<LandingPage />} />
 
                     {/* Unified Access Portal */}
+                    <Route path="/password-update-success" element={<PasswordSuccessInterstitial />} />
                     <Route path="/portal" element={<AccessPortal />} />
                     <Route path="/login" element={<AccessPortal />} />
                     <Route path="/force-password-change" element={<ForcePasswordChange />} />

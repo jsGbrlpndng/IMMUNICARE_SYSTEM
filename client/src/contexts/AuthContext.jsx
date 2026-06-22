@@ -44,11 +44,17 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.removeItem('immunicare_idle_locked');
     };
 
-    const logout = () => {
-        setUser(null);
+    const clearAuthSession = ({ updateState = true } = {}) => {
+        if (updateState) {
+            setUser(null);
+        }
         localStorage.removeItem('user');
         localStorage.removeItem('auth_token');
         sessionStorage.removeItem('immunicare_idle_locked');
+    };
+
+    const logout = () => {
+        clearAuthSession();
     };
 
     const auditLogout = () => {
@@ -69,7 +75,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, auditLogout, loading }}>
+        <AuthContext.Provider value={{ user, login, logout, auditLogout, clearAuthSession, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { formatExactAddress, formatFullAddress } from '../../utils/addressFormatting';
 
 const REJECTION_REASONS = [
     'Confirmed Duplicate',
@@ -411,10 +412,12 @@ const ValidationPage = () => {
         }
     };
 
-    const physicalAddressLabel = [
-        selectedRecord?.locality || selectedRecord?.barangay,
-        selectedRecord?.exact_address
-    ].filter(Boolean).join(' - ') || '--';
+    const exactAddressLabel = formatExactAddress(selectedRecord?.exact_address, { barangay: selectedRecord?.barangay });
+    const fullAddressLabel = formatFullAddress({
+        exactAddress: selectedRecord?.exact_address || selectedRecord?.current_address,
+        barangay: selectedRecord?.barangay
+    });
+    const physicalAddressLabel = fullAddressLabel || '--';
 
     const fhsisAssignment = user?.assigned_barangay || '--';
     const rejectionReasonValue = selectedRecord?.rejection_reason || selectedDetail?.registration?.rejection_reason || '';
@@ -691,7 +694,10 @@ const ValidationPage = () => {
                                             <DataField label="Barangay" value={selectedRecord?.barangay} />
                                         </div>
                                         <div className="chart-grid chart-grid-single border-t border-slate-300">
-                                            <DataField label="Exact Address" value={selectedRecord?.exact_address || '--'} />
+                                            <DataField label="Exact Address" value={exactAddressLabel || '--'} />
+                                        </div>
+                                        <div className="chart-grid chart-grid-single border-t border-slate-300">
+                                            <DataField label="Full Address" value={fullAddressLabel || '--'} />
                                         </div>
                                         <div className="chart-grid chart-grid-single border-t border-slate-300">
                                             <DataField label="Landmark" value={selectedRecord?.landmark || '--'} />

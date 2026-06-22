@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import BatchVaccinationModal from '../../components/BatchVaccinationModal';
@@ -333,7 +333,7 @@ describe('BatchVaccinationModal', () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     
-    fireEvent.change(dateInput, { target: { value: tomorrow.toISOString().slice(0, 10) } });
+    fireEvent.change(dateInput, { target: { value: getLocalDateString(tomorrow) } });
 
     // Fill other required fields
     const vaccineSelect = container.querySelector('select');

@@ -1,6 +1,4 @@
-'use strict';
-
-const RHU2_BARANGAYS = Object.freeze([
+export const RHU2_BARANGAY_KEYS = [
     'BAGONG SILANG',
     'CALENDOLA',
     'ESTRELLA',
@@ -13,7 +11,7 @@ const RHU2_BARANGAYS = Object.freeze([
     'SAMPAGUITA',
     'UB',
     'UBL'
-]);
+];
 
 const normalizeBarangayText = (value) => (
     (value || '')
@@ -33,7 +31,7 @@ const hasAlias = (normalizedValue, alias) => {
     return ` ${normalizedValue} `.includes(` ${normalizedAlias} `);
 };
 
-const BARANGAY_ALIASES = Object.freeze([
+const BARANGAY_ALIASES = [
     { canonical: 'UB', aliases: ['UB', 'U B', 'UNITED BAYANIHAN', 'UNITED BAYANIHAN BARANGAY', 'BARANGAY UNITED BAYANIHAN'] },
     { canonical: 'UBL', aliases: ['UBL', 'UNITED BETTER LIVING', 'UNITED BETTER LIVING BARANGAY', 'BARANGAY UNITED BETTER LIVING'] },
     { canonical: 'BAGONG SILANG', aliases: ['BAGONG SILANG'] },
@@ -46,9 +44,9 @@ const BARANGAY_ALIASES = Object.freeze([
     { canonical: 'NARRA', aliases: ['NARRA'] },
     { canonical: 'RIVERSIDE', aliases: ['RIVERSIDE'] },
     { canonical: 'SAMPAGUITA', aliases: ['SAMPAGUITA'] }
-]);
+];
 
-const normalizeBarangayName = (value) => {
+export const normalizeBarangayKey = (value) => {
     const normalized = normalizeBarangayText(value);
     if (!normalized) return null;
 
@@ -59,7 +57,6 @@ const normalizeBarangayName = (value) => {
     return match?.canonical || null;
 };
 
-module.exports = {
-    RHU2_BARANGAYS,
-    normalizeBarangayName
-};
+export const normalizeBarangayDisplay = (value) => (
+    normalizeBarangayKey(value) || normalizeBarangayText(value)
+);

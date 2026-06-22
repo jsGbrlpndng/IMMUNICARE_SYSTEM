@@ -432,7 +432,7 @@ export default function MidwifeDashboard() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                 {[
                     { label: 'Due Today', value: stats?.scheduledToday, icon: Clock, bg: 'bg-green-50', text: 'text-green-800', path: '/clinical/registry?urgency=due_today' },
-                    { label: 'Defaulted', value: stats?.overdueCount, icon: AlertCircle, bg: 'bg-rose-50', text: 'text-rose-600', path: '/clinical/registry?urgency=overdue' },
+                    { label: 'Defaulted', value: stats?.overdueCount, icon: AlertCircle, bg: 'bg-rose-50', text: 'text-rose-600', path: '/clinical/registry?urgency=defaulter' },
                     { label: 'Due Soon', value: stats?.dueSoon, icon: Calendar, bg: 'bg-amber-50', text: 'text-amber-600', path: '/clinical/registry?urgency=due_soon' },
                     { label: 'Risk Hotspots', value: stats?.clusterCount, icon: MapPin, bg: 'bg-green-50/50', text: 'text-green-800', path: '/clinical/map' }
                 ].map((kpi, i) => (
@@ -491,7 +491,7 @@ export default function MidwifeDashboard() {
                                                             <CheckCircle2 size={32} />
                                                         </div>
                                                         <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">No immediate actions required</h3>
-                                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider max-w-xs mx-auto text-center">All validated infants in this sector are currently up-to-date based on their NIP schedules.</p>
+                                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider max-w-xs mx-auto text-center">All validated infants in this sector are currently on track based on their NIP schedules.</p>
                                                     </div>
                                                 </td>
                                             </tr>

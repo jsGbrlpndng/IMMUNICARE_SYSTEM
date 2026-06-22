@@ -89,6 +89,30 @@ describe('InfantRegistrationService strict registration validation', () => {
         expect(db.execute).toHaveBeenCalledTimes(7);
     });
 
+    test('saves a minimum BHW draft without requiring final submission fields', async () => {
+        const result = await service.saveRegistration({
+            first_name: 'Gabriel',
+            middle_name: 'Luis',
+            last_name: 'Pendangs',
+            sex: 'M',
+            status: 'DRAFT'
+        }, actor);
+
+        expect(result).toEqual({
+            id: 'mock-registration-id',
+            reference_id: 'LG-2026-0001',
+            status: 'DRAFT',
+            duplicate_alert: null
+        });
+        expect(db.execute).toHaveBeenCalledTimes(1);
+        expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO infant_registrations'), expect.arrayContaining([
+            'mock-registration-id',
+            'LG-2026-0001',
+            expect.any(String),
+            'DRAFT'
+        ]));
+    });
+
     test('saves a properly formatted BHW submission as PENDING_VALIDATION', async () => {
         const payload = validPayload();
         payload.status = 'Pending';
@@ -1308,5 +1332,66 @@ describe('InfantRegistrationService BHW registration detail payload', () => {
         expect(result.rejection_reason).toBe('Invalid Data');
         expect(result.rejection_notes).toBe('Mother name does not match the attached source document.');
         expect(result.correction_notes).toBeNull();
+    });
+});
+
+describe('InfantRegistrationService getRegistrationStateStats BHW scoping', () => {
+    let db;
+    let service;
+
+    beforeEach(() => {
+        db = {
+            execute: jest.fn(),
+            getConnection: jest.fn()
+        };
+        service = new InfantRegistrationService(db);
+    });
+
+    test('scopes stats by created_by when actor is a BHW', async () => {
+        db.execute.mockResolvedValueOnce([
+            [
+                { status: 'DRAFT', count: 3 },
+                { status: 'PENDING_VALIDATION', count: 1 }
+            ]
+        ]);
+
+        const actor = {
+            id: 'bhw-user-123',
+            role: 'BHW',
+            assigned_barangay: 'Langgam'
+        };
+
+        const result = await service.getRegistrationStateStats(actor);
+
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining('WHERE created_by = ?'),
+            ['bhw-user-123']
+        );
+        expect(result.stats.drafts).toBe(3);
+        expect(result.stats.pending).toBe(1);
+    });
+
+    test('scopes stats by barangay when actor is a Midwife', async () => {
+        db.execute.mockResolvedValueOnce([
+            [
+                { status: 'DRAFT', count: 10 },
+                { status: 'PENDING_VALIDATION', count: 5 }
+            ]
+        ]);
+
+        const actor = {
+            id: 'midwife-user-123',
+            role: 'Midwife',
+            assigned_barangay: 'Langgam'
+        };
+
+        const result = await service.getRegistrationStateStats(actor);
+
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining('WHERE UPPER(TRIM(barangay)) = UPPER(TRIM(?))'),
+            ['Langgam']
+        );
+        expect(result.stats.drafts).toBe(10);
+        expect(result.stats.pending).toBe(5);
     });
 });
