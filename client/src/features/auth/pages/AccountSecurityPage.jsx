@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, UserRound, Clock3 } from 'lucide-react';
-import SecurityProfileForm from '../../../components/SecurityProfileForm';
+import SecurityProfileForm from '../../../components/forms/SecurityProfileForm';
 import apiClient from '../../../services/apiClient';
 
 const formatDateTime = (value) => {

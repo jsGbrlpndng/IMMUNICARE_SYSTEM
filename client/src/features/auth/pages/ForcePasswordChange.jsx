@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Activity, LogOut } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
-import SecurityProfileForm, { getDefaultRouteForRole } from '../../../components/SecurityProfileForm';
+import SecurityProfileForm, { getDefaultRouteForRole } from '../../../components/forms/SecurityProfileForm';
 
 const ForcePasswordChange = () => {
     const navigate = useNavigate();

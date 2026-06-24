@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import DeploymentReportModal from '../../components/DeploymentReportModal';
+import DeploymentReportModal from '../../features/reports/components/DeploymentReportModal';
+
 import apiClient from '../../services/apiClient';
 
 // Mock apiClient — the modal calls apiClient.post to submit the report

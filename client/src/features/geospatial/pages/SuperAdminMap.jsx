@@ -14,10 +14,10 @@ import {
     X
 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
-import { BARANGAY_COORDINATES, DEFAULT_MUNICIPAL_CENTER, getBarangayCenter } from '../../utils/barangayConfig';
-import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import { BARANGAY_COORDINATES, DEFAULT_MUNICIPAL_CENTER, getBarangayCenter } from '../../../utils/barangayConfig';
+import { RHU2_BARANGAYS } from '../../reports/components/reportConfig';
 
 /* ─── Constants ─── */
 

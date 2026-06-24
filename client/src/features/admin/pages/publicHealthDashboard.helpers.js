@@ -1,4 +1,4 @@
-import { formatAuditAction, formatAuditTarget } from '../../utils/auditFormatter';
+import { formatAuditAction, formatAuditTarget } from '../../../utils/auditFormatter';
 
 export const safeNumber = (value, fallback = 0) => {
     const parsed = Number(value);

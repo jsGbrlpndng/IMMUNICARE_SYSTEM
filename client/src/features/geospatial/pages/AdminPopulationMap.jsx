@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, GeoJSON, Popup, ScaleControl, useMap } from 'react-leaflet';
 import { Activity, Filter, Loader2, MapPinned, ShieldCheck } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
-import { getBarangayCenter } from '../../utils/barangayConfig';
-import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { getBarangayCenter } from '../../../utils/barangayConfig';
+import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const STATUS_LAYERS = [
     { id: 'defaulter', label: 'Defaulter', color: '#e11d48' },

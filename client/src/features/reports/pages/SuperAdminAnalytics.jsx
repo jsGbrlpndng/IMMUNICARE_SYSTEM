@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BarChart3, ClipboardList, Table2 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import ReportFilters from '../../components/reports/ReportFilters';
-import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
-import MonitoringCharts from '../../components/reports/MonitoringCharts';
-import { DataQualityBanner, ErrorState, LoadingState } from '../../components/reports/ReportStates';
-import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
+import apiClient from '../../../services/apiClient';
+import ReportFilters from '../components/ReportFilters';
+import MonthlyAccomplishmentTable from '../components/MonthlyAccomplishmentTable';
+import MonitoringCharts from '../components/MonitoringCharts';
+import { DataQualityBanner, ErrorState, LoadingState } from '../components/ReportStates';
+import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../components/reportConfig';
 
 const currentDate = new Date();
 

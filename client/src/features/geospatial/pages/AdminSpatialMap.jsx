@@ -3,11 +3,11 @@ import { useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, GeoJSON, Polygon, Popup, ScaleControl, useMap } from 'react-leaflet';
 import { ClipboardList, MapPinned, ShieldCheck, UserRoundCheck } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-import { getBarangayCenter } from '../../utils/barangayConfig';
-import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { getBarangayCenter } from '../../../utils/barangayConfig';
+import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const CLUSTER_COLORS = ['#0f766e', '#16a34a', '#d97706', '#dc2626', '#2563eb'];
 

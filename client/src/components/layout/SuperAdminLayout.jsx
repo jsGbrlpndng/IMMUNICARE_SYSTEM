@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Settings, Target, Users } from 'lucide-react';
 import SidebarNav from './SidebarNav';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
-import { RHU2_BARANGAYS } from '../reports/reportConfig';
+import { RHU2_BARANGAYS } from '../../features/reports/components/reportConfig';
 
 const superAdminNavigation = [
     {

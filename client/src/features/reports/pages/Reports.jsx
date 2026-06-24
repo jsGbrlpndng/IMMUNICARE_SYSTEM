@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Download, FileText, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const toDateInputValue = (date) => {
     const offset = date.getTimezoneOffset();

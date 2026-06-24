@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, expect, test } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import MonitoringCharts, { normalizeRows } from '../../components/reports/MonitoringCharts';
+import MonitoringCharts, { normalizeRows } from '../../features/reports/components/MonitoringCharts';
+
 
 describe('MonitoringCharts', () => {
   test('derives cumulative target rows from configured target multiplied by month index', () => {

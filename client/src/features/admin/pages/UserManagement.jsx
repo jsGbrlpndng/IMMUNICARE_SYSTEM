@@ -15,9 +15,9 @@ import {
     UserX,
     X
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
-import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { RHU2_BARANGAYS } from '../../reports/components/reportConfig';
 
 const BARANGAY_OPTIONS = RHU2_BARANGAYS.map((barangay) => ({ value: barangay, label: barangay }));
 

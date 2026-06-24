@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle, FileText } from 'lucide-react';
-import apiClient from '../services/apiClient';
+import apiClient from '../../../services/apiClient';
+
 
 function DeploymentReportModal({ cluster, onClose, onSubmitSuccess }) {
     const [summaryNotes, setSummaryNotes] = useState('');

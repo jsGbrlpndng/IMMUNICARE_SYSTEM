@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart2, CalendarDays, ClipboardList, Map as MapIcon, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
 import SidebarNav from './SidebarNav';
-import NotificationBell from '../NotificationBell';
+import NotificationBell from '../feedback/NotificationBell';
 import { useAuth } from '../../contexts/AuthContext';
 
 const clinicalNavigation = [

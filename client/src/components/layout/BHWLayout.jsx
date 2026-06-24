@@ -15,7 +15,7 @@ import {
     Settings
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import NotificationBell from '../NotificationBell';
+import NotificationBell from '../feedback/NotificationBell';
 
 const BRAND = {
     green: '#0B6E4F',

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, UserPlus } from 'lucide-react';
-import apiClient from '../services/apiClient';
+import apiClient from '../../services/apiClient';
+
 
 const DelegationModal = ({ isOpen, onClose, infant, onDelegateSuccess }) => {
     const [bhws, setBhws] = useState([]);

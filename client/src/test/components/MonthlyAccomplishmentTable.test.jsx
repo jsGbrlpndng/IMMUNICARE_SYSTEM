@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, expect, test } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
+import MonthlyAccomplishmentTable from '../../features/reports/components/MonthlyAccomplishmentTable';
+
 
 describe('MonthlyAccomplishmentTable DOH column layout', () => {
   test('renders target denominators as columns before antigen accomplishments', () => {

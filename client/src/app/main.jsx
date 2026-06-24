@@ -13,7 +13,7 @@ import '@fontsource/outfit/600.css'
 import '@fontsource/outfit/700.css'
 import '@fontsource/outfit/800.css'
 
-import './index.css'
+import '../styles/index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>

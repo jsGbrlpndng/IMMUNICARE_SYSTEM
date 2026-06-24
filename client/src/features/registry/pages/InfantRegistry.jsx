@@ -19,7 +19,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import GlobalInfantSearchModal from '../components/GlobalInfantSearchModal';
 import StatusBadge from '../../../components/common/StatusBadge';
-import FilterToolbar from '../../../components/FilterToolbar';
+import FilterToolbar from '../../../components/forms/FilterToolbar';
 
 /**
  * InfantRegistry - Master clinical directory with server-side pagination and search.

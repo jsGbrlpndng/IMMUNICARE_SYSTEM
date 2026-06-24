@@ -9,7 +9,8 @@ import {
     AlertTriangle
 } from 'lucide-react';
 import apiClient from '../../../services/apiClient';
-import JustificationModal from '../../../components/JustificationModal';
+import JustificationModal from '../../../components/feedback/JustificationModal';
+
 
 const toDateOnlyString = (value) => {
     if (!value) return null;

@@ -10,9 +10,9 @@ import {
     User,
     X
 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
-import { RHU2_BARANGAYS } from '../../components/reports/reportConfig';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import { RHU2_BARANGAYS } from '../../reports/components/reportConfig';
 import {
     buildAuditDeltaRows,
     buildAuditTechnicalRows,
@@ -23,7 +23,7 @@ import {
     formatAuditTarget,
     formatAuditValue,
     isAuditSystemField
-} from '../../utils/auditFormatter';
+} from '../../../utils/auditFormatter';
 
 const ROLE_OPTIONS = ['Super Admin', 'Admin', 'Midwife', 'Nurse', 'BHW'];
 

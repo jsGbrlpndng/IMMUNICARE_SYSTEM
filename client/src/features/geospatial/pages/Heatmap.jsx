@@ -8,19 +8,19 @@ import {
     Target,
     Shield
 } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
-import apiClient from '../../services/apiClient';
+import apiClient from '../../../services/apiClient';
 
 // Sub-components
-import HeatmapSidePanel from './HeatmapSidePanel';
-import HeatmapMap from './HeatmapMap';
-import ErrorBoundary from '../../components/common/ErrorBoundary';
-import DeploymentReportModal from '../../components/DeploymentReportModal';
+import HeatmapSidePanel from '../components/HeatmapSidePanel';
+import HeatmapMap from '../components/HeatmapMap';
+import ErrorBoundary from '../../../components/common/ErrorBoundary';
+import DeploymentReportModal from '../../reports/components/DeploymentReportModal';
 // Validation Logic
-import { getBarangayCenter } from '../../utils/barangayConfig';
-import { getBarangayBoundaryGeoJson } from '../../utils/barangayBoundaries';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { getBarangayCenter } from '../../../utils/barangayConfig';
+import { getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 // --- Main Orchestrator ---
 export default function Heatmap() {

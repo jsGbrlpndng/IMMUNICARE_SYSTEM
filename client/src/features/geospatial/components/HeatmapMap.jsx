@@ -11,9 +11,9 @@ import {
     Maximize2,
     Minimize2
 } from 'lucide-react';
-import { computeConvexHull } from '../../utils/spatialUtils';
-import { barangayBoundaryStyle } from '../../utils/barangayBoundaries';
-import { CLINICAL_STATUS, getClinicalStatusMeta, normalizeClinicalStatus } from '../../utils/clinicalStatus';
+import { computeConvexHull } from '../../../utils/spatialUtils';
+import { barangayBoundaryStyle } from '../../../utils/barangayBoundaries';
+import { CLINICAL_STATUS, getClinicalStatusMeta, normalizeClinicalStatus } from '../../../utils/clinicalStatus';
 import 'leaflet/dist/leaflet.css';
 
 // --- Helper: coordinate validation ---

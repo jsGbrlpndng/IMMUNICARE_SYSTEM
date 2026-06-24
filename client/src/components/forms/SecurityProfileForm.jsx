@@ -1,8 +1,8 @@
 import React, { memo, useCallback, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
-import apiClient from '../services/apiClient';
-import { useAuth } from '../contexts/AuthContext';
+import apiClient from '../../services/apiClient';
+import { useAuth } from '../../contexts/AuthContext';
 
 const passwordRequirements = [
     { label: 'At least 10 characters', test: (value) => value.length >= 10 },

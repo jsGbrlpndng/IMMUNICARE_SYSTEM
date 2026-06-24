@@ -11,8 +11,8 @@ import {
     Search,
     Loader2
 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const CICCatchUpAnalysis = () => {
     const [data, setData] = useState([]);

@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { ChevronLeft, ChevronRight, ClipboardList, Download, Filter, Table2 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
-import ReportFilters from '../../components/reports/ReportFilters';
-import MonthlyAccomplishmentTable from '../../components/reports/MonthlyAccomplishmentTable';
-import { DataQualityBanner, ErrorState, LoadingState } from '../../components/reports/ReportStates';
-import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../../components/reports/reportConfig';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import ReportFilters from '../components/ReportFilters';
+import MonthlyAccomplishmentTable from '../components/MonthlyAccomplishmentTable';
+import { DataQualityBanner, ErrorState, LoadingState } from '../components/ReportStates';
+import { ALL_MONTH_VALUE, formatReportingPeriodLabel } from '../components/reportConfig';
 
 const currentDate = new Date();
 

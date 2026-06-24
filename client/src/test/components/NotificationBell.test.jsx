@@ -3,7 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import NotificationBell from '../../components/NotificationBell';
+import NotificationBell from '../../components/feedback/NotificationBell';
+
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
