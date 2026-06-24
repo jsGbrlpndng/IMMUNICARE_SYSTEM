@@ -285,6 +285,290 @@
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08);
 }
 
+/* CSP-safe clinical chart grids previously injected by registration pages. */
+.chart-grid {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  max-width: 100%;
+  background: #cbd5e1;
+  padding: 1px;
+}
+
+.chart-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.clinical-rejection-summary {
+  box-shadow: inset 0 0 0 1px #064E3B;
+}
+
+/* CSP-safe Leaflet/CDSS map styling. */
+.clinical-cdss-popup .leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 0.5rem !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15) !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.clinical-cdss-popup .leaflet-popup-content {
+  margin: 0 !important;
+  width: 280px !important;
+}
+
+.clinical-cdss-popup .leaflet-popup-tip-container {
+  display: none !important;
+}
+
+.leaflet-control-zoom {
+  display: none;
+}
+
+.custom-centroid-icon,
+.custom-div-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.clinical-marker-svg--defaulter {
+  filter: drop-shadow(0 4px 8px rgba(239, 68, 68, 0.6));
+}
+
+.clinical-marker-svg--standard {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.clinical-centroid-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #0f172a;
+  border: 3px solid #fff;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-weight: 900;
+  font-size: 18px;
+  font-family: system-ui, sans-serif;
+  letter-spacing: -1px;
+}
+
+.clinical-legend-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+}
+
+.clinical-legend-dot--defaulter_group {
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
+  transform: rotate(45deg);
+  background: #ef4444;
+}
+
+.clinical-legend-dot--due_group {
+  background: #f59e0b;
+}
+
+.clinical-legend-dot--on_track_group {
+  background: #10b981;
+}
+
+.clinical-legend-dot--completed_group {
+  background: #3b82f6;
+}
+
+.clinical-legend-count {
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 0.375rem;
+}
+
+.clinical-legend-count--defaulter_group {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.clinical-legend-count--due_group {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.clinical-legend-count--on_track_group {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.clinical-legend-count--completed_group {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.clinical-map-popup-card {
+  width: 280px;
+  background: #fff;
+  font-family: system-ui, sans-serif;
+}
+
+.clinical-map-popup-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.clinical-map-popup-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.clinical-map-popup-name {
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clinical-map-popup-status {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.clinical-map-popup-status--defaulted,
+.clinical-map-popup-status--overdue {
+  color: #ef4444;
+}
+
+.clinical-map-popup-status--due_soon {
+  color: #f59e0b;
+}
+
+.clinical-map-popup-status--up_to_date {
+  color: #10b981;
+}
+
+.clinical-map-popup-status--fully_immunized {
+  color: #3b82f6;
+}
+
+.clinical-map-popup-status--incomplete {
+  color: #64748b;
+}
+
+.clinical-map-popup-meta {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.clinical-map-popup-address {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+}
+
+.clinical-map-popup-address-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.clinical-map-popup-address-text {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.clinical-map-popup-directive {
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.clinical-map-popup-directive-label {
+  font-size: 9px;
+  font-weight: 900;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 8px;
+}
+
+.clinical-map-popup-directive-box {
+  background: #f0f9ff;
+  border-left: 4px solid #0369a1;
+  padding: 10px 12px;
+  border-radius: 0 8px 8px 0;
+}
+
+.clinical-map-popup-directive-text {
+  font-size: 12px;
+  font-weight: 900;
+  color: #0c4a6e;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.clinical-map-popup-dose-count {
+  font-size: 10px;
+  color: #0369a1;
+  margin: 4px 0 0;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.clinical-map-popup-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #f1f5f9;
+}
+
+.clinical-map-popup-action {
+  padding: 14px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border: none;
+  cursor: pointer;
+}
+
+.clinical-map-popup-action--split {
+  border-right: 1px solid #f1f5f9;
+}
+
+.clinical-map-popup-validate {
+  width: 100%;
+  padding: 14px;
+  background: #084C39;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  border: none;
+  cursor: pointer;
+}
+
 /* Hide scrollbar utility */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* IE and Edge */

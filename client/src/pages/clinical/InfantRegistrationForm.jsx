@@ -1632,20 +1632,6 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     </div>
                 </div>
             </div>
-            <style dangerouslySetInnerHTML={{ __html: `
-                .chart-grid {
-                    display: grid;
-                    gap: 1px;
-                    width: 100%;
-                    max-width: 100%;
-                    background: #cbd5e1;
-                    padding: 1px;
-                }
-                .chart-grid-single { grid-template-columns: minmax(0, 1fr); }
-                .clinical-rejection-summary {
-                    box-shadow: inset 0 0 0 1px #064E3B;
-                }
-            `}} />
         </div>
     );
 }

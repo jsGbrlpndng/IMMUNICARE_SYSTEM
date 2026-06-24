@@ -99,7 +99,6 @@ router.get('/export', async (req, res) => {
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('X-Export-Format', format.toUpperCase());
-        res.setHeader('X-Export-Timestamp', new Date().toISOString());
 
         // Send exported data
         res.send(exportedData);

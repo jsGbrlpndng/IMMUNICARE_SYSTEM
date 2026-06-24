@@ -16,28 +16,6 @@ import { barangayBoundaryStyle } from '../../utils/barangayBoundaries';
 import { CLINICAL_STATUS, getClinicalStatusMeta, normalizeClinicalStatus } from '../../utils/clinicalStatus';
 import 'leaflet/dist/leaflet.css';
 
-// --- CSS Override for CDSS Popup ---
-const mapStyles = `
-    .clinical-cdss-popup .leaflet-popup-content-wrapper {
-        padding: 0 !important;
-        border-radius: 0.5rem !important;
-        overflow: hidden !important;
-        background: transparent !important;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.15) !important;
-        border: 1px solid #e2e8f0 !important;
-    }
-    .clinical-cdss-popup .leaflet-popup-content {
-        margin: 0 !important;
-        width: 280px !important;
-    }
-    .clinical-cdss-popup .leaflet-popup-tip-container {
-        display: none !important;
-    }
-    .leaflet-control-zoom { display: none; }
-    .custom-centroid-icon { background: none !important; border: none !important; }
-    .custom-div-icon { background: none !important; border: none !important; }
-`;
-
 // --- Helper: coordinate validation ---
 const isValidCoordinate = (lat, lng) =>
     lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0;
@@ -68,7 +46,7 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
         // Elevated diamond for defaulters.
         html = `
             <div class="flex items-center justify-center">
-                <svg width="22" height="22" viewBox="0 0 24 24" style="filter: drop-shadow(0 4px 8px rgba(239,68,68,0.6))">
+                <svg class="clinical-marker-svg clinical-marker-svg--defaulter" width="22" height="22" viewBox="0 0 24 24">
                     <path d="M12 2L2 12l10 10 10-10L12 2z" fill="${markerColor}" stroke="#fff" stroke-width="3" />
                 </svg>
             </div>
@@ -79,7 +57,7 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
         // Standard circle for all other states
         html = `
             <div class="flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2))">
+                <svg class="clinical-marker-svg clinical-marker-svg--standard" width="16" height="16" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="10" fill="${markerColor}" stroke="#fff" stroke-width="3" />
                 </svg>
             </div>
@@ -99,7 +77,7 @@ const createClinicalIcon = (color, urgency, computed_map_status) => {
 const createCentroidIcon = (rank) => {
     return new L.divIcon({
         html: `
-            <div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#0f172a;border:3px solid #fff;box-shadow:0 8px 16px rgba(0,0,0,0.4);color:#fff;font-weight:900;font-size:18px;font-family:system-ui,sans-serif;letter-spacing:-1px;">
+            <div class="clinical-centroid-rank">
                 ${rank}
             </div>
         `,
@@ -289,11 +267,11 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
                                         <path d="M12 2L2 12l10 10 10-10L12 2z" fill={item.color} />
                                     </svg>
                                 ) : (
-                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
+                                    <div className={`clinical-legend-dot clinical-legend-dot--${item.id}`}></div>
                                 )}
                                 <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{item.label}</span>
                             </div>
-                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md" style={{ backgroundColor: `${item.color}20`, color: item.color }}>
+                            <span className={`clinical-legend-count clinical-legend-count--${item.id}`}>
                                 {item.count}
             </span>
                         </div>
@@ -401,63 +379,63 @@ const HeatmapMap = memo(({
                     }}
                 >
                     <Popup className="clinical-cdss-popup" closeButton={false}>
-                        <div style={{ width: 280, background: '#fff', fontFamily: 'system-ui,sans-serif' }}>
+                        <div className="clinical-map-popup-card">
                             {/* Header */}
-                            <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div className="clinical-map-popup-header">
+                                <div className="clinical-map-popup-title-row">
+                                    <span className="clinical-map-popup-name">
                                         {formatDisplayName(pt)}
                                     </span>
-                                    <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: statusColor }}>
+                                    <span className={`clinical-map-popup-status clinical-map-popup-status--${statusMeta.code.toLowerCase()}`}>
                                         {statusLabel}
                                     </span>
                                 </div>
-                                <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                <div className="clinical-map-popup-meta">
                                     {formatAge(pt.age_months)} · {pt.reference_id || 'REF-TBD'}
                                 </div>
                             </div>
 
                             {/* Address */}
                             {addressLine && (
-                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 14px', borderBottom: '1px solid #f1f5f9', background: '#fff' }}>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                                <div className="clinical-map-popup-address">
+                                    <svg className="clinical-map-popup-address-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
                                     </svg>
-                                    <span style={{ fontSize: 11, color: '#475569', fontWeight: 600, lineHeight: 1.4 }}>{addressLine}</span>
+                                    <span className="clinical-map-popup-address-text">{addressLine}</span>
                                 </div>
                             )}
 
                             {/* Directive Logic */}
-                            <div style={{ padding: '12px 14px', background: '#fff' }}>
-                                <div style={{ fontSize: 9, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 8 }}>
+                            <div className="clinical-map-popup-directive">
+                                <div className="clinical-map-popup-directive-label">
                                     Clinical Directive
                                 </div>
-                                <div style={{ background: '#f0f9ff', borderLeft: '4px solid #0369a1', padding: '10px 12px', borderRadius: '0 8px 8px 0' }}>
-                                    <p style={{ fontSize: 12, fontWeight: 900, color: '#0c4a6e', margin: 0, lineHeight: 1.3 }}>{pt.clinical_directive || actionText}</p>
-                                    <p style={{ fontSize: 10, color: '#0369a1', margin: '4px 0 0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                <div className="clinical-map-popup-directive-box">
+                                    <p className="clinical-map-popup-directive-text">{pt.clinical_directive || actionText}</p>
+                                    <p className="clinical-map-popup-dose-count">
                                         {doseCount} doses pending
                                     </p>
                                 </div>
                             </div>
 
                             {/* Actions Set */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid #f1f5f9' }}>
+                            <div className="clinical-map-popup-actions">
                                 <button
                                     onClick={() => window.location.href = `/clinical/infants/${pt?.reference_id}`}
-                                    style={{ padding: '14px', background: '#fff', color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', borderRight: '1px solid #f1f5f9', cursor: 'pointer' }}
+                                    className="clinical-map-popup-action clinical-map-popup-action--split"
                                 >
                                     Profile
                                 </button>
                                 <button
                                     onClick={() => window.location.href = `/clinical/infants/${pt?.reference_id}?tab=schedule`}
-                                    style={{ padding: '14px', background: '#fff', color: '#0f172a', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', cursor: 'pointer' }}
+                                    className="clinical-map-popup-action"
                                 >
                                     Schedule
                                 </button>
                             </div>
                             <button
                                 onClick={() => window.location.href = `/clinical/infants/${pt?.reference_id}?tab=address`}
-                                style={{ width: '100%', padding: '14px', background: '#084C39', color: '#fff', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', border: 'none', cursor: 'pointer' }}
+                                className="clinical-map-popup-validate"
                             >
                                 Validate Address
                             </button>
@@ -470,8 +448,6 @@ const HeatmapMap = memo(({
 
     return (
         <div className="h-full w-full flex flex-col relative bg-white">
-            <style dangerouslySetInnerHTML={{ __html: mapStyles }} />
-
             <div className="flex-1 relative overflow-hidden">
                 {/* Fullscreen Toggle Button */}
                 <button
@@ -495,8 +471,7 @@ const HeatmapMap = memo(({
                 <MapContainer
                     center={[14.3596, 121.0426]}
                     zoom={16}
-                    style={{ height: '100%', width: '100%' }}
-                    className="z-0"
+                    className="z-0 h-full w-full"
                     zoomControl={false}
                     trackResize={true}
                 >

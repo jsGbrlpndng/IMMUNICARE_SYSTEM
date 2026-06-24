@@ -31,6 +31,48 @@ function send(res, statusCode, body, headers = {}) {
     res.end(body);
 }
 
+// ─── Security Headers ──────────────────────────────────────────────────────
+// Applied to all responses served by this static server.
+// These mirror what the Express backend does via Helmet, ensuring the SPA
+// pages (index.html, JS bundles, CSS) are also hardened.
+const BASE_SECURITY_HEADERS = {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=()'
+};
+
+// Production Content-Security-Policy for the IMMUNICARE SPA.
+//
+// Sources verified against the codebase:
+//   script-src  'self'                   — Vite production bundles use <script type="module">
+//   style-src   'self'                   — app-specific runtime styles are bundled in CSS
+//   img-src     'self' data: blob:       — data: for Recharts SVG; blob: for jsPDF/xlsx exports
+//               https://server.arcgisonline.com  — ArcGIS World_Imagery basemap tiles
+//               https://*.cartocdn.com           — CARTO Voyager label-only overlay tiles
+//   connect-src 'self'                   — all API calls go to same origin via proxy
+//   font-src    'self'                   — @fontsource fonts are now bundled in /assets
+//   worker-src  blob:                    — Web Workers created via Blob URL (some libraries)
+//   child-src   blob:                    — same; covers blob: navigations inside workers
+//   frame-ancestors 'none'               — must be in HTTP header, not <meta> tag (CSP Level 2)
+//   object-src  'none'                   — no Flash / plugin content
+//   base-uri    'self'                   — prevent base-tag injection attacks
+//   form-action 'self'                   — restrict form submissions
+const PRODUCTION_CSP = [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self'",
+    "img-src 'self' data: blob: https://server.arcgisonline.com https://*.cartocdn.com",
+    "connect-src 'self'",
+    "font-src 'self'",
+    "worker-src blob:",
+    "child-src blob:",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+].join('; ');
+
 function serveStaticFile(res, filePath) {
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
         return false;
@@ -40,7 +82,19 @@ function serveStaticFile(res, filePath) {
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     const stream = fs.createReadStream(filePath);
 
-    res.writeHead(200, { 'Content-Type': contentType });
+    // Determine response headers
+    const headers = {
+        'Content-Type': contentType,
+        ...BASE_SECURITY_HEADERS
+    };
+
+    // CSP is only meaningful on HTML responses (the SPA entry point).
+    // Applying it to JS/CSS/font assets is harmless but unnecessary.
+    if (filePath === INDEX_FILE || ext === '.html') {
+        headers['Content-Security-Policy'] = PRODUCTION_CSP;
+    }
+
+    res.writeHead(200, headers);
     stream.pipe(res);
     stream.on('error', (err) => {
         console.error('Static file error:', err.message);

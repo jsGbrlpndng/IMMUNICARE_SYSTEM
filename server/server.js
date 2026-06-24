@@ -1,6 +1,7 @@
 console.log('>>> SERVER BOOTING AT ' + new Date().toISOString());
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 require('dotenv').config();
 
 const infantsRouter = require('./routes/infants');
@@ -33,29 +34,95 @@ const clinicalAuth = require('./middleware/clinicalAuth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-const allowedOrigins = new Set([
+// ─── Security: remove X-Powered-By before any middleware runs ───────────────
+app.disable('x-powered-by');
+
+// ─── Security: Helmet base headers ──────────────────────────────────────────
+// Helmet sets: X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+// X-DNS-Prefetch-Control, X-Download-Options, X-Permitted-Cross-Domain-Policies.
+// CSP is managed separately (not needed on API-only responses).
+// HSTS is only enabled when running under production HTTPS.
+const isProductionHttps =
+    process.env.NODE_ENV === 'production' &&
+    process.env.HTTPS_ENABLED === 'true';
+
+const BACKEND_CSP = [
+    "default-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "object-src 'none'"
+].join('; ');
+
+app.use(helmet({
+    contentSecurityPolicy: false,       // API responses don't serve HTML
+    crossOriginEmbedderPolicy: false,
+    frameguard: { action: 'deny' },     // X-Frame-Options: DENY (Helmet default is SAMEORIGIN)
+    hsts: isProductionHttps
+        ? { maxAge: 31536000, includeSubDomains: true, preload: false }
+        : false                         // Never set HSTS over HTTP / localhost
+}));
+
+app.use((_req, res, next) => {
+    res.setHeader('Content-Security-Policy', BACKEND_CSP);
+    next();
+});
+
+// ─── Security: Cache-Control: no-store for all API responses ─────────────────
+// Prevents caches (browser, proxy) from storing authenticated / sensitive data.
+app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+});
+
+// ─── Security: Additional explicit headers not covered by helmet defaults ────
+app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
+    next();
+});
+
+// ─── CORS ────────────────────────────────────────────────────────────────────
+// Restrict allowed origins to known IMMUNICARE frontend origins.
+// The x-auth-token custom header must be listed in allowedHeaders so browsers
+// don't block pre-flight requests. credentials:true is NOT set because the
+// system uses custom header tokens, not cookies.
+const allowedOriginsSet = new Set([
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
     'http://localhost:5175',
-    'http://127.0.0.1:5175'
+    'http://127.0.0.1:5175',
+    'http://localhost:4173',     // vite preview
+    'http://127.0.0.1:4173'
 ]);
+
+// Allow an additional production origin via environment variable.
+if (process.env.CORS_ORIGIN) {
+    allowedOriginsSet.add(process.env.CORS_ORIGIN);
+}
 
 app.use(cors({
     origin(origin, callback) {
-        if (!origin || allowedOrigins.has(origin)) {
+        if (!origin || allowedOriginsSet.has(origin)) {
             return callback(null, true);
         }
-
         return callback(new Error(`CORS blocked origin: ${origin}`));
-    }
+    },
+    allowedHeaders: [
+        'Content-Type',
+        'x-auth-token',
+        'x-user-id',
+        'x-user-role',
+        'x-admin-barangay',
+        'x-admin-barangay-id'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Global request logger - CRITICAL FOR DEBUGGING
+// Global request logger
 app.use((req, res, next) => {
     console.log(`\n📥 ${req.method} ${req.url}`);
     console.log('   Headers:', {
@@ -100,6 +167,10 @@ app.use('/api', deploymentReportsRouter);
 // Health check
 app.get('/', (req, res) => {
     res.send('Immunicare API is running');
+});
+
+app.use((req, res) => {
+    res.status(404).type('text/plain').send('Not Found');
 });
 
 // Start Server with Integrity Sentinel

@@ -1,0 +1,78 @@
+---
+env:
+  contexts:
+    - name: IMMUNICARE phase1 production local
+      urls:
+        - "http://127.0.0.1:5173"
+        - "http://127.0.0.1:3000"
+      includePaths:
+        - "http://127\\.0\\.0\\.1:5173.*"
+        - "http://127\\.0\\.0\\.1:3000.*"
+      excludePaths:
+        - ".*googleapis\\.com.*"
+        - ".*gstatic\\.com.*"
+        - ".*google\\.com.*"
+        - ".*android\\.clients\\.google\\.com.*"
+        - ".*passwordsleakcheck-pa\\.googleapis\\.com.*"
+        - ".*optimizationguide-pa\\.googleapis\\.com.*"
+        - ".*content-autofill\\.googleapis\\.com.*"
+        - ".*cartocdn\\.com.*"
+        - ".*arcgisonline\\.com.*"
+        - ".*/node_modules/\\.vite/.*"
+        - ".*/@react-refresh.*"
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    continueOnFailure: false
+    progressToStdout: true
+
+jobs:
+  - type: passiveScan-config
+    parameters:
+      scanOnlyInScope: true
+      maxAlertsPerRule: 0
+
+  - type: requestor
+    requests:
+      - url: "http://127.0.0.1:5173/"
+      - url: "http://127.0.0.1:3000/"
+      - url: "http://127.0.0.1:3000/robots.txt"
+      - url: "http://127.0.0.1:3000/sitemap.xml"
+
+  - type: spider
+    parameters:
+      context: IMMUNICARE phase1 production local
+      url: "http://127.0.0.1:5173/"
+      maxDuration: 2
+      maxDepth: 5
+      maxChildren: 50
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan-config
+    parameters:
+      maxRuleDurationInMins: 1
+      maxScanDurationInMins: 8
+      maxAlertsPerRule: 10
+
+  - type: activeScan
+    parameters:
+      context: IMMUNICARE phase1 production local
+      url: "http://127.0.0.1:5173/"
+      maxRuleDurationInMins: 1
+      maxScanDurationInMins: 8
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: "C:\\Users\\Gabriel\\Downloads\\Immunicare\\.codex-temp"
+      reportFile: "zap-phase1-one-origin.html"
+      reportTitle: "IMMUNICARE Phase 1 Clean Production ZAP Scan"
+      reportDescription: "Phase 1 clean local production scan against one frontend origin and one backend origin."
+
+  - type: exitStatus
+    parameters:
+      warnLevel: High
+      errorLevel: High
