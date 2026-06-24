@@ -333,15 +333,17 @@ class CaregiverOTPService {
         const spaced = hyphenated.replace(/-/g, ' ');
 
         const [infantRows] = await this.db.execute(`
-            SELECT id, reference_id, first_name, middle_name, last_name, suffix,
-                   has_no_middle_name, mothers_maiden_name, father_name,
-                   dob, sex, place_of_birth, current_address, exact_address,
-                   purok, barangay, caregiver_phone, caregiver_relationship,
-                   birth_weight, length_at_birth_cm, immunization_status,
-                   next_due_vaccine, status, created_at
-            FROM infants
-            WHERE caregiver_id = ?
-              AND (id = ? OR reference_id = ? OR reference_id = ? OR reference_id = ?)
+            SELECT i.id, i.reference_id, i.first_name, i.middle_name, i.last_name, i.suffix,
+                   i.has_no_middle_name, i.mothers_maiden_name, i.father_name,
+                   i.dob, i.sex, i.place_of_birth, i.delivery_facility_name, i.birth_setting, i.current_address, i.exact_address,
+                   i.purok, i.barangay, i.caregiver_phone, i.caregiver_relationship,
+                   i.birth_weight, i.length_at_birth_cm, i.immunization_status,
+                   i.next_due_vaccine, i.status, i.created_at,
+                   c.full_name AS caregiver_name, c.mobile_number AS caregiver_mobile, c.relationship AS caregiver_rel
+            FROM infants i
+            LEFT JOIN caregivers c ON i.caregiver_id = c.id
+            WHERE i.caregiver_id = ?
+              AND (i.id = ? OR i.reference_id = ? OR i.reference_id = ? OR i.reference_id = ?)
             LIMIT 1
         `, [caregiverId, reference, reference, hyphenated, spaced]);
 
@@ -392,6 +394,11 @@ class CaregiverOTPService {
             vaccinator_name: row.vaccinator_name || null
         }));
 
+        const resolvedPlaceOfBirth = infant.place_of_birth
+            || infant.delivery_facility_name
+            || (infant.birth_setting === 'FACILITY' ? 'Health Facility' : infant.birth_setting === 'HOME' ? 'Home Delivery' : infant.birth_setting)
+            || null;
+
         return {
             infant: {
                 id: infant.id,
@@ -403,7 +410,7 @@ class CaregiverOTPService {
                 has_no_middle_name: infant.has_no_middle_name,
                 dob: infant.dob,
                 sex: infant.sex,
-                place_of_birth: infant.place_of_birth,
+                place_of_birth: resolvedPlaceOfBirth,
                 address: infant.exact_address || infant.current_address,
                 purok: infant.purok,
                 barangay: infant.barangay,
@@ -413,10 +420,15 @@ class CaregiverOTPService {
                 birth_length: infant.length_at_birth_cm,
                 family_number: null,
                 code_number: infant.reference_id,
-                caregiver_relationship: infant.caregiver_relationship,
+                caregiver_relationship: infant.caregiver_rel || infant.caregiver_relationship,
                 immunization_status: infant.immunization_status,
                 next_due_vaccine: infant.next_due_vaccine,
                 status: infant.status
+            },
+            caregiver: {
+                name: infant.caregiver_name || null,
+                relationship: infant.caregiver_rel || infant.caregiver_relationship || null,
+                phone: infant.caregiver_mobile || infant.caregiver_phone || null
             },
             summary: this.buildSummary(doses, infant),
             upcoming: doses.filter((dose) => ['Due Soon', 'Not Yet Due'].includes(dose.status)).slice(0, 5),

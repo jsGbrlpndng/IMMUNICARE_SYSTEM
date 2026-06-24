@@ -6,6 +6,7 @@ import {
     HeartPulse,
     Home,
     MapPin,
+    Phone,
     Printer,
     Ruler,
     Scale,
@@ -221,6 +222,16 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                                 <InfoField icon={Ruler} label="Birth Length" value={infant.birth_length ? `${infant.birth_length} cm` : null} />
                             </dl>
                         </CardSection>
+
+                        {card.caregiver && (
+                            <CardSection title="Caregiver / Guardian Information">
+                                <dl className="grid gap-x-8 px-4 py-2 sm:grid-cols-2">
+                                    <InfoField icon={UserRound} label="Caregiver Name" value={card.caregiver.name} />
+                                    <InfoField icon={UsersRound} label="Relationship to Child" value={card.caregiver.relationship} />
+                                    <InfoField icon={Phone} label="Contact Number" value={card.caregiver.phone} />
+                                </dl>
+                            </CardSection>
+                        )}
 
                         <section className="caregiver-print-avoid flex flex-wrap items-center gap-2 rounded-lg border border-[#198754] bg-white px-4 py-3">
                             <div className="mr-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-[#0F5132]">
