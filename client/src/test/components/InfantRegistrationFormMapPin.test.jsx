@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import InfantRegistrationForm from '../../pages/clinical/InfantRegistrationForm';
+import InfantRegistrationForm from '../../features/registration/pages/InfantRegistrationForm';
 
 const mockGet = vi.fn();
 
@@ -43,11 +43,11 @@ vi.mock('../../utils/formatFullName', () => ({
   formatFullNameFromObject: (value = {}) => [value.first_name, value.middle_name, value.last_name].filter(Boolean).join(' ')
 }));
 
-vi.mock('../../components/GlobalInfantSearchModal', () => ({
+vi.mock('../../features/registry/components/GlobalInfantSearchModal', () => ({
   default: () => null
 }));
 
-vi.mock('../../pages/clinical/registration/FormComponents', () => ({
+vi.mock('../../features/registration/components/FormComponents', () => ({
   StepIndicator: () => <div data-testid="step-indicator">Step indicator</div>,
   InputWrapper: ({ children, label }) => (
     <label>
@@ -58,7 +58,7 @@ vi.mock('../../pages/clinical/registration/FormComponents', () => ({
   inputClasses: ''
 }));
 
-vi.mock('../../pages/clinical/registration/IdentitySection', () => ({
+vi.mock('../../features/registration/components/IdentitySection', () => ({
   default: function IdentitySectionMock({ formData, handleChange, handleMapClick, handleSelectSuggestion }) {
     return (
       <div>
@@ -96,19 +96,19 @@ vi.mock('../../pages/clinical/registration/IdentitySection', () => ({
   }
 }));
 
-vi.mock('../../pages/clinical/registration/GuardianSection', () => ({
+vi.mock('../../features/registration/components/GuardianSection', () => ({
   default: () => <div>Guardian Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/MaternalBirthSection', () => ({
+vi.mock('../../features/registration/components/MaternalBirthSection', () => ({
   default: () => <div>Clinical Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/ImmunizationSection', () => ({
+vi.mock('../../features/registration/components/ImmunizationSection', () => ({
   default: () => <div>Doses Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/ReviewSection', () => ({
+vi.mock('../../features/registration/components/ReviewSection', () => ({
   default: () => <div>Review Step</div>
 }));
 

@@ -1,9 +1,9 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, Search, User } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import apiClient from '../services/apiClient';
-import { formatFullNameFromObject } from '../utils/formatFullName';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 // Philippine NIP Vaccine List (14 vaccines)
 const PHILIPPINE_NIP_VACCINES = [

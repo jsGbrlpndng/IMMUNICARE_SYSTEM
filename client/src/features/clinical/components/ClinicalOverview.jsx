@@ -1,5 +1,5 @@
 import React from 'react';
-import StatusOverviewPanel from './StatusOverviewPanel';
+import StatusOverviewPanel from '../../../components/StatusOverviewPanel';
 
 const emptyCounts = {
     FULLY_IMMUNIZED: 0,

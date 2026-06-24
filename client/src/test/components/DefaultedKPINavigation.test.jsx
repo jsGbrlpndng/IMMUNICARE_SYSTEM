@@ -2,8 +2,8 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import MidwifeDashboard from '../../pages/clinical/MidwifeDashboard';
-import InfantRegistry from '../../pages/clinical/InfantRegistry';
+import MidwifeDashboard from '../../features/clinical/pages/MidwifeDashboard';
+import InfantRegistry from '../../features/registry/pages/InfantRegistry';
 import apiClient from '../../services/apiClient';
 
 // Mock AuthContext

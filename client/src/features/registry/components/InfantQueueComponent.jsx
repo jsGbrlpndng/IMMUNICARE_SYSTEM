@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Baby, AlertTriangle, Clock, Calendar, Search, Filter, ChevronRight, CheckCircle, ExternalLink } from 'lucide-react';
-import { formatFullNameFromObject } from '../utils/formatFullName';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const InfantQueueComponent = ({ infants, loading, onInfantSelect, onRefresh }) => {
     const navigate = useNavigate();

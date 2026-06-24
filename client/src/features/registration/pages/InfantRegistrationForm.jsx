@@ -1,25 +1,25 @@
 import React from 'react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
 import {
     ClipboardCheck, CheckCircle, Save, Loader2, SaveAll, AlertTriangle, Check, ChevronLeft, ChevronRight, Info
 } from 'lucide-react';
 
 // Sub-components
-import { StepIndicator } from './registration/FormComponents';
-import IdentitySection from './registration/IdentitySection';
-import GuardianSection from './registration/GuardianSection';
-import MaternalBirthSection from './registration/MaternalBirthSection';
-import ImmunizationSection from './registration/ImmunizationSection';
-import ReviewSection from './registration/ReviewSection';
+import { StepIndicator } from '../components/FormComponents';
+import IdentitySection from '../components/IdentitySection';
+import GuardianSection from '../components/GuardianSection';
+import MaternalBirthSection from '../components/MaternalBirthSection';
+import ImmunizationSection from '../components/ImmunizationSection';
+import ReviewSection from '../components/ReviewSection';
 
 // Validation Logic
-import { validateField, isStepValid } from '../../utils/registrationValidation';
-import { getBarangayCenter } from '../../utils/barangayConfig';
-import { getBarangayBoundaryGeoJson, getBarangayNameForPoint, isPointInBarangayBoundary } from '../../utils/barangayBoundaries';
-import { normalizeBarangayKey } from '../../utils/barangayCanonical';
+import { validateField, isStepValid } from '../../../utils/registrationValidation';
+import { getBarangayCenter } from '../../../utils/barangayConfig';
+import { getBarangayBoundaryGeoJson, getBarangayNameForPoint, isPointInBarangayBoundary } from '../../../utils/barangayBoundaries';
+import { normalizeBarangayKey } from '../../../utils/barangayCanonical';
 import {
     SAN_PEDRO_SYSTEM_BARANGAYS,
     getBarangayFromAddress,
@@ -27,11 +27,11 @@ import {
     normalizeAddressResult,
     rankSuggestions,
     reverseGeocodeLatLng
-} from '../../utils/addressGeocoding';
-import { hasValidCoordinate, toDecimalFloat } from './registration/LocationPicker';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
-import { normalizeDisplayText } from '../../utils/textNormalization';
-import { formatExactAddress, formatFullAddress } from '../../utils/addressFormatting';
+} from '../../../utils/addressGeocoding';
+import { hasValidCoordinate, toDecimalFloat } from '../components/LocationPicker';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
+import { normalizeDisplayText } from '../../../utils/textNormalization';
+import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
 
 const initialFormState = {
     first_name: '',

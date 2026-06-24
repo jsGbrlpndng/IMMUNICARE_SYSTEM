@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRightLeft, Calendar, Loader2, MapPin, Search, ShieldCheck, UserRound, X } from 'lucide-react';
-import apiClient from '../services/apiClient';
-import { formatFullNameFromObject } from '../utils/formatFullName';
-import { formatFullAddress } from '../utils/addressFormatting';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
+import { formatFullAddress } from '../../../utils/addressFormatting';
 
 const emptySearch = {
     reference_id: '',

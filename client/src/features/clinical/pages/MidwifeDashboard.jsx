@@ -33,14 +33,14 @@ import {
     Legend
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
 import { MapContainer, TileLayer, Circle, Popup, LayerGroup, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { formatFullName } from '../../utils/formatFullName';
-import { getClinicalStatusMeta } from '../../utils/clinicalStatus';
-import StatusBadge from '../../components/common/StatusBadge';
+import { formatFullName } from '../../../utils/formatFullName';
+import { getClinicalStatusMeta } from '../../../utils/clinicalStatus';
+import StatusBadge from '../../../components/common/StatusBadge';
 
 const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE', 'COMPLETED_PENDING_REVIEW'];
 

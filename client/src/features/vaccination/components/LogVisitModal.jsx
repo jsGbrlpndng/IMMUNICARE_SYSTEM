@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, ClipboardCheck } from 'lucide-react';
-import apiClient from '../services/apiClient';
+import apiClient from '../../../services/apiClient';
 
 const VISIT_OUTCOME_OPTIONS = [
     { value: 'CONTACTED', label: 'Contacted' },

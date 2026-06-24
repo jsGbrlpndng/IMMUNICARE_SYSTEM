@@ -6,9 +6,9 @@ import {
     CheckCircle2,
     Clock
 } from 'lucide-react';
-import { formatDate, getDoseTimingStatus } from '../utils/formatters';
-import StatusBadge from './common/StatusBadge';
-import { normalizeClinicalStatus } from '../utils/clinicalStatus';
+import { formatDate, getDoseTimingStatus } from '../../../utils/formatters';
+import StatusBadge from '../../../components/common/StatusBadge';
+import { normalizeClinicalStatus } from '../../../utils/clinicalStatus';
 
 const prepareScheduleForDisplay = (scheduleData) => {
     // Determine the array to map over. In the new merged API, it's passed directly or as schedule.record

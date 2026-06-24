@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import BatchVaccinationModal from '../../components/BatchVaccinationModal';
+import BatchVaccinationModal from '../../features/vaccination/components/BatchVaccinationModal';
 import apiClient from '../../services/apiClient';
 
 // Mock apiClient

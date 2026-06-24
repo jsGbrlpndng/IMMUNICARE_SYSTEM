@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState } from 'react';
 import { X, AlertTriangle, AlertCircle, CheckCircle } from 'lucide-react';
-import apiClient from '../services/apiClient';
-import { formatFullNameFromObject } from '../utils/formatFullName';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const DeferralModal = ({ infant, vaccine, onSave, onCancel }) => {
     const [formData, setFormData] = useState({

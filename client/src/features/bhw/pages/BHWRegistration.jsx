@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
-import InfantRegistrationForm from '../../../pages/clinical/InfantRegistrationForm';
+import InfantRegistrationForm from '../../registration/pages/InfantRegistrationForm';
 
 /**
  * BHW Registration Page

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import InfantRegistrationForm from '../../pages/clinical/InfantRegistrationForm';
+import InfantRegistrationForm from '../../features/registration/pages/InfantRegistrationForm';
 import { getBarangayCenter } from '../../utils/barangayConfig';
 import apiClient from '../../services/apiClient';
 
@@ -39,12 +39,12 @@ vi.mock('../../utils/formatFullName', () => ({
 }));
 
 // Mock components that are not needed
-vi.mock('../../components/GlobalInfantSearchModal', () => ({
+vi.mock('../../features/registry/components/GlobalInfantSearchModal', () => ({
   default: () => null
 }));
 
-vi.mock('../../pages/clinical/registration/FormComponents', () => {
-  const actual = vi.importActual('../../pages/clinical/registration/FormComponents');
+vi.mock('../../features/registration/components/FormComponents', () => {
+  const actual = vi.importActual('../../features/registration/components/FormComponents');
   return {
     ...actual,
     StepIndicator: () => <div data-testid="step-indicator">Step indicator</div>
@@ -65,7 +65,7 @@ vi.mock('react-leaflet', () => ({
 }));
 
 // Mock IdentitySection to bypass map dependencies
-vi.mock('../../pages/clinical/registration/IdentitySection', () => ({
+vi.mock('../../features/registration/components/IdentitySection', () => ({
   default: function IdentitySectionMock({
     formData,
     handleChange,
@@ -107,19 +107,19 @@ vi.mock('../../pages/clinical/registration/IdentitySection', () => ({
   }
 }));
 
-vi.mock('../../pages/clinical/registration/GuardianSection', () => ({
+vi.mock('../../features/registration/components/GuardianSection', () => ({
   default: () => <div>Guardian Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/MaternalBirthSection', () => ({
+vi.mock('../../features/registration/components/MaternalBirthSection', () => ({
   default: () => <div>Clinical Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/ImmunizationSection', () => ({
+vi.mock('../../features/registration/components/ImmunizationSection', () => ({
   default: () => <div>Doses Step</div>
 }));
 
-vi.mock('../../pages/clinical/registration/ReviewSection', () => ({
+vi.mock('../../features/registration/components/ReviewSection', () => ({
   default: function ReviewSectionMock({ formData, handleChange, overrideReason, setOverrideReason }) {
     return (
       <div>

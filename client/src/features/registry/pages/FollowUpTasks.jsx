@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import apiClient from '../../services/apiClient';
-import RecordVaccinationModal from '../../components/RecordVaccinationModal';
-import DelegationModal from '../../components/DelegationModal';
-import LogVisitModal from '../../components/LogVisitModal';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { useAuth } from '../../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import RecordVaccinationModal from '../../vaccination/components/RecordVaccinationModal';
+import DelegationModal from '../../../components/DelegationModal';
+import LogVisitModal from '../../vaccination/components/LogVisitModal';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import {
     AlertCircle,
     Archive,

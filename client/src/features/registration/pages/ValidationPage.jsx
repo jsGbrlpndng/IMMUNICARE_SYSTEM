@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
     CheckCircle, 
     XCircle, 
@@ -16,9 +16,9 @@ import {
     Activity,
     Info
 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
-import { formatExactAddress, formatFullAddress } from '../../utils/addressFormatting';
+import apiClient from '../../../services/apiClient';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
+import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
 
 const REJECTION_REASONS = [
     'Confirmed Duplicate',

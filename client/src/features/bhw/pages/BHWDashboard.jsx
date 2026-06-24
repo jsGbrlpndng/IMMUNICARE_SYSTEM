@@ -13,7 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../../../services/apiClient';
 import { useAuth } from '../../../contexts/AuthContext';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
-import LogVisitModal from '../../../components/LogVisitModal';
+import LogVisitModal from '../../vaccination/components/LogVisitModal';
 
 const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
 

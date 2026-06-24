@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, expect, test, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
-import ValidationPage from '../../pages/clinical/ValidationPage';
+import ValidationPage from '../../features/registration/pages/ValidationPage';
 import apiClient from '../../services/apiClient';
 
 vi.mock('../../contexts/AuthContext', () => ({

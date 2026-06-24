@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import StatusBadge from '../../components/common/StatusBadge';
-import InfantRegistry from '../../pages/clinical/InfantRegistry';
+import InfantRegistry from '../../features/registry/pages/InfantRegistry';
 import { getClinicalStatusMeta, CLINICAL_STATUS } from '../../utils/clinicalStatus';
 import apiClient from '../../services/apiClient';
 

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -20,11 +20,11 @@ import {
     Clipboard,
     History
 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
-import RecordVaccinationModal from '../../components/RecordVaccinationModal';
-import DoseCorrectionModal from '../../components/DoseCorrectionModal';
-import { formatFullAddress } from '../../utils/addressFormatting';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import RecordVaccinationModal from '../../vaccination/components/RecordVaccinationModal';
+import DoseCorrectionModal from '../../vaccination/components/DoseCorrectionModal';
+import { formatFullAddress } from '../../../utils/addressFormatting';
 
 /**
  * InfantRecord - High-density clinical patient profile.

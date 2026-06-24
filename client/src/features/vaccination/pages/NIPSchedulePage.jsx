@@ -5,11 +5,11 @@ import {
     Calendar, RefreshCw, TriangleAlert, Clock, CircleCheck,
     Search, X
 } from 'lucide-react';
-import apiClient from '../../services/apiClient';
-import RecordVaccinationModal from '../../components/RecordVaccinationModal';
-import { useAuth } from '../../contexts/AuthContext';
-import { formatDate } from '../../utils/formatters';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import apiClient from '../../../services/apiClient';
+import RecordVaccinationModal from '../components/RecordVaccinationModal';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formatDate } from '../../../utils/formatters';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 /* Urgency config */
 const URGENCY = {
