@@ -1,4 +1,4 @@
-const VaccinationService = require('../services/VaccinationService');
+const VaccinationService = require('../modules/vaccination/VaccinationService');
 
 const primarySeriesRows = (finalMcvDate) => [
     ['BCG', 'BCG', 1, '2025-01-01'],

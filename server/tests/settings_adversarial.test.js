@@ -17,13 +17,13 @@
 
 const request = require('supertest');
 const db = require('../db');
-const SecurityUtils = require('../utils/SecurityUtils');
+const SecurityUtils = require('../shared/utils/SecurityUtils');
 
 // Mock Express app for testing
 const express = require('express');
 const app = express();
 app.use(express.json());
-app.use('/api/admin/settings', require('../routes/settings'));
+app.use('/api/admin/settings', require('../modules/settings/settings.routes'));
 
 describe('ADVERSARIAL VALIDATION - System Settings', () => {
     let adminToken;

@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
-const AuthorizationController = require('../services/AuthorizationController');
-const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
+const AuthorizationController = require('../modules/audit/AuthorizationController');
+const EnhancedNIPScheduleEngine = require('../modules/vaccination/EnhancedNIPScheduleEngine');
 const fc = require('fast-check');
 const crypto = require('crypto');
 require('dotenv').config();

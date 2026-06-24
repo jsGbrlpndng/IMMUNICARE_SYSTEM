@@ -14,7 +14,7 @@ jest.mock('../db', () => ({
 
 const buildApp = () => {
     jest.resetModules();
-    const router = require('../routes/geo');
+    const router = require('../modules/geospatial/geo.routes');
     const app = express();
     app.use('/api/geo', router);
     return app;

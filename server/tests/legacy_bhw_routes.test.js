@@ -23,7 +23,7 @@ describe('Legacy BHW router write decommissioning', () => {
         });
         jest.doMock('../db', () => mockDb);
 
-        const router = require('../routes/bhw');
+        const router = require('../modules/bhw/bhw.routes');
         app = express();
         app.use(express.json());
         app.use('/api/bhw', router);

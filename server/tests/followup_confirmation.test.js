@@ -28,9 +28,9 @@ describe('Follow-Up Outcome Confirmation Workflow', () => {
             completeTask: jest.fn()
         };
 
-        jest.doMock('../services/FollowUpTaskService', () => jest.fn().mockImplementation(() => mockService));
+        jest.doMock('../modules/follow-ups/FollowUpTaskService', () => jest.fn().mockImplementation(() => mockService));
 
-        const router = require('../routes/followups');
+        const router = require('../modules/follow-ups/followups.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/follow-ups', router);

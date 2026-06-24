@@ -1,5 +1,5 @@
-const NotificationService = require('../services/NotificationService');
-const AuditLogService = require('../services/AuditLogService');
+const NotificationService = require('../modules/notifications/NotificationService');
+const AuditLogService = require('../modules/audit/AuditLogService');
 
 describe('NotificationService transfer handoff notices', () => {
     let auditSpy;

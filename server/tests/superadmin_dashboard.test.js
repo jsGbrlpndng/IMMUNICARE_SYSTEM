@@ -73,7 +73,7 @@ describe('Super Admin dashboard metrics', () => {
             next();
         });
         jest.doMock('../db', () => mockDb);
-        jest.doMock('../services/M1ReportService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/reports/M1ReportService', () => jest.fn().mockImplementation(() => ({
             getCoverageDashboardForUser: jest.fn().mockResolvedValue({
                 kpis: {
                     penta: {
@@ -92,16 +92,16 @@ describe('Super Admin dashboard metrics', () => {
             getTargetConfiguration: jest.fn(),
             saveTargetConfiguration: jest.fn()
         })));
-        jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({
             getSpatialTriage: mockGetSpatialTriage
         })));
-        jest.doMock('../services/AuditLogService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/audit/AuditLogService', () => jest.fn().mockImplementation(() => ({
             getDashboardSummary: jest.fn().mockResolvedValue({
                 total_events: 2,
                 recent_events: [{ id: 'audit-1', action: 'LOGIN' }]
             })
         })));
-        jest.doMock('../services/SpatialDSSService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/geospatial/SpatialDSSService', () => jest.fn().mockImplementation(() => ({
             getPerformanceGap: jest.fn().mockResolvedValue({
                 rows: [
                     { barangay: 'San Vicente', eligible_population_0_12_months: 120, actual_population: 118 },
@@ -110,12 +110,12 @@ describe('Super Admin dashboard metrics', () => {
                 summary: {}
             })
         })));
-        jest.doMock('../services/UserProfileService', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../services/UserIdentityService', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../utils/auditLogger', () => ({ performAuditLog: jest.fn() }));
-        jest.doMock('../utils/auditLedger', () => ({ safeRecordAuditEvent: jest.fn() }));
+        jest.doMock('../modules/users/UserProfileService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/auth/UserIdentityService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../shared/utils/auditLogger', () => ({ performAuditLog: jest.fn() }));
+        jest.doMock('../shared/utils/auditLedger', () => ({ safeRecordAuditEvent: jest.fn() }));
 
-        const router = require('../routes/admin');
+        const router = require('../modules/users/admin.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/admin', router);

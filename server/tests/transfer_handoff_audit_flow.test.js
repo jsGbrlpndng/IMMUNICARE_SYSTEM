@@ -1,5 +1,5 @@
-const AuditLogService = require('../services/AuditLogService');
-const InfantRegistrationService = require('../services/InfantRegistrationService');
+const AuditLogService = require('../modules/audit/AuditLogService');
+const InfantRegistrationService = require('../modules/infants/InfantRegistrationService');
 
 const validPayload = () => ({
     first_name: 'Maria',

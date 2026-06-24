@@ -49,16 +49,16 @@ describe('BHW backend RBAC enforcement', () => {
 
         installClinicalAuth();
         jest.doMock('../db', () => mockDb);
-        jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/VaccinationService', () => jest.fn().mockImplementation(() => ({
             recordVaccination: mockRecordVaccination,
             correctVaccination: mockCorrectVaccination,
             validateDose: jest.fn()
         })));
-        jest.doMock('../services/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/audit/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
             logVaccination: mockLogVaccination
         })));
 
-        const router = require('../routes/vaccinations');
+        const router = require('../modules/vaccination/vaccinations.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/vaccinations', router);
@@ -71,14 +71,14 @@ describe('BHW backend RBAC enforcement', () => {
         jest.doMock('../db', () => ({
             query: jest.fn()
         }));
-        jest.doMock('../services/EnhancedNIPScheduleEngine', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/EnhancedNIPScheduleEngine', () => jest.fn().mockImplementation(() => ({
             getApprovedInfantsWithSchedule: jest.fn()
         })));
-        jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({
             getSpatialTriage: jest.fn()
         })));
 
-        const router = require('../routes/dashboard');
+        const router = require('../modules/dashboard/dashboard.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/dashboard', router);
@@ -92,15 +92,15 @@ describe('BHW backend RBAC enforcement', () => {
             execute: jest.fn(),
             query: jest.fn()
         }));
-        jest.doMock('../services/EnhancedNIPScheduleEngine', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/EnhancedNIPScheduleEngine', () => jest.fn().mockImplementation(() => ({
             getApprovedInfantsWithSchedule: jest.fn()
         })));
-        jest.doMock('../services/AuthorizationController', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../services/NIPScheduleService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/audit/AuthorizationController', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/vaccination/NIPScheduleService', () => jest.fn().mockImplementation(() => ({
             getFieldKitRequisition: jest.fn().mockResolvedValue({ success: true, vaccines: [] })
         })));
 
-        const router = require('../routes/schedule');
+        const router = require('../modules/vaccination/schedule.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/schedule', router);
@@ -123,7 +123,7 @@ describe('BHW backend RBAC enforcement', () => {
             success: true,
             infant_id: 'infant-123'
         });
-        jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({
             duplicateService: { findPotentialDuplicates: jest.fn() },
             getRecentlyApproved: jest.fn(),
             getInfantsRegistry: jest.fn(),
@@ -137,14 +137,14 @@ describe('BHW backend RBAC enforcement', () => {
             getVaccinationRecords: jest.fn(),
             updateInfant: jest.fn()
         })));
-        jest.doMock('../services/NIPScheduleService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/NIPScheduleService', () => jest.fn().mockImplementation(() => ({
             getSchedule: jest.fn()
         })));
-        jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/VaccinationService', () => jest.fn().mockImplementation(() => ({
             recordVaccination: jest.fn()
         })));
 
-        const router = require('../routes/infants');
+        const router = require('../modules/infants/infants.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/infants', router);
@@ -259,17 +259,17 @@ describe('BHW backend RBAC enforcement', () => {
         mockLogVaccination = jest.fn().mockResolvedValue();
         installClinicalAuth();
         jest.doMock('../db', () => mockDb);
-        jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/vaccination/VaccinationService', () => jest.fn().mockImplementation(() => ({
             recordVaccination: mockRecordVaccination,
             correctVaccination: mockCorrectVaccination,
             validateDose: mockValidateDose
         })));
-        jest.doMock('../services/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/audit/NIPAuditLogger', () => jest.fn().mockImplementation(() => ({
             logVaccination: mockLogVaccination,
             logValidation: jest.fn().mockResolvedValue()
         })));
 
-        const router = require('../routes/vaccinations');
+        const router = require('../modules/vaccination/vaccinations.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/vaccinations', router);

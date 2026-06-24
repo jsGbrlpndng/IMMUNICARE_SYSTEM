@@ -1,5 +1,6 @@
-const SecurityUtils = require('../utils/SecurityUtils');
-const { ROLES } = require('../constants/domain');
+const SecurityUtils = require('../shared/utils/SecurityUtils');
+const { ROLES } = require('../config/constants/domain');
+
 
 const caregiverAuth = (req, res, next) => {
     const token = req.headers['x-auth-token'];

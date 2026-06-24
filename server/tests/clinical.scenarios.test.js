@@ -1,5 +1,5 @@
-const EnhancedNIPScheduleEngine = require('../services/EnhancedNIPScheduleEngine');
-const AuthorizationController = require('../services/AuthorizationController');
+const EnhancedNIPScheduleEngine = require('../modules/vaccination/EnhancedNIPScheduleEngine');
+const AuthorizationController = require('../modules/audit/AuthorizationController');
 
 describe('Phase 4: Clinical Scenarios Validation', () => {
     describe('End-to-End Clinical Workflow', () => {

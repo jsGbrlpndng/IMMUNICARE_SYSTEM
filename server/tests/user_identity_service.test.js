@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 
-const UserIdentityService = require('../services/UserIdentityService');
+const UserIdentityService = require('../modules/auth/UserIdentityService');
 
 const createInMemoryDb = () => {
     const users = [];
@@ -96,18 +96,18 @@ describe('Admin user creation route', () => {
             next();
         });
         jest.doMock('../db', () => mockDb);
-        jest.doMock('../utils/auditLogger', () => ({ performAuditLog }));
-        jest.doMock('../utils/auditLedger', () => ({ safeRecordAuditEvent }));
-        jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../services/M1ReportService', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../services/AuditLogService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../shared/utils/auditLogger', () => ({ performAuditLog }));
+        jest.doMock('../shared/utils/auditLedger', () => ({ safeRecordAuditEvent }));
+        jest.doMock('../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/reports/M1ReportService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/audit/AuditLogService', () => jest.fn().mockImplementation(() => ({
             getDashboardSummary: jest.fn()
         })));
-        jest.doMock('../services/UserProfileService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/users/UserProfileService', () => jest.fn().mockImplementation(() => ({
             getById: jest.fn()
         })));
 
-        const router = require('../routes/admin');
+        const router = require('../modules/users/admin.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/admin', router);

@@ -1,6 +1,6 @@
 const db = require('../db');
-const SecurityUtils = require('../utils/SecurityUtils');
-const { ROLES, STAFF_ROLES } = require('../constants/domain');
+const SecurityUtils = require('../shared/utils/SecurityUtils');
+const { ROLES, STAFF_ROLES } = require('../config/constants/domain');
 
 const PUBLIC_BARANGAY_VALUES = new Set(['all', 'municipal overview (all barangays)', '']);
 

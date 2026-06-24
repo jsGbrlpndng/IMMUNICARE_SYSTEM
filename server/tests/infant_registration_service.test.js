@@ -1,10 +1,10 @@
 jest.mock('uuid', () => ({ v4: () => 'mock-registration-id' }));
-jest.mock('../utils/auditLedger', () => ({
+jest.mock('../shared/utils/auditLedger', () => ({
     safeRecordAuditEvent: jest.fn().mockResolvedValue(null)
 }));
 
-const InfantRegistrationService = require('../services/InfantRegistrationService');
-const { safeRecordAuditEvent } = require('../utils/auditLedger');
+const InfantRegistrationService = require('../modules/infants/InfantRegistrationService');
+const { safeRecordAuditEvent } = require('../shared/utils/auditLedger');
 
 describe('InfantRegistrationService strict registration validation', () => {
     let db;

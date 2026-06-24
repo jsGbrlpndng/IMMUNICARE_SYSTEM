@@ -5,8 +5,8 @@ const {
   buildVaccinationReportFields,
   isWithin24Hours,
   normalizeReportClassification
-} = require('../utils/vaccinationReporting');
-const VaccinationService = require('../services/VaccinationService');
+} = require('../shared/utils/vaccinationReporting');
+const VaccinationService = require('../modules/vaccination/VaccinationService');
 
 describe('vaccination report field derivation', () => {
   test('derives birth-dose buckets from the 24-hour rule', () => {

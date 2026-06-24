@@ -1,5 +1,5 @@
-const DefaulterSweepService = require('../services/DefaulterSweepService');
-const { SCHEDULE_STATUS, IMMUNIZATION_STATUS } = require('../constants/domain');
+const DefaulterSweepService = require('../modules/follow-ups/DefaulterSweepService');
+const { SCHEDULE_STATUS, IMMUNIZATION_STATUS } = require('../config/constants/domain');
 
 describe('DefaulterSweepService', () => {
     let connection;

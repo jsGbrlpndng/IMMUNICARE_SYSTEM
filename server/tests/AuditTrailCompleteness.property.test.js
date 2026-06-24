@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
-const AuditTrailManager = require('../services/AuditTrailManager');
-const AuthorizationController = require('../services/AuthorizationController');
+const AuditTrailManager = require('../modules/audit/AuditTrailManager');
+const AuthorizationController = require('../modules/audit/AuthorizationController');
 const fc = require('fast-check');
 const crypto = require('crypto');
 require('dotenv').config();

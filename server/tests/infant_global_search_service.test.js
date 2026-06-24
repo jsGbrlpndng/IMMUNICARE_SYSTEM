@@ -1,6 +1,6 @@
 'use strict';
 
-const InfantService = require('../services/InfantService');
+const InfantService = require('../modules/infants/InfantService');
 
 const buildDb = (rows = []) => ({
     execute: jest.fn(async () => [rows])

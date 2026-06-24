@@ -1,4 +1,5 @@
-const { ROLES } = require('../constants/domain');
+const { ROLES } = require('../config/constants/domain');
+
 
 const normalizeAllowedRoles = (allowedRoles = []) => {
     if (!Array.isArray(allowedRoles) || allowedRoles.length === 0) {

@@ -1,4 +1,4 @@
-const VaccinationService = require('../services/VaccinationService');
+const VaccinationService = require('../modules/vaccination/VaccinationService');
 
 jest.mock('uuid', () => ({ v4: () => 'mock-vaccination-id' }));
 

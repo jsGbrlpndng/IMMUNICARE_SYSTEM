@@ -26,7 +26,7 @@ describe('Vaccine Drill-Down Endpoint', () => {
             next();
         });
 
-        const router = require('../routes/reports');
+        const router = require('../modules/reports/reports.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/reports', router);

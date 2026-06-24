@@ -41,14 +41,14 @@ describe('Analytics routes dashboard stats', () => {
             req.user = { id: 'mw-1', role: 'Midwife', assigned_barangay: 'Langgam' };
             next();
         });
-        jest.doMock('../services/EnhancedNIPScheduleEngine', () => {
+        jest.doMock('../modules/vaccination/EnhancedNIPScheduleEngine', () => {
             return jest.fn().mockImplementation(() => ({
                 calculateStatistics: mockCalculateStatistics,
                 getApprovedInfantsWithSchedule: mockGetApprovedInfantsWithSchedule
             }));
         });
 
-        const router = require('../routes/analytics');
+        const router = require('../modules/analytics/analytics.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/analytics', router);

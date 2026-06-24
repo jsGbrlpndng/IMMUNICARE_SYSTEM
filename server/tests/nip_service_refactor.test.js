@@ -1,6 +1,6 @@
 jest.mock('uuid', () => ({ v4: () => 'mock-uuid' }));
 
-const NIPScheduleService = require('../services/NIPScheduleService');
+const NIPScheduleService = require('../modules/vaccination/NIPScheduleService');
 
 describe('NIPScheduleService clinical rule alignment', () => {
     let mockDb;

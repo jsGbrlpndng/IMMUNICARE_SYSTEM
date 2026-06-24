@@ -1,6 +1,6 @@
-const DeploymentReportService = require('../services/DeploymentReportService');
-const AuditLogService = require('../services/AuditLogService');
-const { ROLES } = require('../constants/domain');
+const DeploymentReportService = require('../modules/deployments/DeploymentReportService');
+const AuditLogService = require('../modules/audit/AuditLogService');
+const { ROLES } = require('../config/constants/domain');
 
 describe('DeploymentReportService', () => {
     let auditSpy;

@@ -4,9 +4,9 @@ jest.mock('../db', () => ({
 
 const express = require('express');
 const request = require('supertest');
-const SecurityUtils = require('../utils/SecurityUtils');
+const SecurityUtils = require('../shared/utils/SecurityUtils');
 const db = require('../db');
-const authRouter = require('../routes/auth');
+const authRouter = require('../modules/auth/auth.routes');
 
 describe('Auth password change ownership boundary', () => {
     let app;

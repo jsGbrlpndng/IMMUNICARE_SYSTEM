@@ -1,4 +1,5 @@
-const { ROLES } = require('../constants/domain');
+const { ROLES } = require('../config/constants/domain');
+
 const { requireAuthenticatedUser, enforceBarangayScope } = require('./authContext');
 
 const bhwAuth = async (req, res, next) => {

@@ -1,6 +1,6 @@
 const db = require('../db');
-const DBSCANService = require('../services/DBSCANService');
-const InfantService = require('../services/InfantService');
+const DBSCANService = require('../modules/geospatial/DBSCANService');
+const InfantService = require('../modules/infants/InfantService');
 
 describe('DBSCAN Spatial Analytics & Boundary Integrity', () => {
     const caregiverId = 'c0000000-0000-0000-0000-000000000000';

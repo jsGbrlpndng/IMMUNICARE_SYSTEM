@@ -1,4 +1,4 @@
-const AuditTrailManager = require('../services/AuditTrailManager');
+const AuditTrailManager = require('../modules/audit/AuditTrailManager');
 const crypto = require('crypto');
 
 describe('AuditTrailManager', () => {

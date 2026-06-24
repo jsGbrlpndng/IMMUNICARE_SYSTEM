@@ -1,6 +1,6 @@
 'use strict';
 
-const AuditLogService = require('../services/AuditLogService');
+const AuditLogService = require('../modules/audit/AuditLogService');
 
 const buildMockDb = (handler) => ({
     execute: jest.fn(handler)

@@ -1,5 +1,5 @@
 const mysql = require('mysql2/promise');
-const AuthorizationController = require('../services/AuthorizationController');
+const AuthorizationController = require('../modules/audit/AuthorizationController');
 const crypto = require('crypto');
 require('dotenv').config();
 

@@ -13,14 +13,14 @@ describe('Infant archive workflow validation', () => {
             next();
         });
         jest.doMock('../db', () => mockDb);
-        jest.doMock('../services/InfantService', () => jest.fn().mockImplementation(() => ({
+        jest.doMock('../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({
             updateInfant: jest.fn(),
             duplicateService: { findPotentialDuplicates: jest.fn() }
         })));
-        jest.doMock('../services/NIPScheduleService', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../services/VaccinationService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/vaccination/NIPScheduleService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../modules/vaccination/VaccinationService', () => jest.fn().mockImplementation(() => ({})));
 
-        const router = require('../routes/infants');
+        const router = require('../modules/infants/infants.routes');
         const app = express();
         app.use(express.json());
         app.use('/api/infants', router);

@@ -2,7 +2,7 @@ const axios = require('axios');
 const mysql = require('mysql2/promise');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const SecurityUtils = require('../utils/SecurityUtils');
+const SecurityUtils = require('../shared/utils/SecurityUtils');
 const fs = require('fs');
 
 const API_URL = 'http://localhost:3000/api/admin/audit';

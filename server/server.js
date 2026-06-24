@@ -4,31 +4,31 @@ const cors = require('cors');
 const helmet = require('helmet');
 require('dotenv').config();
 
-const infantsRouter = require('./routes/infants');
-const logsRouter = require('./routes/logs');
-const analyticsRouter = require('./routes/analytics');
-const smsRouter = require('./routes/sms');
-const reportsRouter = require('./routes/reports');
-const authRouter = require('./routes/auth');
-const scheduleRouter = require('./routes/schedule');
-const vaccinationsRouter = require('./routes/vaccinations');
-const adminRouter = require('./routes/admin');
-const bhwRouter = require('./routes/bhw');
-const adminAuditRouter = require('./routes/audit');
-const auditLogsRouter = require('./routes/auditLogs');
-const settingsRouter = require('./routes/settings');
-const heatmapRouter = require('./routes/heatmap');
-const dashboardRouter = require('./routes/dashboard');
-const validationRouter = require('./routes/validation');
-const registrationsRouter = require('./routes/registrations');
-const caregiverRouter = require('./routes/caregiver');
-const followupsRouter = require('./routes/followups');
-const geoRouter = require('./routes/geo');
-const spatialRouter = require('./routes/spatial');
-const spatialDssRouter = require('./routes/spatialDss');
-const notificationsRouter = require('./routes/notifications');
-const deploymentReportsRouter = require('./routes/deploymentReports');
-const { adminSpatialDeploymentRouter, adminDeploymentRouter, bhwDeploymentRouter, clinicalDeploymentRouter } = require('./routes/deployments');
+const infantsRouter = require('./modules/infants/infants.routes');
+const logsRouter = require('./modules/logs/logs.routes');
+const analyticsRouter = require('./modules/analytics/analytics.routes');
+const smsRouter = require('./modules/sms/sms.routes');
+const reportsRouter = require('./modules/reports/reports.routes');
+const authRouter = require('./modules/auth/auth.routes');
+const scheduleRouter = require('./modules/vaccination/schedule.routes');
+const vaccinationsRouter = require('./modules/vaccination/vaccinations.routes');
+const adminRouter = require('./modules/users/admin.routes');
+const bhwRouter = require('./modules/bhw/bhw.routes');
+const adminAuditRouter = require('./modules/audit/audit.routes');
+const auditLogsRouter = require('./modules/audit/auditLogs.routes');
+const settingsRouter = require('./modules/settings/settings.routes');
+const heatmapRouter = require('./modules/geospatial/heatmap.routes');
+const dashboardRouter = require('./modules/dashboard/dashboard.routes');
+const validationRouter = require('./modules/registration/validation.routes');
+const registrationsRouter = require('./modules/registration/registrations.routes');
+const caregiverRouter = require('./modules/caregiver/caregiver.routes');
+const followupsRouter = require('./modules/follow-ups/followups.routes');
+const geoRouter = require('./modules/geospatial/geo.routes');
+const spatialRouter = require('./modules/geospatial/spatial.routes');
+const spatialDssRouter = require('./modules/geospatial/spatialDss.routes');
+const notificationsRouter = require('./modules/notifications/notifications.routes');
+const deploymentReportsRouter = require('./modules/deployments/deploymentReports.routes');
+const { adminSpatialDeploymentRouter, adminDeploymentRouter, bhwDeploymentRouter, clinicalDeploymentRouter } = require('./modules/deployments/deployments.routes');
 const clinicalAuth = require('./middleware/clinicalAuth');
 
 const app = express();
@@ -175,8 +175,8 @@ app.use((req, res) => {
 
 // Start Server with Integrity Sentinel
 const db = require('./db');
-const IntegritySentinel = require('./services/IntegritySentinel');
-const DefaulterSweepService = require('./services/DefaulterSweepService');
+const IntegritySentinel = require('./shared/services/IntegritySentinel');
+const DefaulterSweepService = require('./modules/follow-ups/DefaulterSweepService');
 
 const sentinel = new IntegritySentinel(db);
 const defaulterSweepService = new DefaulterSweepService(db);

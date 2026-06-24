@@ -1,6 +1,6 @@
 'use strict';
 
-const M1ReportService = require('../services/M1ReportService');
+const M1ReportService = require('../modules/reports/M1ReportService');
 
 const buildMockDb = (handler) => ({
     execute: jest.fn(async (sql, params) => {

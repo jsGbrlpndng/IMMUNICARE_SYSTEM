@@ -28,9 +28,9 @@ describe('Validation workflow RBAC and reason enforcement', () => {
             checkDuplicates: jest.fn().mockResolvedValue({ success: true })
         };
 
-        jest.doMock('../services/InfantRegistrationService', () => jest.fn().mockImplementation(() => mockService));
+        jest.doMock('../modules/infants/InfantRegistrationService', () => jest.fn().mockImplementation(() => mockService));
 
-        const router = require('../routes/validation');
+        const router = require('../modules/registration/validation.routes');
         const app = express();
         app.use(express.json());
         app.use((req, res, next) => {
