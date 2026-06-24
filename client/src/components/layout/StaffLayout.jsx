@@ -2,9 +2,9 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart2, CalendarDays, ClipboardList, Map as MapIcon, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
-import SidebarNav from '../components/SidebarNav';
-import NotificationBell from '../components/NotificationBell';
-import { useAuth } from '../contexts/AuthContext';
+import SidebarNav from './SidebarNav';
+import NotificationBell from '../NotificationBell';
+import { useAuth } from '../../contexts/AuthContext';
 
 const clinicalNavigation = [
     {

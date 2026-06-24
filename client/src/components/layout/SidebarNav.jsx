@@ -9,7 +9,7 @@ import {
     ChevronDown,
     Activity,
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const T = {
     bg: '#F9FBFC',

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Settings, Target, Users } from 'lucide-react';
-import SidebarNav from '../components/SidebarNav';
-import { useBarangayFilter } from '../contexts/BarangayFilterContext';
-import { RHU2_BARANGAYS } from '../components/reports/reportConfig';
+import SidebarNav from './SidebarNav';
+import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
+import { RHU2_BARANGAYS } from '../reports/reportConfig';
 
 const superAdminNavigation = [
     {
