@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import DigitalImmunizationCard from '../../components/caregiver/DigitalImmunizationCard';
-import caregiverApi from '../../services/caregiverApi';
+import DigitalImmunizationCard from '../components/DigitalImmunizationCard';
+import caregiverApi from '../../../services/caregiverApi';
 
 const CaregiverCard = ({ caregiverSession }) => {
     const { id } = useParams();

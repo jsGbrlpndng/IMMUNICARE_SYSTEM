@@ -1,7 +1,7 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
     Lock,
     ArrowLeft,

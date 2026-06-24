@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Activity, ArrowLeft, ShieldCheck } from 'lucide-react';
-import CaregiverOtpForm from '../../components/caregiver/CaregiverOtpForm';
-import caregiverApi from '../../services/caregiverApi';
+import CaregiverOtpForm from '../components/CaregiverOtpForm';
+import caregiverApi from '../../../services/caregiverApi';
 
 const CaregiverLogin = () => {
     const navigate = useNavigate();

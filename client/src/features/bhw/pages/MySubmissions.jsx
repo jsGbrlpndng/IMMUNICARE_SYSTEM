@@ -10,9 +10,9 @@ import {
     ChevronRight
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const STATUS_FILTERS = ['All', 'Draft', 'Pending', 'Approved', 'Needs Correction'];
 

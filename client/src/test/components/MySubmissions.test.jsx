@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import MySubmissions from '../../pages/bhw/MySubmissions';
+import MySubmissions from '../../features/bhw/pages/MySubmissions';
 import apiClient from '../../services/apiClient';
 
 // Mock AuthContext

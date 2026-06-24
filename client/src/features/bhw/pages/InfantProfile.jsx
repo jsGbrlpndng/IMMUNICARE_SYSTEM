@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 /**
  * Infant Profile Page
  * 
@@ -8,8 +8,8 @@
  */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import apiClient from '../../services/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
+import apiClient from '../../../services/apiClient';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
     Calendar,
     User,
@@ -20,9 +20,9 @@ import {
     Syringe,
     X
 } from 'lucide-react';
-import NipScheduleTable from '../../components/NipScheduleTable';
-import { formatDate, formatAge } from '../../utils/formatters';
-import { formatFullAddress } from '../../utils/addressFormatting';
+import NipScheduleTable from '../../../components/NipScheduleTable';
+import { formatDate, formatAge } from '../../../utils/formatters';
+import { formatFullAddress } from '../../../utils/addressFormatting';
 
 const InfantProfile = () => {
     const { id } = useParams();

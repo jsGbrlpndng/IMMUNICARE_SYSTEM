@@ -14,7 +14,7 @@ import {
     UsersRound
 } from 'lucide-react';
 import VaccineStatusBadge from './VaccineStatusBadge';
-import { formatFullNameFromObject } from '../../utils/formatFullName';
+import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
 const CARD_GREEN = '#0F5132';
 const PRIMARY_GREEN = '#198754';
