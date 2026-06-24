@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
-const db = require('../db');
-const UserIdentityService = require('../services/UserIdentityService');
+const db = require('../../db');
+const UserIdentityService = require('../../modules/auth/UserIdentityService');
 
 const userIdentityService = new UserIdentityService(db);
 

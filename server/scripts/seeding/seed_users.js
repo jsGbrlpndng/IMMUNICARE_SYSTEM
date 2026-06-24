@@ -1,8 +1,8 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const path = require('path');
-const UserIdentityService = require('../services/UserIdentityService');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+const UserIdentityService = require('../../modules/auth/UserIdentityService');
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const pool = new Pool({
     host: process.env.PG_HOST || 'localhost',

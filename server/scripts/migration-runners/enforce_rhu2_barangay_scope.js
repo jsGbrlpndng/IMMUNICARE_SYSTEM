@@ -1,7 +1,7 @@
 'use strict';
 
-const db = require('../db');
-const { RHU2_BARANGAYS } = require('../constants/rhu2Barangays');
+const db = require('../../db');
+const { RHU2_BARANGAYS } = require('../../config/constants/rhu2Barangays');
 
 const run = async () => {
     const connection = await db.getConnection();

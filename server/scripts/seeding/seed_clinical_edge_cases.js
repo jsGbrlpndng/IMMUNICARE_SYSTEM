@@ -1,10 +1,10 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const db = require('../db');
-const NIPScheduleService = require('../services/NIPScheduleService');
-const VaccinationService = require('../services/VaccinationService');
-const { buildVaccinationReportFields } = require('../utils/vaccinationReporting');
+const db = require('../../db');
+const NIPScheduleService = require('../../modules/vaccination/NIPScheduleService');
+const VaccinationService = require('../../modules/vaccination/VaccinationService');
+const { buildVaccinationReportFields } = require('../../modules/vaccination/vaccinationReporting');
 
 const BARANGAY = 'LARAM';
 const QA_PREFIX = 'QA-EDGE';

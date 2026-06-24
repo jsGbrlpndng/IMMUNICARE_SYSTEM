@@ -1,7 +1,7 @@
 'use strict';
 
-const db = require('../db');
-const { buildVaccinationReportFields } = require('../utils/vaccinationReporting');
+const db = require('../../db');
+const { buildVaccinationReportFields } = require('../../modules/vaccination/vaccinationReporting');
 
 async function backfillVaccinationReportingFields() {
     const connection = await db.getConnection();

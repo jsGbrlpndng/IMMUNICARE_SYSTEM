@@ -7,9 +7,9 @@
 
 'use strict';
 
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const db = require('../db');
-const M1ReportService = require('../services/M1ReportService');
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+const db = require('../../db');
+const M1ReportService = require('../../modules/reports/M1ReportService');
 
 // Normalize map for SQL comparison
 const LEGACY_CODE_MAP = {

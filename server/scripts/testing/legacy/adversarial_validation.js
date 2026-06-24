@@ -1,8 +1,8 @@
 const axios = require('axios');
 const mysql = require('mysql2/promise');
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const SecurityUtils = require('../utils/SecurityUtils');
+require('dotenv').config({ path: path.join(__dirname, '../../../../.env') });
+const SecurityUtils = require('../../../../modules/auth/SecurityUtils');
 
 const API_URL = 'http://localhost:3000/api';
 
