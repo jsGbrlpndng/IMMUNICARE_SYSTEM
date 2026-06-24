@@ -181,7 +181,8 @@ const DefaulterSweepService = require('./modules/follow-ups/DefaulterSweepServic
 const sentinel = new IntegritySentinel(db);
 const defaulterSweepService = new DefaulterSweepService(db);
 
-const { applyHardening } = require('./migrations/apply_governance_hardening');
+const { applyHardening } = require('./database/migrations/apply_governance_hardening');
+
 
 // Global Error Handler - ensures all errors are returned as JSON
 app.use((err, req, res, next) => {

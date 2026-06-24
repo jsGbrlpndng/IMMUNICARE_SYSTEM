@@ -1,4 +1,5 @@
-const db = require('../db');
+const db = require('../../db');
+
 
 async function enforceUniqueFullNames(options = {}) {
     const strict = options.strict !== false;

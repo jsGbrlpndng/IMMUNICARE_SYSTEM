@@ -1,7 +1,7 @@
 const path = require('path');
-const db = require('../db');
+const db = require('../../db');
 const { enforceUniqueFullNames } = require('./20260602_enforce_unique_full_names');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 async function applyHardening() {
     console.log('--- Applying PostgreSQL Governance Hardening ---');
