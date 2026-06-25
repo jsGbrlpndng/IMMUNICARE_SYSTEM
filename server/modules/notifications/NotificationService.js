@@ -251,18 +251,18 @@ class NotificationService {
     }
 
     async createFieldVisitLoggedNotification({ log, bhwUser }) {
-        const [midwives] = await this.db.execute(`
+        const [recipients] = await this.db.execute(`
             SELECT id, role, assigned_barangay
             FROM users
-            WHERE role = ?
+            WHERE role IN (?, ?)
               AND is_active = TRUE
               AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
-        `, [ROLES.MIDWIFE, log.barangay]);
+        `, [ROLES.MIDWIFE, ROLES.ADMIN, log.barangay]);
 
-        for (const midwife of midwives) {
+        for (const recipient of recipients) {
             await this.createNotification({
-                recipientUserId: midwife.id,
-                recipientRole: ROLES.MIDWIFE,
+                recipientUserId: recipient.id,
+                recipientRole: recipient.role,
                 recipientBarangay: log.barangay,
                 senderUserId: bhwUser.id,
                 notificationType: 'FIELD_VISIT_LOGGED',
@@ -278,6 +278,111 @@ class NotificationService {
                 }
             });
         }
+    }
+
+    _getRegistrationInfantName(registration = {}) {
+        let data = registration.registration_data || registration;
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data || '{}');
+            } catch {
+                data = {};
+            }
+        }
+        return this._formatIdentityName(data) || data.infant_name || data.name || 'Unknown Infant';
+    }
+
+    async createRegistrationSubmittedNotification({ registration, bhwUser }) {
+        const [midwives] = await this.db.execute(`
+            SELECT id, role, assigned_barangay
+            FROM users
+            WHERE role = ?
+              AND is_active = TRUE
+              AND UPPER(TRIM(assigned_barangay)) = UPPER(TRIM(?))
+        `, [ROLES.MIDWIFE, registration.barangay]);
+
+        const infantName = this._getRegistrationInfantName(registration);
+
+        for (const midwife of midwives) {
+            await this.createNotification({
+                recipientUserId: midwife.id,
+                recipientRole: ROLES.MIDWIFE,
+                recipientBarangay: registration.barangay,
+                senderUserId: bhwUser.id,
+                notificationType: 'REGISTRATION_SUBMITTED',
+                actionType: 'REGISTRATION_SUBMITTED',
+                title: 'New Infant Registration Submitted',
+                message: `BHW ${bhwUser.full_name || bhwUser.name || 'Staff'} has submitted a new infant registration for ${infantName} for validation.`,
+                payload: {
+                    registration_id: registration.id,
+                    reference_id: registration.reference_id,
+                    infant_name: infantName,
+                    barangay: registration.barangay
+                }
+            });
+        }
+    }
+
+    async createRegistrationApprovedNotification({ registration, reviewerUser }) {
+        const infantName = this._getRegistrationInfantName(registration);
+        return this.createNotification({
+            recipientUserId: registration.created_by,
+            recipientRole: ROLES.BHW,
+            recipientBarangay: registration.barangay,
+            senderUserId: reviewerUser.id,
+            notificationType: 'REGISTRATION_APPROVED',
+            actionType: 'REGISTRATION_APPROVED',
+            title: 'Infant Registration Approved',
+            message: `The infant registration for ${infantName} has been approved by Midwife ${reviewerUser.full_name || reviewerUser.name || 'Staff'}.`,
+            payload: {
+                registration_id: registration.id,
+                reference_id: registration.reference_id,
+                infant_name: infantName,
+                barangay: registration.barangay
+            }
+        });
+    }
+
+    async createRegistrationRejectedNotification({ registration, reviewerUser, reason }) {
+        const infantName = this._getRegistrationInfantName(registration);
+        return this.createNotification({
+            recipientUserId: registration.created_by,
+            recipientRole: ROLES.BHW,
+            recipientBarangay: registration.barangay,
+            senderUserId: reviewerUser.id,
+            notificationType: 'REGISTRATION_REJECTED',
+            actionType: 'REGISTRATION_REJECTED',
+            title: 'Infant Registration Rejected',
+            message: `The infant registration for ${infantName} was rejected by Midwife ${reviewerUser.full_name || reviewerUser.name || 'Staff'}. Reason: ${reason || 'No reason provided.'}`,
+            payload: {
+                registration_id: registration.id,
+                reference_id: registration.reference_id,
+                infant_name: infantName,
+                barangay: registration.barangay,
+                rejection_reason: reason
+            }
+        });
+    }
+
+    async createRegistrationReturnedNotification({ registration, reviewerUser, notes }) {
+        const infantName = this._getRegistrationInfantName(registration);
+        return this.createNotification({
+            recipientUserId: registration.created_by,
+            recipientRole: ROLES.BHW,
+            recipientBarangay: registration.barangay,
+            senderUserId: reviewerUser.id,
+            notificationType: 'REGISTRATION_RETURNED',
+            actionType: 'REGISTRATION_RETURNED',
+            title: 'Infant Registration Returned for Correction',
+            message: `The infant registration for ${infantName} was returned for correction by Midwife ${reviewerUser.full_name || reviewerUser.name || 'Staff'}. Notes: ${notes || 'No notes provided.'}`,
+            payload: {
+                registration_id: registration.id,
+                reference_id: registration.reference_id,
+                infant_name: infantName,
+                barangay: registration.barangay,
+                correction_notes: notes
+            }
+        });
     }
 
     async createTransferNotification({

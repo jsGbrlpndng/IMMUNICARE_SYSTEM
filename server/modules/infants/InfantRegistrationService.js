@@ -162,6 +162,22 @@ class InfantRegistrationService {
                     : {}
             });
 
+        if (status === REGISTRATION_STATUS.PENDING_VALIDATION) {
+            try {
+                await this.notificationService.createRegistrationSubmittedNotification({
+                    registration: {
+                        id,
+                        reference_id,
+                        barangay: trimmedBarangay,
+                        registration_data: payload
+                    },
+                    bhwUser: actor
+                });
+            } catch (notifErr) {
+                console.warn('[Registration Submitted Notification] Failed to send:', notifErr.message);
+            }
+        }
+
         return {
             id,
             reference_id,
@@ -1148,6 +1164,16 @@ class InfantRegistrationService {
                     }
                 });
             }
+
+            try {
+                await this.notificationService.createRegistrationApprovedNotification({
+                    registration: reg,
+                    reviewerUser: actor
+                });
+            } catch (notifErr) {
+                console.warn('[Registration Approved Notification] Failed to send:', notifErr.message);
+            }
+
             return { infantId, referenceId: cleanReferenceId };
 
         } catch (err) {
@@ -1258,6 +1284,17 @@ class InfantRegistrationService {
                     rejection_notes: rejectionNotes || null
                 }
             });
+
+            try {
+                await this.notificationService.createRegistrationRejectedNotification({
+                    registration: reg,
+                    reviewerUser: actor,
+                    reason: rejectionReason
+                });
+            } catch (notifErr) {
+                console.warn('[Registration Rejected Notification] Failed to send:', notifErr.message);
+            }
+
             return true;
         } catch (err) {
             await connection.rollback();
@@ -1353,6 +1390,17 @@ class InfantRegistrationService {
                     correction_notes: correctionNotes
                 }
             });
+
+            try {
+                await this.notificationService.createRegistrationReturnedNotification({
+                    registration: reg,
+                    reviewerUser: actor,
+                    notes: correctionNotes
+                });
+            } catch (notifErr) {
+                console.warn('[Registration Returned Notification] Failed to send:', notifErr.message);
+            }
+
             return true;
         } catch (err) {
             await connection.rollback();
@@ -2075,6 +2123,15 @@ class InfantRegistrationService {
                     notes
                 }
             });
+
+            try {
+                await this.notificationService.createRegistrationApprovedNotification({
+                    registration: reg,
+                    reviewerUser: actor
+                });
+            } catch (notifErr) {
+                console.warn('[Registration Approved Notification] Failed to send:', notifErr.message);
+            }
 
             return {
                 success: true,

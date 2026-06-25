@@ -4,6 +4,8 @@ import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Settings
 import SidebarNav from './SidebarNav';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import { RHU2_BARANGAYS } from '../../features/reports/components/reportConfig';
+import { useAuth } from '../../contexts/AuthContext';
+import NotificationBell from '../feedback/NotificationBell';
 
 const superAdminNavigation = [
     {
@@ -25,6 +27,7 @@ const pageLabels = superAdminNavigation
     .reduce((labels, item) => ({ ...labels, [item.path]: item.name }), {});
 
 const SuperAdminLayout = ({ children }) => {
+    const { user } = useAuth();
     const location = useLocation();
     const { selectedBarangay, setSelectedBarangay } = useBarangayFilter();
     const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -75,21 +78,24 @@ const SuperAdminLayout = ({ children }) => {
                         </div>
                     </div>
 
-                    <div className="hidden items-center border border-slate-200 bg-slate-50 px-3 py-1.5 lg:flex">
-                        <Filter size={14} className="mr-2 text-[#064E3B]" />
-                        <span className="mr-2 border-r border-slate-200 pr-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                            Global Filter
-                        </span>
-                        <select
-                            value={selectedBarangay}
-                            onChange={(event) => setSelectedBarangay(event.target.value)}
-                            className="min-w-[210px] border-0 bg-transparent py-0 text-xs font-black uppercase text-slate-700 outline-none focus:ring-0"
-                        >
-                            <option value="all">All RHU 2 Barangays</option>
-                            {RHU2_BARANGAYS.map((barangay) => (
-                                <option key={barangay} value={barangay}>{barangay}</option>
-                            ))}
-                        </select>
+                    <div className="flex items-center gap-4">
+                        <div className="hidden items-center border border-slate-200 bg-slate-50 px-3 py-1.5 lg:flex">
+                            <Filter size={14} className="mr-2 text-[#064E3B]" />
+                            <span className="mr-2 border-r border-slate-200 pr-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                Global Filter
+                            </span>
+                            <select
+                                value={selectedBarangay}
+                                onChange={(event) => setSelectedBarangay(event.target.value)}
+                                className="min-w-[210px] border-0 bg-transparent py-0 text-xs font-black uppercase text-slate-700 outline-none focus:ring-0"
+                            >
+                                <option value="all">All RHU 2 Barangays</option>
+                                {RHU2_BARANGAYS.map((barangay) => (
+                                    <option key={barangay} value={barangay}>{barangay}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <NotificationBell visible={user?.role === 'Super Admin'} />
                     </div>
                 </nav>
 

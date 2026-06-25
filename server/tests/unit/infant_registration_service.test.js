@@ -125,7 +125,7 @@ describe('InfantRegistrationService strict registration validation', () => {
             status: 'PENDING_VALIDATION',
             duplicate_alert: null
         });
-        expect(db.execute).toHaveBeenCalledTimes(7);
+        expect(db.execute).toHaveBeenCalledTimes(8);
     });
 
     test('rejects draft saves missing infant identity', async () => {

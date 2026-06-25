@@ -207,4 +207,120 @@ describe('NotificationService transfer handoff notices', () => {
             is_read: true
         }));
     });
+
+    test('createFieldVisitLoggedNotification targets active midwives and admins in the logged barangay', async () => {
+        const db = {
+            execute: jest.fn(async (sql, params) => {
+                if (sql.includes('FROM users')) {
+                    expect(params).toEqual(['Midwife', 'Admin', 'Langgam']);
+                    return [[
+                        { id: 'midwife-1', role: 'Midwife', assigned_barangay: 'Langgam' },
+                        { id: 'admin-1', role: 'Admin', assigned_barangay: 'Langgam' }
+                    ]];
+                }
+                if (sql.includes('INSERT INTO notifications')) {
+                    return [{ affectedRows: 1 }];
+                }
+                return [[]];
+            })
+        };
+
+        const service = new NotificationService(db);
+        await service.createFieldVisitLoggedNotification({
+            log: {
+                id: 'log-1',
+                infant_id: 'infant-1',
+                infant_name: 'Maria Nicole Santos',
+                outcome: 'CONTACTED',
+                barangay: 'Langgam'
+            },
+            bhwUser: { id: 'bhw-1', role: 'BHW', name: 'Test BHW' }
+        });
+
+        // 2 database inserts (one for midwife, one for admin)
+        expect(db.execute).toHaveBeenCalledTimes(3); // 1 select + 2 inserts
+    });
+
+    test('creates registration status notifications correctly', async () => {
+        const db = {
+            execute: jest.fn(async (sql, params) => {
+                if (sql.includes('FROM users')) {
+                    expect(params).toEqual(['Midwife', 'Langgam']);
+                    return [[{ id: 'midwife-1', role: 'Midwife', assigned_barangay: 'Langgam' }]];
+                }
+                if (sql.includes('INSERT INTO notifications')) {
+                    return [{ affectedRows: 1 }];
+                }
+                return [[]];
+            })
+        };
+
+        const service = new NotificationService(db);
+
+        // 1. Submitted notification
+        await service.createRegistrationSubmittedNotification({
+            registration: {
+                id: 'reg-1',
+                reference_id: 'REG-001',
+                barangay: 'Langgam',
+                first_name: 'Maria',
+                last_name: 'Santos'
+            },
+            bhwUser: { id: 'bhw-1', role: 'BHW', name: 'Test BHW' }
+        });
+        expect(db.execute).toHaveBeenCalledTimes(2); // 1 select + 1 insert
+
+        // Reset spy
+        db.execute.mockClear();
+
+        // 2. Approved notification
+        await service.createRegistrationApprovedNotification({
+            registration: {
+                id: 'reg-1',
+                reference_id: 'REG-001',
+                barangay: 'Langgam',
+                created_by: 'bhw-1',
+                first_name: 'Maria',
+                last_name: 'Santos'
+            },
+            reviewerUser: { id: 'midwife-1', role: 'Midwife', name: 'Test Midwife' }
+        });
+        expect(db.execute).toHaveBeenCalledTimes(1); // 1 insert directly
+
+        // Reset spy
+        db.execute.mockClear();
+
+        // 3. Rejected notification
+        await service.createRegistrationRejectedNotification({
+            registration: {
+                id: 'reg-1',
+                reference_id: 'REG-001',
+                barangay: 'Langgam',
+                created_by: 'bhw-1',
+                first_name: 'Maria',
+                last_name: 'Santos'
+            },
+            reviewerUser: { id: 'midwife-1', role: 'Midwife', name: 'Test Midwife' },
+            reason: 'Incomplete documents'
+        });
+        expect(db.execute).toHaveBeenCalledTimes(1); // 1 insert directly
+
+        // Reset spy
+        db.execute.mockClear();
+
+        // 4. Returned notification
+        await service.createRegistrationReturnedNotification({
+            registration: {
+                id: 'reg-1',
+                reference_id: 'REG-001',
+                barangay: 'Langgam',
+                created_by: 'bhw-1',
+                first_name: 'Maria',
+                last_name: 'Santos'
+            },
+            reviewerUser: { id: 'midwife-1', role: 'Midwife', name: 'Test Midwife' },
+            notes: 'Fix date of birth'
+        });
+        expect(db.execute).toHaveBeenCalledTimes(1); // 1 insert directly
+    });
 });

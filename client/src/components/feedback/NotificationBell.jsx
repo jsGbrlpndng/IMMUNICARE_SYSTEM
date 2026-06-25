@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, CheckCheck, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Bell, CheckCheck, Loader2, X } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -17,14 +17,15 @@ const formatDate = (value) => {
     });
 };
 
+
 const NotificationBell = ({ visible = false }) => {
     const { user } = useAuth();
-    const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [error, setError] = useState('');
+    const [selectedNotification, setSelectedNotification] = useState(null);
     const rootRef = useRef(null);
 
     const unreadNotifications = useMemo(
@@ -96,57 +97,22 @@ const NotificationBell = ({ visible = false }) => {
         }
     };
 
-    const handleNotificationClick = async (notification) => {
-        if (!notification.is_read) {
-            await markAsRead(notification.id);
-        }
+    const handleNotificationClick = (notification) => {
+        setSelectedNotification(notification);
         setIsOpen(false);
+    };
 
-        const payload = typeof notification.payload === 'string'
-            ? JSON.parse(notification.payload)
-            : (notification.payload || {});
+    const handleModalClose = () => {
+        setSelectedNotification(null);
+    };
 
-        if (notification.notification_type === 'DEPLOYMENT_ASSIGNED' && payload.assignment_id) {
-            navigate('/clinical/map', {
-                state: {
-                    initialMode: 'priority',
-                    focusCluster: {
-                        id: payload.assignment_id
-                    }
-                }
-            });
-        } else if (notification.notification_type === 'DEPLOYMENT_REPORT_SUBMITTED' && payload.assignment_id) {
-            navigate('/admin/spatial-analysis', {
-                state: {
-                    initialTab: 'validation',
-                    reportId: payload.report_id,
-                    assignmentId: payload.assignment_id
-                }
-            });
-        } else if ((notification.notification_type === 'DEPLOYMENT_REPORT_VALIDATED' || notification.notification_type === 'DEPLOYMENT_REPORT_REJECTED') && payload.assignment_id) {
-            navigate('/clinical/map', {
-                state: {
-                    initialMode: 'priority',
-                    focusCluster: {
-                        id: payload.assignment_id
-                    }
-                }
-            });
-        } else if (notification.notification_type === 'FIELD_VISIT_LOGGED' && payload.infant_id) {
-            // If midwife is notified, redirect them to the clinical map Priority mode
-            navigate('/clinical/map', {
-                state: {
-                    initialMode: 'priority'
-                }
-            });
-        } else if (notification.notification_type === 'FOLLOW_UP_DELEGATED') {
-            if (user?.role === 'BHW') {
-                navigate('/bhw/follow-ups');
-            } else {
-                navigate('/clinical/follow-ups');
-            }
+    const handleModalMarkAsRead = async () => {
+        if (selectedNotification && !selectedNotification.is_read) {
+            await markAsRead(selectedNotification.id);
+            setSelectedNotification((curr) => curr ? { ...curr, is_read: true } : null);
         }
     };
+
 
     if (!visible) return null;
 
@@ -155,7 +121,7 @@ const NotificationBell = ({ visible = false }) => {
             <button
                 type="button"
                 onClick={handleToggle}
-                className="relative flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-600 hover:text-emerald-700"
+                className="relative flex h-10 w-10 items-center justify-center border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-600 hover:text-emerald-700 font-sans"
                 aria-label="Open notifications"
             >
                 <Bell className="h-5 w-5" />
@@ -232,6 +198,131 @@ const NotificationBell = ({ visible = false }) => {
                     ) : null}
                 </div>
             ) : null}
+
+            {selectedNotification && createPortal(
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+                    onClick={handleModalClose}
+                >
+                    <div
+                        className="w-full max-w-lg border border-slate-200 bg-white shadow-2xl rounded-none font-sans overflow-hidden flex flex-col max-h-[85vh]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="bg-[#064E3B] px-6 py-4 text-white shrink-0">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300">
+                                    Notification Details
+                                </p>
+                                <span className={`inline-block border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                                    selectedNotification.is_read
+                                        ? 'border-emerald-300 text-emerald-300 bg-emerald-950/30'
+                                        : 'border-amber-300 text-amber-300 bg-amber-950/30'
+                                }`}>
+                                    {selectedNotification.is_read ? 'Read' : 'Unread'}
+                                </span>
+                            </div>
+                            <h3 className="mt-2 text-lg font-black leading-tight">
+                                {selectedNotification.title}
+                            </h3>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Message</p>
+                                <p className="mt-1 text-sm font-semibold text-slate-700 leading-relaxed">
+                                    {selectedNotification.message}
+                                </p>
+                            </div>
+
+                            {/* Metadata */}
+                            <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                                <div>
+                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Received At</span>
+                                    <span className="font-semibold text-slate-700">{formatDate(selectedNotification.created_at)}</span>
+                                </div>
+
+                                {selectedNotification.notification_type && (
+                                    <div>
+                                        <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Category</span>
+                                        <span className="font-semibold text-slate-700">{selectedNotification.notification_type.replace(/_/g, ' ')}</span>
+                                    </div>
+                                )}
+
+                                {(() => {
+                                    const payload = typeof selectedNotification.payload === 'string'
+                                        ? JSON.parse(selectedNotification.payload)
+                                        : (selectedNotification.payload || {});
+
+                                    return (
+                                        <>
+                                            {payload.barangay && (
+                                                <div>
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Barangay</span>
+                                                    <span className="font-semibold text-slate-700 uppercase">{payload.barangay}</span>
+                                                </div>
+                                            )}
+                                            {payload.cluster_label && (
+                                                <div>
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Cluster / Priority Area</span>
+                                                    <span className="font-semibold text-slate-700">{payload.cluster_label}</span>
+                                                </div>
+                                            )}
+                                            {payload.infant_name && (
+                                                <div>
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Related Infant</span>
+                                                    <span className="font-semibold text-slate-700">{payload.infant_name}</span>
+                                                </div>
+                                            )}
+                                            {payload.validation_notes && (
+                                                <div className="col-span-2">
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Validation Notes</span>
+                                                    <span className="font-semibold text-slate-700 block bg-slate-50 border border-slate-100 p-2 mt-1 leading-relaxed">{payload.validation_notes}</span>
+                                                </div>
+                                            )}
+                                            {payload.rejection_reason && (
+                                                <div className="col-span-2">
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Rejection Reason</span>
+                                                    <span className="font-semibold text-slate-700 block bg-slate-50 border border-slate-100 p-2 mt-1 leading-relaxed">{payload.rejection_reason}</span>
+                                                </div>
+                                            )}
+                                            {payload.correction_notes && (
+                                                <div className="col-span-2">
+                                                    <span className="block font-black text-slate-400 uppercase tracking-wider text-[9px]">Correction Notes</span>
+                                                    <span className="font-semibold text-slate-700 block bg-slate-50 border border-slate-100 p-2 mt-1 leading-relaxed">{payload.correction_notes}</span>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleModalClose}
+                                className="border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-wider text-slate-700 transition hover:bg-slate-50 rounded-none"
+                            >
+                                Close
+                            </button>
+
+                            {!selectedNotification.is_read && (
+                                <button
+                                    type="button"
+                                    onClick={handleModalMarkAsRead}
+                                    className="bg-[#064E3B] px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition hover:bg-[#043e2f] rounded-none"
+                                >
+                                    Mark as Read
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };
