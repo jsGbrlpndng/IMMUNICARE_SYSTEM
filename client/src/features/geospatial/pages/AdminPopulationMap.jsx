@@ -131,7 +131,7 @@ export default function AdminPopulationMap() {
                         <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-100">
                             Strategic Population View
                         </p>
-                        <h1 className="mt-3 text-3xl font-black tracking-tight">Admin Population Heatmap</h1>
+                        <h1 className="mt-3 text-3xl font-black tracking-tight">Infant Population Map</h1>
                         <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-emerald-50">
                             Barangay-wide immunization visibility for {assignedBarangay}. This view tracks the full registered infant population, separate from DSS deployment clusters.
                         </p>

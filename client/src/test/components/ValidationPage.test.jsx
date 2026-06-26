@@ -64,6 +64,8 @@ describe('ValidationPage transfer inquiry review', () => {
           middle_name: 'Nicole',
           last_name: 'Santos',
           dob: '2026-01-15',
+          exact_address: 'Lawaan Street, Saint Joseph 10, Phase 3',
+          current_address: 'Lawaan Street, Saint Joseph 10, Phase 3, Langgam, San Pedro, Laguna',
           submitted_by_name: 'BHW Langgam',
           created_at: '2026-06-08T08:00:00.000Z',
           duplicate_alert: {
@@ -90,6 +92,7 @@ describe('ValidationPage transfer inquiry review', () => {
     expect(await screen.findByText('Clinical Duplicate Alert')).toBeInTheDocument();
     expect(screen.getByText('Transfer Inquiry Notes')).toBeInTheDocument();
     expect(screen.getByText('Caregiver says they transferred from United Bayanihan last week.')).toBeInTheDocument();
+    expect(screen.getByText('Lawaan Street, Saint Joseph 10, Phase 3')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiClient.get).toHaveBeenCalledWith('/validation/queue');

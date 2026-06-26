@@ -27,6 +27,9 @@ class ApiClient {
     handleUnauthorized() {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
+        localStorage.removeItem('session_policy');
+        sessionStorage.removeItem('immunicare_idle_locked');
+        sessionStorage.removeItem('immunicare_reauth_in_progress');
         
         // Only redirect if not already on login/portal pages
         if (!window.location.pathname.includes('/portal') && 
@@ -37,11 +40,26 @@ class ApiClient {
         }
     }
 
+    isSessionLockedOrReauthenticating() {
+        return (
+            sessionStorage.getItem('immunicare_idle_locked') === 'true' ||
+            sessionStorage.getItem('immunicare_reauth_in_progress') === 'true'
+        );
+    }
+
+    buildApiError(message, response, payload = {}) {
+        const error = new Error(message);
+        error.status = response?.status;
+        error.code = payload?.code;
+        error.payload = payload;
+        return error;
+    }
+
     /**
      * Make authenticated API request
      */
     async request(endpoint, options = {}) {
-        if (localStorage.getItem('auth_token') && sessionStorage.getItem('immunicare_idle_locked') === 'true') {
+        if (localStorage.getItem('auth_token') && this.isSessionLockedOrReauthenticating()) {
             window.dispatchEvent(new Event('immunicare:idle-lock'));
             throw new Error('Session locked. Please re-authenticate to continue.');
         }
@@ -86,8 +104,17 @@ class ApiClient {
 
             // Handle 401 Unauthorized
             if (response.status === 401) {
-                this.handleUnauthorized();
-                throw new Error('Unauthorized - redirecting to login');
+                const payload = await response.json().catch(() => ({}));
+                const code = payload?.code;
+                const hardExpiryCodes = new Set(['REAUTH_EXPIRED', 'SESSION_EXPIRED', 'SESSION_INVALIDATED']);
+                const shouldPreserveLockedSession = this.isSessionLockedOrReauthenticating() && !hardExpiryCodes.has(code);
+
+                if (!shouldPreserveLockedSession) {
+                    this.handleUnauthorized();
+                    throw this.buildApiError(payload.error || 'Unauthorized - redirecting to login', response, payload);
+                }
+
+                throw this.buildApiError(payload.error || 'Session locked. Please re-authenticate to continue.', response, payload);
             }
 
             // Handle 403 Forbidden
@@ -106,7 +133,7 @@ class ApiClient {
 
         } catch (error) {
             // Network errors or other issues
-            if (error.message === 'Unauthorized - redirecting to login') {
+            if (error.status === 401) {
                 throw error;
             }
             if (error.name === 'AbortError') {

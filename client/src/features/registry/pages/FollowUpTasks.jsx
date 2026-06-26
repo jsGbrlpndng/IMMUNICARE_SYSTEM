@@ -528,7 +528,7 @@ const FollowUpTasks = () => {
                         {isBhw ? 'Ground Follow-Up Execution' : 'Supervisory Follow-Up Audit'}
                     </p>
                     <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-900">
-                        Follow-Ups
+                        Follow-up Tasks
                     </h1>
                     <p className="mt-1 text-sm text-slate-500">
                         {isBhw

@@ -4,9 +4,10 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
 const IdleSessionContext = createContext();
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const FALLBACK_IDLE_TIMEOUT_MINUTES = 15;
 const ACTIVITY_THROTTLE_MS = 3000;
 const LOCK_STORAGE_KEY = 'immunicare_idle_locked';
+const REAUTH_STORAGE_KEY = 'immunicare_reauth_in_progress';
 const PUBLIC_PATHS = ['/', '/portal', '/login', '/password-update-success', '/force-password-change', '/caregiver'];
 
 const isPublicPath = (path) => {
@@ -50,7 +51,7 @@ const createThrottle = (fn, wait) => {
     return throttled;
 };
 
-const IdleLockModal = ({ user, onUnlock, onLogout }) => {
+const IdleLockModal = ({ user, idleTimeoutMinutes, onUnlock, onLogout }) => {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
@@ -93,7 +94,7 @@ const IdleLockModal = ({ user, onUnlock, onLogout }) => {
                     </div>
 
                     <p className="text-sm font-semibold text-slate-600">
-                        The workspace was locked after 15 minutes of inactivity. Enter your password to continue without losing the current page.
+                        The workspace was locked after {idleTimeoutMinutes} minutes of inactivity. Enter your password to continue without losing the current page.
                     </p>
 
                     <label className="block">
@@ -147,13 +148,36 @@ const IdleLockModal = ({ user, onUnlock, onLogout }) => {
 };
 
 export const IdleSessionProvider = ({ children }) => {
-    const { user, login, logout, auditLogout } = useAuth();
+    const { user, login, logout, auditLogout, sessionPolicy, updateSessionPolicy } = useAuth();
     const location = useLocation();
     const [locked, setLocked] = useState(() => sessionStorage.getItem(LOCK_STORAGE_KEY) === 'true');
+    const [reauthInProgress, setReauthInProgress] = useState(false);
     const timerRef = useRef(null);
     const idleLockAuditRecordedRef = useRef(false);
 
     const isProtectedSession = Boolean(user) && !isPublicPath(location.pathname);
+    const idleTimeoutMinutes = Number(sessionPolicy?.idleTimeoutMinutes) || FALLBACK_IDLE_TIMEOUT_MINUTES;
+    const idleTimeoutMs = idleTimeoutMinutes * 60 * 1000;
+
+    useEffect(() => {
+        if (!isProtectedSession || sessionPolicy?.idleTimeoutMinutes) return undefined;
+
+        let active = true;
+        fetch('/api/auth/session-policy')
+            .then((response) => response.ok ? response.json() : null)
+            .then((payload) => {
+                if (active && payload?.sessionPolicy) {
+                    updateSessionPolicy(payload.sessionPolicy);
+                }
+            })
+            .catch((error) => {
+                console.warn('[SESSION_POLICY_LOAD_FAILED]', error);
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [isProtectedSession, sessionPolicy?.idleTimeoutMinutes, updateSessionPolicy]);
 
     const recordIdleLockAudit = useCallback(() => {
         if (idleLockAuditRecordedRef.current) return;
@@ -168,12 +192,12 @@ export const IdleSessionProvider = ({ children }) => {
                 'Content-Type': 'application/json',
                 'x-auth-token': token
             },
-            body: JSON.stringify({ idle_timeout_minutes: IDLE_TIMEOUT_MS / (60 * 1000) }),
+            body: JSON.stringify({ idle_timeout_minutes: idleTimeoutMinutes }),
             keepalive: true
         }).catch((error) => {
             console.warn('[SESSION_IDLE_LOCK_AUDIT_FAILED]', error);
         });
-    }, []);
+    }, [idleTimeoutMinutes]);
 
     const lockSession = useCallback(() => {
         if (!isProtectedSession || locked) return;
@@ -185,15 +209,22 @@ export const IdleSessionProvider = ({ children }) => {
     const resetTimer = useCallback(() => {
         if (!isProtectedSession || locked) return;
         window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(lockSession, IDLE_TIMEOUT_MS);
-    }, [isProtectedSession, lockSession, locked]);
+        timerRef.current = window.setTimeout(lockSession, idleTimeoutMs);
+    }, [idleTimeoutMs, isProtectedSession, lockSession, locked]);
+
+    useEffect(() => {
+        if (!isProtectedSession || locked) return;
+        resetTimer();
+    }, [isProtectedSession, location.pathname, location.search, locked, resetTimer]);
 
     useEffect(() => {
         if (!isProtectedSession) {
             window.clearTimeout(timerRef.current);
             sessionStorage.removeItem(LOCK_STORAGE_KEY);
+            sessionStorage.removeItem(REAUTH_STORAGE_KEY);
             idleLockAuditRecordedRef.current = false;
             setLocked(false);
+            setReauthInProgress(false);
             return undefined;
         }
 
@@ -204,7 +235,7 @@ export const IdleSessionProvider = ({ children }) => {
 
         const throttledActivity = createThrottle(resetTimer, ACTIVITY_THROTTLE_MS);
         const forceLock = () => lockSession();
-        const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'];
+        const events = ['mousemove', 'click', 'mousedown', 'keydown', 'touchstart', 'scroll'];
         events.forEach((eventName) => window.addEventListener(eventName, throttledActivity, { passive: true }));
         window.addEventListener('immunicare:idle-lock', forceLock);
         resetTimer();
@@ -218,52 +249,62 @@ export const IdleSessionProvider = ({ children }) => {
     }, [isProtectedSession, lockSession, locked, resetTimer]);
 
     const unlock = useCallback(async (password) => {
-        const response = await fetch('/api/auth/reauthenticate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-auth-token': localStorage.getItem('auth_token') || ''
-            },
-            body: JSON.stringify({ password })
-        });
-        const payload = await response.json().catch(() => ({}));
+        setReauthInProgress(true);
+        sessionStorage.setItem(REAUTH_STORAGE_KEY, 'true');
+        try {
+            const response = await fetch('/api/auth/reauthenticate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-auth-token': localStorage.getItem('auth_token') || ''
+                },
+                body: JSON.stringify({ password })
+            });
+            const payload = await response.json().catch(() => ({}));
 
-        if (!response.ok || !payload.success) {
-            if (response.status === 401 && payload.code !== 'INVALID_PASSWORD') {
-                logout();
-                window.location.href = '/portal';
+            if (!response.ok || !payload.success) {
+                if (response.status === 401 && payload.code !== 'INVALID_PASSWORD') {
+                    logout();
+                    window.location.href = '/portal';
+                }
+                throw new Error(payload.error || 'Unable to unlock session.');
             }
-            throw new Error(payload.error || 'Unable to unlock session.');
-        }
 
-        login(payload.user, payload.authToken);
-        sessionStorage.removeItem(LOCK_STORAGE_KEY);
-        idleLockAuditRecordedRef.current = false;
-        setLocked(false);
-        window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(lockSession, IDLE_TIMEOUT_MS);
-    }, [lockSession, login, logout]);
+            login(payload.user, payload.authToken, payload.sessionPolicy);
+            sessionStorage.removeItem(LOCK_STORAGE_KEY);
+            idleLockAuditRecordedRef.current = false;
+            setLocked(false);
+            window.clearTimeout(timerRef.current);
+            timerRef.current = window.setTimeout(lockSession, idleTimeoutMs);
+        } finally {
+            sessionStorage.removeItem(REAUTH_STORAGE_KEY);
+            setReauthInProgress(false);
+        }
+    }, [idleTimeoutMs, lockSession, login, logout]);
 
     const signOut = useCallback(() => {
         auditLogout?.();
         sessionStorage.removeItem(LOCK_STORAGE_KEY);
+        sessionStorage.removeItem(REAUTH_STORAGE_KEY);
         idleLockAuditRecordedRef.current = false;
         setLocked(false);
+        setReauthInProgress(false);
         logout();
         window.location.href = '/portal';
     }, [auditLogout, logout]);
 
     const value = useMemo(() => ({
         locked,
+        reauthInProgress,
         lockSession,
         unlock
-    }), [lockSession, locked, unlock]);
+    }), [lockSession, locked, reauthInProgress, unlock]);
 
     return (
         <IdleSessionContext.Provider value={value}>
             {children}
             {isProtectedSession && locked ? (
-                <IdleLockModal user={user} onUnlock={unlock} onLogout={signOut} />
+                <IdleLockModal user={user} idleTimeoutMinutes={idleTimeoutMinutes} onUnlock={unlock} onLogout={signOut} />
             ) : null}
         </IdleSessionContext.Provider>
     );

@@ -533,11 +533,17 @@ const PublicHealthDashboard = () => {
     }, [isSuperAdmin, logFetchIssue, mergeScope, readDashboardPayload, requestOptions, refreshNonce]);
 
     const assignedBarangay = useMemo(() => (isSuperAdmin
-        ? (scope.barangay || scope.label || 'RHU 2 - All Barangays')
-        : (scope.barangay || sessionUser?.assigned_barangay || 'No barangay assigned')), [isSuperAdmin, scope.barangay, scope.label, sessionUser?.assigned_barangay]);
-    const assignedBarangayId = useMemo(() => (isSuperAdmin
-        ? (scope.barangay_id || (scope.barangay ? 'Selected barangay' : 'Municipal aggregate'))
-        : (scope.barangay_id || sessionUser?.barangay_id || 'Session scoped')), [isSuperAdmin, scope.barangay, scope.barangay_id, sessionUser?.barangay_id]);
+        ? (scope.barangay || 'All RHU 2 Barangays')
+        : (scope.barangay || sessionUser?.assigned_barangay || 'No barangay assigned')), [isSuperAdmin, scope.barangay, sessionUser?.assigned_barangay]);
+    const dashboardScopeLabel = useMemo(() => {
+        if (isSuperAdmin) {
+            return scope.barangay ? `Barangay ${scope.barangay}` : 'All RHU 2 Barangays';
+        }
+
+        return scope.barangay || sessionUser?.assigned_barangay
+            ? `Barangay ${scope.barangay || sessionUser?.assigned_barangay}`
+            : 'Barangay not assigned';
+    }, [isSuperAdmin, scope.barangay, sessionUser?.assigned_barangay]);
     const topHotspot = useMemo(() => clusters.clusters[0] || null, [clusters.clusters]);
     const topHotspotName = useMemo(() => topHotspot?.locality || topHotspot?.label || assignedBarangay, [assignedBarangay, topHotspot]);
     const topHotspotCount = useMemo(() => safeNumber(topHotspot?.total_infants || topHotspot?.count), [topHotspot]);
@@ -685,7 +691,7 @@ const PublicHealthDashboard = () => {
                                 {isSuperAdmin ? 'Super Admin Decision Support Dashboard' : 'Admin Decision Support Dashboard'}
                             </h1>
                             <p className="mt-2 text-sm font-semibold text-green-100">
-                                {isSuperAdmin ? assignedBarangay : `Barangay ${assignedBarangay}`} - {isSuperAdmin ? assignedBarangayId : `Barangay ID ${assignedBarangayId}`}
+                                {isSuperAdmin ? dashboardScopeLabel : `${dashboardScopeLabel} Administrative Overview`}
                             </p>
                         </div>
                         <div className="border border-green-700 bg-green-900 px-5 py-4">
@@ -1025,7 +1031,7 @@ const PublicHealthDashboard = () => {
                                     onClick={() => Maps(`${usersRoute}?user=${encodeURIComponent(person?.id || '')}`)}
                                     className="flex items-center justify-between border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-green-800 focus:outline-none focus:ring-2 focus:ring-green-800"
                                 >
-                                    <p className="font-black text-slate-950">{person?.full_name || person?.id || 'No name available'}</p>
+                                    <p className="font-black text-slate-950">{person?.full_name || 'Name unavailable'}</p>
                                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{person?.role || 'No role'}</p>
                                 </button>
                             ))

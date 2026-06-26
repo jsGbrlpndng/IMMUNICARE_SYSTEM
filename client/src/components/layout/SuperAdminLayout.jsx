@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Settings, Target, Users } from 'lucide-react';
+import { BarChart3, FileText, Filter, LayoutDashboard, MapPinned, Menu, Radar, Settings, Target, Users } from 'lucide-react';
 import SidebarNav from './SidebarNav';
 import { useBarangayFilter } from '../../contexts/BarangayFilterContext';
 import { RHU2_BARANGAYS } from '../../features/reports/components/reportConfig';
@@ -11,11 +11,19 @@ const superAdminNavigation = [
     {
         group: 'Head Nurse Portal',
         items: [
-            { name: 'Global Dashboard', path: '/superadmin/dashboard', icon: LayoutDashboard },
+            { name: 'Municipal Dashboard', path: '/superadmin/dashboard', icon: LayoutDashboard },
             { name: 'User Management', path: '/superadmin/users', icon: Users },
             { name: 'Target Configuration', path: '/superadmin/targets', icon: Target },
             { name: 'Municipal Reports', path: '/superadmin/reports', icon: BarChart3 },
-            { name: 'Geospatial Intelligence', path: '/superadmin/geospatial', icon: MapPinned },
+            {
+                name: 'Geographic Monitoring',
+                path: '/superadmin/geospatial',
+                icon: MapPinned,
+                children: [
+                    { name: 'Hotspot Map', path: '/superadmin/geospatial', icon: MapPinned },
+                    { name: 'DBSCAN Evaluation', path: '/superadmin/geospatial/evaluation', icon: Radar }
+                ]
+            },
             { name: 'Audit Trail', path: '/superadmin/audit', icon: FileText },
             { name: 'Account Settings', path: '/superadmin/account-settings', icon: Settings }
         ]
@@ -24,6 +32,7 @@ const superAdminNavigation = [
 
 const pageLabels = superAdminNavigation
     .flatMap((group) => group.items)
+    .flatMap((item) => [item, ...(item.children || [])])
     .reduce((labels, item) => ({ ...labels, [item.path]: item.name }), {});
 
 const SuperAdminLayout = ({ children }) => {

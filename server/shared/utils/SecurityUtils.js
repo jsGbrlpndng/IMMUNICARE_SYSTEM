@@ -5,6 +5,17 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const SECRET = process.env.JWT_SECRET || 'immunicare-governance-secret-2026';
 
 class SecurityUtils {
+    static decodeSignedToken(token) {
+        const { payload, signature } = JSON.parse(Buffer.from(token, 'base64').toString());
+        const expectedSignature = crypto.createHmac('sha256', SECRET).update(JSON.stringify(payload)).digest('hex');
+
+        if (signature !== expectedSignature) {
+            return null;
+        }
+
+        return payload;
+    }
+
     /**
      * Signs a payload using HMAC-SHA256
      */
@@ -25,10 +36,8 @@ class SecurityUtils {
      */
     static verifyToken(token) {
         try {
-            const { payload, signature } = JSON.parse(Buffer.from(token, 'base64').toString());
-            const expectedSignature = crypto.createHmac('sha256', SECRET).update(JSON.stringify(payload)).digest('hex');
-
-            if (signature !== expectedSignature) {
+            const payload = this.decodeSignedToken(token);
+            if (!payload) {
                 return null;
             }
 
@@ -39,6 +48,39 @@ class SecurityUtils {
             return payload;
         } catch (e) {
             return null;
+        }
+    }
+
+    static verifyTokenForReauthentication(token, graceSeconds = 0) {
+        try {
+            const payload = this.decodeSignedToken(token);
+            if (!payload) {
+                return { valid: false, status: 'INVALID_TOKEN', payload: null };
+            }
+
+            const now = Math.floor(Date.now() / 1000);
+            if (payload.exp && payload.exp < now) {
+                const secondsExpired = now - payload.exp;
+                if (secondsExpired <= graceSeconds) {
+                    return {
+                        valid: true,
+                        status: 'EXPIRED_WITHIN_GRACE',
+                        payload,
+                        secondsExpired
+                    };
+                }
+
+                return {
+                    valid: false,
+                    status: 'REAUTH_EXPIRED',
+                    payload,
+                    secondsExpired
+                };
+            }
+
+            return { valid: true, status: 'VALID', payload, secondsExpired: 0 };
+        } catch (e) {
+            return { valid: false, status: 'INVALID_TOKEN', payload: null };
         }
     }
 }

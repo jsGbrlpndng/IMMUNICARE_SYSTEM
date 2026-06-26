@@ -1184,7 +1184,8 @@ class InfantService {
             ageGroup = null,
             vaccineType = null,
             assignedBhw = null,
-            sortBy = 'urgency'
+            sortBy = 'urgency',
+            persistResults = true
         } = params;
         const epsilonMeters = parseInt(eps, 10) || 300;
         const safeMinPts = Math.max(parseInt(minPts, 10) || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
@@ -1411,20 +1412,22 @@ class InfantService {
         clusters = clusters.sort((a, b) => b._sortMetric - a._sortMetric);
         clusters.forEach((c, i) => { c.rank = i + 1; });
 
-        try {
-            await this.persistClusterResults({
-                clusters,
-                barangay,
-                epsilonMeters,
-                minPts: safeMinPts
-            });
-        } catch (persistError) {
-            console.warn('[SpatialTriage] Cluster persistence skipped; returning live cluster data:', {
-                message: persistError.message,
-                code: persistError.code,
-                table: persistError.table,
-                constraint: persistError.constraint
-            });
+        if (persistResults) {
+            try {
+                await this.persistClusterResults({
+                    clusters,
+                    barangay,
+                    epsilonMeters,
+                    minPts: safeMinPts
+                });
+            } catch (persistError) {
+                console.warn('[SpatialTriage] Cluster persistence skipped; returning live cluster data:', {
+                    message: persistError.message,
+                    code: persistError.code,
+                    table: persistError.table,
+                    constraint: persistError.constraint
+                });
+            }
         }
 
         const noise = dssDataset.filter(pt => !clusteredPointIds.has(pt.id));

@@ -1621,6 +1621,7 @@ router.post('/users/:id/reset-password', async (req, res) => {
                 must_change_password = TRUE,
                 last_password_reset_at = CURRENT_TIMESTAMP,
                 failed_login_attempts = 0,
+                failed_login_window_started_at = NULL,
                 locked_until = NULL
             WHERE id = ?
         `, [hashedPassword, id]);

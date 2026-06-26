@@ -9,23 +9,28 @@ const adminNavigation = [
     {
         group: 'Administration',
         items: [
-            { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
+            { name: 'Barangay Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
             {
-                name: 'Geospatial Intelligence',
+                name: 'Geographic Monitoring',
                 path: '/admin/geospatial',
                 icon: MapPinned,
                 children: [
-                    { name: 'Population Heatmap', path: '/admin/population-heatmap', icon: Layers },
-                    { name: 'Spatial Hotspots', path: '/admin/spatial-analysis', icon: MapIcon }
+                    { name: 'Infant Population Map', path: '/admin/population-heatmap', icon: Layers },
+                    { name: 'Field Deployment Map', path: '/admin/spatial-analysis', icon: MapIcon }
                 ]
             },
             { name: 'M1 Reports', path: '/admin/reports/m1', icon: BarChart2 },
             { name: 'User Management', path: '/admin/users', icon: Users },
-            { name: 'Audit Logs', path: '/admin/audit', icon: FileText },
+            { name: 'Barangay Audit Trail', path: '/admin/audit', icon: FileText },
             { name: 'Account Settings', path: '/admin/account-settings', icon: Settings }
         ]
     }
 ];
+
+const pageLabels = adminNavigation
+    .flatMap((group) => group.items)
+    .flatMap((item) => [item, ...(item.children || [])])
+    .reduce((labels, item) => ({ ...labels, [item.path]: item.name }), {});
 
 const AdminLayout = ({ children }) => {
     const { user } = useAuth();
@@ -40,10 +45,7 @@ const AdminLayout = ({ children }) => {
         localStorage.setItem('admin-sidebar-collapsed', JSON.stringify(isCollapsed));
     }, [isCollapsed]);
 
-    const pathParts = location.pathname.split('/').filter(Boolean);
-    const pageName = (pathParts.pop() || 'Dashboard')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (character) => character.toUpperCase());
+    const pageName = pageLabels[location.pathname] || 'Barangay Dashboard';
 
     useEffect(() => {
         document.title = `ImmuniCare - ${pageName}`;

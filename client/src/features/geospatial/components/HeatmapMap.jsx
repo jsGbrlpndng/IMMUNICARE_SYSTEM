@@ -25,6 +25,16 @@ const toMapFloat = (value) => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
+const isDefaulterRecord = (pt) => {
+    const urgency = String(pt?.urgency || '').toLowerCase();
+    const mapStatus = String(pt?.computed_map_status || '').toLowerCase();
+    return urgency === 'defaulter'
+        || urgency === 'overdue'
+        || mapStatus === 'defaulter'
+        || mapStatus === 'defaulted'
+        || mapStatus === 'overdue';
+};
+
 // --- Clinical Icon Factory ---
 const createClinicalIcon = (color, urgency, computed_map_status) => {
     let html = '';
@@ -196,7 +206,7 @@ const computeHullCentroid = (hullPoints) => {
     return { lat: sumLat / hullPoints.length, lng: sumLng / hullPoints.length };
 };
 
-const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }) => {
+const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts, mode }) => {
     const toggleGroup = (statuses) => {
         setActiveFilters(prev => {
             const allActive = statuses.every(s => prev.statuses.includes(s));
@@ -244,6 +254,35 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
         },
     ];
 
+    const displayedLegendItems = mode === 'priority'
+        ? [
+            {
+                id: 'defaulter_group',
+                statuses: ['defaulter'],
+                label: 'Defaulters',
+                color: getClinicalStatusMeta(CLINICAL_STATUS.DEFAULTED).colorHex,
+                icon: 'diamond',
+                count: derivedCounts.defaulters_in_view ?? derivedCounts.total_defaulters ?? 0
+            },
+            {
+                id: 'isolated_defaulters',
+                statuses: [],
+                label: 'Isolated Defaulters',
+                color: '#fb7185',
+                icon: 'circle',
+                count: derivedCounts.isolated_defaulters ?? 0
+            },
+            {
+                id: 'hotspot_areas',
+                statuses: [],
+                label: 'Hotspot Areas',
+                color: '#e11d48',
+                icon: 'area',
+                count: derivedCounts.hotspot_area_count ?? 0
+            }
+        ]
+        : legendItems;
+
     return (
         <div className="absolute top-6 right-6 z-[1000] bg-white/95 backdrop-blur-sm border border-slate-200 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 min-w-[210px]">
             <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 flex items-center gap-2">
@@ -251,12 +290,15 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
             </h5>
             
             <div className="flex flex-col gap-1.5">
-                {legendItems.map(item => {
-                    const isActive = item.statuses.some(s => activeFilters.statuses.includes(s));
+                {displayedLegendItems.map(item => {
+                    const isToggleable = item.statuses.length > 0;
+                    const isActive = isToggleable
+                        ? item.statuses.some(s => activeFilters.statuses.includes(s))
+                        : true;
                     return (
                         <div
                             key={item.id}
-                            onClick={() => toggleGroup(item.statuses)}
+                            onClick={() => isToggleable && toggleGroup(item.statuses)}
                             className={`flex items-center justify-between gap-4 p-2.5 rounded-xl transition-all cursor-pointer ${
                                 isActive ? 'bg-slate-50 border border-slate-100' : 'opacity-40 hover:opacity-60'
                             }`}
@@ -266,8 +308,13 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
                                     <svg width="12" height="12" viewBox="0 0 24 24">
                                         <path d="M12 2L2 12l10 10 10-10L12 2z" fill={item.color} />
                                     </svg>
+                                ) : item.icon === 'area' ? (
+                                    <div className="h-3 w-3 border-2 border-rose-600 bg-rose-50"></div>
                                 ) : (
-                                    <div className={`clinical-legend-dot clinical-legend-dot--${item.id}`}></div>
+                                    <div
+                                        className={`clinical-legend-dot clinical-legend-dot--${item.id}`}
+                                        style={{ backgroundColor: item.color }}
+                                    ></div>
                                 )}
                                 <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{item.label}</span>
                             </div>
@@ -279,7 +326,9 @@ const InteractiveLegendHUD = ({ activeFilters, setActiveFilters, derivedCounts }
                 })}
             </div>
             <div className="border-t border-slate-100 pt-2">
-                <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center">Click to toggle layer</p>
+                <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center">
+                    {mode === 'priority' ? 'Defaulter layers only' : 'Click to toggle layer'}
+                </p>
             </div>
         </div>
     );
@@ -317,18 +366,25 @@ const HeatmapMap = memo(({
 
     const validClusters = useMemo(() => {
         return (mapState?.clusters || [])
-            .map(cluster => ({
-                ...cluster,
-                lat: toMapFloat(cluster.lat),
-                lng: toMapFloat(cluster.lng),
-                points: (cluster.points || []).map(point => ({
+            .map(cluster => {
+                const sourcePoints = (cluster.points || []).map(point => ({
                     ...point,
                     lat: toMapFloat(point.lat),
                     lng: toMapFloat(point.lng)
-                }))
-            }))
-            .filter(c => isValidCoordinate(c.lat, c.lng));
-    }, [mapState?.clusters]);
+                }));
+                const points = mode === 'priority'
+                    ? sourcePoints.filter(isDefaulterRecord)
+                    : sourcePoints;
+                return {
+                    ...cluster,
+                    lat: toMapFloat(cluster.lat),
+                    lng: toMapFloat(cluster.lng),
+                    points
+                };
+            })
+            .filter(c => isValidCoordinate(c.lat, c.lng))
+            .filter(c => mode !== 'priority' || c.points.length > 0 || Number(c.total_defaulters || c.defaulter_count || 0) > 0);
+    }, [mapState?.clusters, mode]);
 
     // Collect marker refs so parent can open a popup imperatively
     const markerRefs = useRef({});
@@ -468,6 +524,17 @@ const HeatmapMap = memo(({
                     </div>
                 )}
 
+                {!loading && mode === 'priority' && validMarkers.length === 0 && validClusters.length === 0 && (
+                    <div className="absolute inset-0 z-[1200] flex items-center justify-center bg-white/65 backdrop-blur-[1px]">
+                        <div className="max-w-sm border border-slate-200 bg-white px-6 py-5 text-center shadow-xl">
+                            <AlertTriangle className="mx-auto mb-3 text-slate-300" size={28} />
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-600">
+                                No defaulter hotspot areas found for the selected barangay.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 <MapContainer
                     center={[14.3596, 121.0426]}
                     zoom={16}
@@ -537,6 +604,7 @@ const HeatmapMap = memo(({
                     activeFilters={activeFilters} 
                     setActiveFilters={setActiveFilters} 
                     derivedCounts={derivedCounts}
+                    mode={mode}
                 />
             </div>
         </div>

@@ -191,7 +191,7 @@ export default function AnalyticsMap() {
                     {loading && (
                         <div className="absolute inset-0 z-[1001] bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
                             <Loader2 className="animate-spin text-emerald-600" size={32} />
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recalculating Spatial Triage...</span>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recalculating Follow-up Area Monitoring...</span>
                         </div>
                     )}
 

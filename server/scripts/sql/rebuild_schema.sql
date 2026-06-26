@@ -52,6 +52,7 @@ CREATE TABLE users (
     password VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    failed_login_window_started_at TIMESTAMPTZ,
     locked_until TIMESTAMPTZ,
     last_login_at TIMESTAMPTZ,
     must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
@@ -607,7 +608,7 @@ ON CONFLICT (vaccine_code, dose_number, effective_date) DO NOTHING;
 
 INSERT INTO system_settings (setting_key, setting_value, value_type, category, description, min_value, max_value)
 VALUES
-    ('session_idle_timeout_minutes', '30', 'number', 'security', 'Idle timeout before staff users must re-authenticate.', 5, 240),
+    ('session_idle_timeout_minutes', '15', 'number', 'security', 'Idle timeout before staff users must re-authenticate.', 5, 240),
     ('failed_login_lock_threshold', '5', 'number', 'security', 'Failed login attempts before temporary account lock.', 3, 10),
     ('otp_expiry_minutes', '5', 'number', 'security', 'Caregiver OTP expiration window.', 1, 15),
     ('sms_reminder_days_before_due', '3', 'number', 'notifications', 'Days before due date to send SMS reminders.', 1, 14),

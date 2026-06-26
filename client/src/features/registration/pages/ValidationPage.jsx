@@ -458,7 +458,7 @@ const ValidationPage = () => {
                         </div>
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">Clinical Queue</p>
-                            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Registration Validation</h1>
+                            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Validation Queue</h1>
                             <p className="mt-1 text-sm font-semibold text-slate-500">
                                 Review pending infant registrations for approval, return, or rejection.
                             </p>

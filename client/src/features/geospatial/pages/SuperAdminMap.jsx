@@ -498,7 +498,7 @@ export default function SuperAdminMap() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">
-                                    Municipal Geospatial Intelligence
+                                    Municipal Geographic Monitoring
                                 </p>
                                 <h1 className="mt-1 text-2xl font-black text-slate-950">Spatial Decision Support System</h1>
                                 <p className="mt-1 text-sm font-semibold text-slate-500">
@@ -783,7 +783,7 @@ export default function SuperAdminMap() {
                                     </select>
                                 </label>
                                 <label className="flex flex-col gap-1">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Cluster Radius (Epsilon)</span>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Hotspot Radius</span>
                                     <div className="flex items-center gap-3">
                                         <input
                                             type="range"

@@ -5,9 +5,12 @@ const clinicalAuth = require('../../middleware/clinicalAuth');
 const requireRole = require('../../middleware/requireRole');
 const EnhancedNIPScheduleEngine = require('../vaccination/EnhancedNIPScheduleEngine');
 const InfantService = require('../infants/InfantService');
-const { CLINICAL_STATUS, ROLES } = require('../../config/constants/domain');
+const DBSCANEvaluationService = require('../geospatial/DBSCANEvaluationService');
+const { performAuditLog } = require('../../shared/utils/auditLogger');
+const { CLINICAL_STATUS, MIN_CLUSTER_INFANTS, ROLES } = require('../../config/constants/domain');
 const enhancedEngine = new EnhancedNIPScheduleEngine(db);
 const infantService = new InfantService(db);
+const dbscanEvaluationService = new DBSCANEvaluationService(db);
 const requireSuperAdminOnly = requireRole(
     [ROLES.SUPER_ADMIN],
     'Only Super Admins can access municipality-wide geospatial intelligence.'
@@ -25,6 +28,217 @@ router.use(requireRole(
     requireRole.CLINICAL_PRIVILEGED,
     'Only Midwives, Admins, and Super Admins can access dashboard clinical endpoints.'
 ));
+
+// GET /api/dashboard/dbscan-audit
+// Read-only DBSCAN parameter evaluation for clinical/geospatial audit use.
+router.get('/dbscan-audit', requireRole(
+    [ROLES.SUPER_ADMIN, ROLES.ADMIN],
+    'Only Admins and Super Admins can access DBSCAN audit evaluation.'
+), async (req, res) => {
+    try {
+        const barangay = getScopedBarangay(req);
+        const result = await dbscanEvaluationService.evaluate({
+            barangay,
+            minPts: req.query.minPts,
+            epsilonValues: req.query.epsilons
+        });
+
+        res.json({
+            ...result,
+            data: result.parameter_sweep
+        });
+    } catch (error) {
+        console.error('[GET /api/dashboard/dbscan-audit]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to evaluate DBSCAN parameter sweep.',
+            details: error.message
+        });
+    }
+});
+
+// PUT /api/dashboard/dbscan-settings
+// Controlled Super Admin-only update for production DBSCAN parameters.
+router.put('/dbscan-settings', requireSuperAdminOnly, async (req, res) => {
+    const connection = await db.getConnection();
+
+    try {
+        const epsilonMeters = parseInt(req.body?.epsilon_meters, 10);
+        const requestedMinPts = parseInt(req.body?.minPts ?? req.body?.min_points, 10);
+        const minPts = Math.max(requestedMinPts || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
+        const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+        const selectedDbcvScore = Number(req.body?.selected_dbcv_score);
+        const selectedIsRecommended = Boolean(req.body?.selected_is_recommended);
+
+        if (req.body?.confirmed !== true) {
+            return res.status(400).json({
+                success: false,
+                error: 'Super Admin confirmation is required before updating DBSCAN settings.'
+            });
+        }
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                error: 'Approval reason is required before updating DBSCAN settings.'
+            });
+        }
+
+        if (!Number.isInteger(epsilonMeters) || epsilonMeters < 50 || epsilonMeters > 5000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid DBSCAN epsilon. Radius must be between 50 and 5000 meters.'
+            });
+        }
+
+        await connection.beginTransaction();
+
+        const [currentRows] = await connection.execute(`
+            SELECT setting_key, setting_value
+            FROM system_settings
+            WHERE setting_key IN ('dbscan_epsilon_meters', 'dbscan_min_points')
+        `);
+
+        const currentMap = (currentRows || []).reduce((settings, row) => {
+            settings[row.setting_key] = row.setting_value;
+            return settings;
+        }, {});
+
+        const oldEpsilon = parseInt(currentMap.dbscan_epsilon_meters, 10) || 300;
+        const oldMinPts = Math.max(parseInt(currentMap.dbscan_min_points, 10) || MIN_CLUSTER_INFANTS, MIN_CLUSTER_INFANTS);
+        const updates = [
+            {
+                key: 'dbscan_epsilon_meters',
+                value: String(epsilonMeters),
+                valueType: 'number',
+                category: 'spatial',
+                description: 'Production DBSCAN hotspot radius in meters.',
+                minValue: 50,
+                maxValue: 5000
+            },
+            {
+                key: 'dbscan_min_points',
+                value: String(minPts),
+                valueType: 'number',
+                category: 'spatial',
+                description: 'Minimum nearby defaulters required to form a DBSCAN hotspot.',
+                minValue: MIN_CLUSTER_INFANTS,
+                maxValue: 50
+            }
+        ];
+
+        for (const update of updates) {
+            await connection.execute(`
+                INSERT INTO system_settings (
+                    setting_key,
+                    setting_value,
+                    value_type,
+                    category,
+                    description,
+                    min_value,
+                    max_value,
+                    updated_by
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (setting_key)
+                DO UPDATE SET
+                    setting_value = EXCLUDED.setting_value,
+                    value_type = EXCLUDED.value_type,
+                    category = EXCLUDED.category,
+                    description = EXCLUDED.description,
+                    min_value = EXCLUDED.min_value,
+                    max_value = EXCLUDED.max_value,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = NOW()
+            `, [
+                update.key,
+                update.value,
+                update.valueType,
+                update.category,
+                update.description,
+                update.minValue,
+                update.maxValue,
+                req.user.id
+            ]);
+        }
+
+        await connection.commit();
+
+        const auditDetails = {
+            reason,
+            old_values: {
+                epsilon_meters: oldEpsilon,
+                minPts: oldMinPts
+            },
+            new_values: {
+                epsilon_meters: epsilonMeters,
+                minPts
+            },
+            before: {
+                epsilon_meters: oldEpsilon,
+                minPts: oldMinPts
+            },
+            after: {
+                epsilon_meters: epsilonMeters,
+                minPts
+            },
+            actor_role: req.user.role,
+            actor_name: req.user.name || req.user.full_name || null,
+            warning_acknowledged: Boolean(req.body?.confirmed),
+            selected_option: {
+                epsilon_meters: epsilonMeters,
+                minPts,
+                is_dbcv_recommended: selectedIsRecommended,
+                dbcv_score: Number.isFinite(selectedDbcvScore) ? selectedDbcvScore : null
+            },
+            timestamp: new Date().toISOString()
+        };
+
+        await performAuditLog(
+            req.user.id,
+            'DBSCAN_SETTINGS_UPDATE',
+            'system_settings',
+            'dbscan_parameters',
+            auditDetails,
+            req
+        );
+
+        let result = null;
+        try {
+            result = await dbscanEvaluationService.evaluate({
+                barangay: getScopedBarangay(req)
+            });
+        } catch (evaluationError) {
+            console.error('[PUT /api/dashboard/dbscan-settings] refresh evaluation failed after update', evaluationError);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'DBSCAN production parameters updated.',
+            old_settings: auditDetails.old_values,
+            new_settings: auditDetails.new_values,
+            current_production_settings: result?.current_production_settings || {
+                epsilon_meters: epsilonMeters,
+                minPts,
+                production_behavior_changed: false
+            },
+            parameter_sweep: result?.parameter_sweep || [],
+            best_recommendation: result?.best_recommendation || null,
+            refresh_warning: result ? null : 'Settings were updated, but evaluation refresh failed. Reload the page to try again.',
+            read_only_evaluation: true
+        });
+    } catch (error) {
+        await connection.rollback().catch(() => {});
+        console.error('[PUT /api/dashboard/dbscan-settings]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update DBSCAN settings.',
+            details: error.message
+        });
+    } finally {
+        connection.release();
+    }
+});
 
 // GET /api/dashboard/kpis
 router.get('/kpis', async (req, res) => {

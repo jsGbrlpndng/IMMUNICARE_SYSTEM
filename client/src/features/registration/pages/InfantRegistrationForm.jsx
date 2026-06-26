@@ -173,6 +173,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     const [outOfBarangayConfirmed, setOutOfBarangayConfirmed] = useState(false);
     const searchDebounceRef = useRef(null);
     const searchAbortRef = useRef(null);
+    const addressManuallyEditedRef = useRef(false);
     const STEPS = useMemo(() => [
         { id: 1, title: 'Identity' },
         { id: 2, title: 'Guardian' },
@@ -443,9 +444,11 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             setOutOfBarangayReason('');
         }
 
-        setFormData(prev => ({
+        setFormData(prev => {
+            const shouldPreserveManualAddress = options.preserveManualAddress && addressManuallyEditedRef.current;
+            return {
             ...prev,
-            ...(locationData.exact_address ? { exact_address: locationData.exact_address } : {}),
+            ...(locationData.exact_address && !shouldPreserveManualAddress ? { exact_address: locationData.exact_address } : {}),
             ...(locationData.current_address ? { current_address: locationData.current_address } : {}),
             ...(locationData.locality ? { locality: locationData.locality } : {}),
             ...(locationData.barangay && !user?.assigned_barangay ? { barangay: locationData.barangay } : {}),
@@ -457,7 +460,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             precision: locationData.precision || prev.precision || 'approximate',
             location_precision: locationData.location_precision || locationData.precision || prev.location_precision || 'approximate',
             is_location_verified: locationData.is_location_verified ?? true
-        }));
+            };
+        });
         setErrors(prev => ({ ...prev, exact_address: '' }));
         setMapCenter([lat, lng]);
         return true;
@@ -552,6 +556,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             barangay: identifiedBarangay,
             is_location_verified: true
         });
+        addressManuallyEditedRef.current = false;
 
         setSearchResults([]);
         setShowSuggestions(false);
@@ -608,7 +613,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     location_precision: 'approximate',
                     barangay: fallbackBarangay,
                     is_location_verified: true
-                });
+                }, { preserveManualAddress: true });
                 if (!locationUpdated) return;
                 setSearchResults([]);
                 setShowSuggestions(false);
@@ -648,7 +653,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                 location_precision: precision,
                 barangay: identifiedBarangay,
                 is_location_verified: true
-            });
+            }, { preserveManualAddress: true });
             if (!locationUpdated) return;
             setSearchResults([]);
             setShowSuggestions(false);
@@ -674,7 +679,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         location_precision: 'approximate',
                         barangay: fallbackBarangay,
                         is_location_verified: true
-                    });
+                    }, { preserveManualAddress: true });
                     if (!locationUpdated) return;
                     setAddressLookupWarning('Exact GPS point saved. Address label is approximate.');
                 } else {
@@ -852,6 +857,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     };
 
     const handleAddressInputChange = (event) => {
+        addressManuallyEditedRef.current = true;
         handleChange(event);
 
         const query = event.target.value || '';
@@ -1437,7 +1443,7 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     <div>
                         <h1 className="text-4xl font-black text-slate-800 tracking-tight flex items-center gap-4">
                             <ClipboardCheck className="w-10 h-10 text-[#065f46]" />
-                            Registration Gate
+                            Infant Registration
                         </h1>
                         <p className="text-slate-500 font-bold text-sm mt-2">Clinical Intake & Spatial Validation System</p>
                     </div>

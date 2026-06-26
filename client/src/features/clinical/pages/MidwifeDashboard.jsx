@@ -372,7 +372,7 @@ export default function MidwifeDashboard() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3 shrink-0">
                     <button
-                        onClick={() => navigate('/clinical/map')}
+                        onClick={() => navigate('/clinical/map?view=priority')}
                         className="bg-green-900/50 hover:bg-green-900 text-green-100 border border-green-700/50 px-5 py-3 rounded-md flex items-center gap-3 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap"
                     >
                         <MapPin size={16} />
@@ -383,7 +383,7 @@ export default function MidwifeDashboard() {
                         className="bg-white hover:bg-slate-50 text-green-800 px-6 py-3 rounded-md flex items-center gap-3 text-xs font-black uppercase tracking-widest shadow-sm transition-all active:scale-95 group whitespace-nowrap"
                     >
                         <Shield size={16} />
-                        Validation Center
+                        Validation Queue
                     </button>
                 </div>
             </div>
@@ -409,7 +409,7 @@ export default function MidwifeDashboard() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => navigate('/clinical/map', {
+                            onClick={() => navigate('/clinical/map?view=priority', {
                                 state: {
                                     initialMode: 'priority',
                                     focusCluster: {
@@ -434,7 +434,7 @@ export default function MidwifeDashboard() {
                     { label: 'Due Today', value: stats?.scheduledToday, icon: Clock, bg: 'bg-green-50', text: 'text-green-800', path: '/clinical/registry?urgency=due_today' },
                     { label: 'Defaulted', value: stats?.overdueCount, icon: AlertCircle, bg: 'bg-rose-50', text: 'text-rose-600', path: '/clinical/registry?urgency=defaulter' },
                     { label: 'Due Soon', value: stats?.dueSoon, icon: Calendar, bg: 'bg-amber-50', text: 'text-amber-600', path: '/clinical/registry?urgency=due_soon' },
-                    { label: 'Risk Hotspots', value: stats?.clusterCount, icon: MapPin, bg: 'bg-green-50/50', text: 'text-green-800', path: '/clinical/map' }
+                    { label: 'Defaulter Hotspots', value: stats?.clusterCount, icon: MapPin, bg: 'bg-green-50/50', text: 'text-green-800', path: '/clinical/map?view=priority' }
                 ].map((kpi, i) => (
                     <div
                         key={i}
@@ -617,7 +617,7 @@ export default function MidwifeDashboard() {
                                     </div>
 
                                     <button
-                                        onClick={() => navigate('/clinical/map')}
+                                        onClick={() => navigate('/clinical/map?view=priority')}
                                         className="w-full text-slate-500 hover:text-green-800 hover:bg-green-50 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all py-3 border border-slate-200 rounded-md"
                                     >
                                         <MapIcon size={14} />

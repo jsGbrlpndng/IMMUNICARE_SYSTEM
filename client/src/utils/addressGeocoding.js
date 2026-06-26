@@ -48,6 +48,42 @@ const hasStreetLikeText = (value) => {
         /\b(BLOCK|BLK|LOT)\s*[0-9A-Z-]+/.test(text);
 };
 
+const normalizeAddressPartKey = (value) => normalizeText(value).replace(/\s+/g, ' ').trim();
+
+const sanitizeProviderAddressPart = (part) => {
+    let text = String(part || '').trim().replace(/\s+/g, ' ');
+    if (!text) return '';
+
+    text = text
+        .replace(/\b(?:HOUSE|UNIT|BLDG|BUILDING)\s*(?:NO\.?|NUMBER|#)?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\b(?:BLOCK|BLK|LOT)\s*(?:NO\.?|NUMBER|#)?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/(?:^|[\s,])#\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\bNO\.?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[,\s-]+|[,\s-]+$/g, '');
+
+    if (/^[0-9A-Z-]+$/i.test(text)) return '';
+    if (/\b(?:HOUSE|UNIT|BLDG|BUILDING|BLOCK|BLK|LOT)\b/i.test(text)) return '';
+
+    return text;
+};
+
+export const sanitizeReverseGeocodedAddressLabel = (value) => {
+    const seen = new Set();
+    const parts = String(value || '')
+        .split(',')
+        .map(sanitizeProviderAddressPart)
+        .filter(Boolean)
+        .filter((part) => {
+            const key = normalizeAddressPartKey(part);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+    return parts.join(', ');
+};
+
 export const getAddressPrecision = (result, { clicked = false } = {}) => {
     const address = result?.address || {};
     const displayName = result?.display_name || '';
@@ -160,8 +196,9 @@ const cleanReverseDisplayName = (result) => {
         return result.display_name;
     }
 
+    const safeDisplayName = sanitizeReverseGeocodedAddressLabel(result?.display_name || '');
     return formatFullAddress({
-        exactAddress: result?.display_name || '',
+        exactAddress: safeDisplayName,
         barangay
     }) || (barangay
         ? `Selected location in ${barangay}, San Pedro, Laguna`

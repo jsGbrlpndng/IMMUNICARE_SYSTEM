@@ -21,9 +21,9 @@ INSERT INTO system_settings (setting_key, setting_value, value_type, category, d
 -- Security
 ('password_min_length', '8', 'number', 'security', 'Minimum password length', 6, 32),
 ('password_require_complexity', 'true', 'boolean', 'security', 'Require uppercase, lowercase, number, special char', NULL, NULL),
-('session_timeout_minutes', '60', 'number', 'security', 'Session timeout in minutes', 15, 480),
-('max_login_attempts', '5', 'number', 'security', 'Maximum failed login attempts before lockout', 3, 10),
-('lockout_duration_minutes', '30', 'number', 'security', 'Account lockout duration after max attempts', 5, 120),
+('session_idle_timeout_minutes', '15', 'number', 'security', 'Idle timeout before staff users must re-authenticate.', 5, 240),
+('failed_login_lock_threshold', '5', 'number', 'security', 'Failed login attempts before temporary account lock.', 3, 10),
+('lockout_duration_minutes', '15', 'number', 'security', 'Account lockout duration after max attempts', 5, 120),
 
 -- Governance
 ('audit_retention_days', '365', 'number', 'governance', 'Audit log retention period in days', 90, 3650),

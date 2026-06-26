@@ -62,6 +62,32 @@ describe('geo reverse route', () => {
         expect(res.body.display_name).not.toMatch(/cvacawf|may pulang red/i);
     });
 
+    test('strips provider-inferred house, block, lot, and unit details from reverse geocoded labels', async () => {
+        mockAxiosGet.mockResolvedValueOnce({
+            data: {
+                display_name: 'House No. 44 Block 12 Lot 7, Lawaan Street, Saint Joseph 10, Phase 3, Langgam, San Pedro, Laguna, Calabarzon, 4023, Philippines',
+                lat: '14.32745642',
+                lon: '121.01520382',
+                address: {
+                    house_number: '44',
+                    road: 'Lawaan Street',
+                    neighbourhood: 'Saint Joseph 10',
+                    suburb: 'Phase 3',
+                    city: 'San Pedro',
+                    state: 'Laguna',
+                    country: 'Philippines'
+                }
+            }
+        });
+
+        const res = await request(buildApp())
+            .get('/api/geo/reverse?lat=14.32745642&lon=121.01520382&source=pin');
+
+        expect(res.status).toBe(200);
+        expect(res.body.display_name).toBe('Lawaan Street, Saint Joseph 10, Phase 3');
+        expect(res.body.display_name).not.toMatch(/\b(house|unit|block|blk|lot)\b/i);
+    });
+
     test('returns a clean coordinate fallback when external reverse geocoding is unavailable', async () => {
         mockAxiosGet.mockRejectedValueOnce(new Error('Nominatim unavailable'));
 

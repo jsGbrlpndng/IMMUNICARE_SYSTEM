@@ -90,7 +90,7 @@ const AccessPortal = () => {
                 console.log(`Login successful for ${data.user.name} (${userRole})`);
 
                 // Save session with authToken
-                login(data.user, data.authToken);
+                login(data.user, data.authToken, data.sessionPolicy);
 
                 if (data.status === 'REQUIRES_PASSWORD_UPDATE' || data.user?.must_change_password || data.user?.password_update_required) {
                     navigate('/force-password-change', { replace: true });

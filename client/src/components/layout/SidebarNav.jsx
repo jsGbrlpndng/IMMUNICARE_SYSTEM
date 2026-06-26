@@ -84,7 +84,7 @@ const NavItem = ({ item, active, isCollapsed, onClick }) => {
     );
 };
 
-const NavGroupItem = ({ item, active, isCollapsed, currentPath, onClick }) => {
+const NavGroupItem = ({ item, active, isCollapsed, isPathActive, onClick }) => {
     const [open, setOpen] = useState(active);
     const [hovered, setHovered] = useState(false);
     const Icon = item.icon;
@@ -156,7 +156,7 @@ const NavGroupItem = ({ item, active, isCollapsed, currentPath, onClick }) => {
                         <NavItem
                             key={child.name}
                             item={child}
-                            active={currentPath === child.path}
+                            active={isPathActive(child.path)}
                             isCollapsed={false}
                             onClick={onClick}
                         />
@@ -204,7 +204,8 @@ const SidebarNav = ({
     navItems = [],
     accountSettingsPath = '/clinical/profile',
     brandSubtitle = null,
-    logoutRedirectPath = '/'
+    logoutRedirectPath = '/',
+    showGroupLabels = true
 }) => {
     const location  = useLocation();
     const navigate  = useNavigate();
@@ -213,7 +214,8 @@ const SidebarNav = ({
     const [collapseHover, setCollapseHover] = useState(false);
     const accountRef = useRef(null);
 
-    const isActive = path => location.pathname === path;
+    const currentUrl = `${location.pathname}${location.search}`;
+    const isActive = path => (path.includes('?') ? currentUrl === path : location.pathname === path);
     const isItemActive = item => (
         isActive(item.path) ||
         (Array.isArray(item.children) && item.children.some(child => isActive(child.path)))
@@ -307,7 +309,7 @@ const SidebarNav = ({
                             )}
 
                             {/* Group label */}
-                            {!isCollapsed && (
+                            {showGroupLabels && !isCollapsed && (
                                 <p style={{
                                     margin:          0,
                                     padding:         '12px 6px 8px 20px',
@@ -332,7 +334,7 @@ const SidebarNav = ({
                                             item={item}
                                             active={isItemActive(item)}
                                             isCollapsed={isCollapsed}
-                                            currentPath={location.pathname}
+                                            isPathActive={isActive}
                                             onClick={() => setIsMobileOpen(false)}
                                         />
                                     ) : (

@@ -43,6 +43,7 @@ import AdminSpatialMap from '../features/geospatial/pages/AdminSpatialMap';
 import AdminPopulationMap from '../features/geospatial/pages/AdminPopulationMap';
 import TargetConfiguration from '../features/admin/pages/TargetConfiguration';
 import SuperAdminMap from '../features/geospatial/pages/SuperAdminMap';
+import DSSAuditDashboard from '../features/geospatial/components/DSSAuditDashboard';
 
 function App() {
     return (
@@ -360,6 +361,14 @@ function App() {
                         element={
                             <SuperAdminRoute>
                                 <SuperAdminLayout><SuperAdminMap /></SuperAdminLayout>
+                            </SuperAdminRoute>
+                        }
+                    />
+                    <Route
+                        path="/superadmin/geospatial/evaluation"
+                        element={
+                            <SuperAdminRoute>
+                                <SuperAdminLayout><DSSAuditDashboard /></SuperAdminLayout>
                             </SuperAdminRoute>
                         }
                     />

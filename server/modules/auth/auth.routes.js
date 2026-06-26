@@ -9,7 +9,9 @@ const UserProfileService = require('../users/UserProfileService');
 
 const DEFAULT_LOCK_THRESHOLD = 5;
 const DEFAULT_LOCK_MINUTES = 15;
-const DEFAULT_SESSION_SECONDS = 60 * 60 * 8;
+const DEFAULT_SESSION_SECONDS = 15 * 60;
+const DEFAULT_REAUTH_GRACE_SECONDS = 5 * 60;
+const DEFAULT_FAILED_ATTEMPT_WINDOW_MINUTES = 15;
 const PASSWORD_MIN_LENGTH = 10;
 const userProfileService = new UserProfileService(db);
 
@@ -53,6 +55,15 @@ const getSettingNumber = async (key, fallback) => {
     } catch (_) {
         return fallback;
     }
+};
+
+const getSessionPolicy = async () => {
+    const idleTimeoutMinutes = await getSettingNumber('session_idle_timeout_minutes', DEFAULT_SESSION_SECONDS / 60);
+    return {
+        idleTimeoutMinutes,
+        tokenLifetimeSeconds: idleTimeoutMinutes * 60,
+        reauthGraceSeconds: DEFAULT_REAUTH_GRACE_SECONDS
+    };
 };
 
 const getUserAssignments = async (user) => {
@@ -140,6 +151,78 @@ const auditAuthEvent = async (userOrId, actionType, details, req) => {
     await performAuditLog(userId || 'anonymous', actionType, 'auth', userId || null, auditDetails, req);
 };
 
+const isActiveLock = (user) => Boolean(user?.locked_until && new Date(user.locked_until) > new Date());
+
+const hasExpiredLock = (user) => Boolean(user?.locked_until && new Date(user.locked_until) <= new Date());
+
+const resetFailedAuthenticationState = async (userId, extraSetClause = '') => {
+    await db.execute(`
+        UPDATE users
+        SET failed_login_attempts = 0,
+            failed_login_window_started_at = NULL,
+            locked_until = NULL
+            ${extraSetClause}
+        WHERE id = ?
+    `, [userId]);
+};
+
+const resetExpiredLockIfNeeded = async (user, req) => {
+    if (!hasExpiredLock(user)) return user;
+
+    await resetFailedAuthenticationState(user.id);
+    await auditAuthEvent(user, 'AUTH_ACCOUNT_UNLOCKED', {
+        reason: 'LOCK_EXPIRED'
+    }, req);
+
+    return {
+        ...user,
+        failed_login_attempts: 0,
+        failed_login_window_started_at: null,
+        locked_until: null
+    };
+};
+
+const registerFailedAuthenticationAttempt = async (user, failureActionType, req) => {
+    const threshold = await getSettingNumber('failed_login_lock_threshold', DEFAULT_LOCK_THRESHOLD);
+    const now = new Date();
+    const windowStart = user.failed_login_window_started_at ? new Date(user.failed_login_window_started_at) : null;
+    const windowExpired = !windowStart ||
+        (now.getTime() - windowStart.getTime()) > DEFAULT_FAILED_ATTEMPT_WINDOW_MINUTES * 60 * 1000;
+    const nextWindowStart = windowExpired ? now : windowStart;
+    const attempts = windowExpired ? 1 : Number(user.failed_login_attempts || 0) + 1;
+    const shouldLock = attempts >= threshold;
+    const lockUntil = shouldLock ? new Date(now.getTime() + DEFAULT_LOCK_MINUTES * 60 * 1000) : null;
+
+    await db.execute(`
+        UPDATE users
+        SET failed_login_attempts = ?,
+            failed_login_window_started_at = ?,
+            locked_until = ?
+        WHERE id = ?
+    `, [attempts, nextWindowStart, lockUntil, user.id]);
+
+    await auditAuthEvent(user, failureActionType, {
+        reason: shouldLock ? 'LOCK_THRESHOLD_REACHED' : 'INVALID_PASSWORD',
+        attempts,
+        threshold,
+        observation_window_minutes: DEFAULT_FAILED_ATTEMPT_WINDOW_MINUTES,
+        lock_duration_minutes: DEFAULT_LOCK_MINUTES
+    }, req);
+
+    if (shouldLock) {
+        await auditAuthEvent(user, 'AUTH_ACCOUNT_TEMP_LOCKED', {
+            reason: 'FAILED_PASSWORD_THRESHOLD',
+            attempts,
+            threshold,
+            locked_until: lockUntil.toISOString(),
+            observation_window_minutes: DEFAULT_FAILED_ATTEMPT_WINDOW_MINUTES,
+            lock_duration_minutes: DEFAULT_LOCK_MINUTES
+        }, req);
+    }
+
+    return { attempts, shouldLock, lockUntil };
+};
+
 const loadAuthenticatedAuditUser = async (req) => {
     const token = req.headers['x-auth-token'];
     const verified = SecurityUtils.verifyToken(token);
@@ -213,7 +296,7 @@ router.post('/login', async (req, res) => {
     try {
         const [rows] = await db.execute(`
             SELECT id, role, full_name, assigned_barangay, password, is_active,
-                   failed_login_attempts, locked_until, must_change_password
+                   failed_login_attempts, failed_login_window_started_at, locked_until, must_change_password
             FROM users
             WHERE id = ?
         `, [trimmedUserId]);
@@ -246,44 +329,39 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        if (user.locked_until && new Date(user.locked_until) > new Date()) {
+        const effectiveUser = await resetExpiredLockIfNeeded(user, req);
+
+        if (isActiveLock(effectiveUser)) {
             await auditAuthEvent(user, 'AUTH_LOGIN_FAILED', { reason: 'USER_LOCKED' }, req);
             return res.status(423).json({
-                error: 'Account is temporarily locked. Please contact your administrator.',
+                error: 'Account temporarily locked due to multiple failed password attempts. Please try again after 15 minutes or contact the administrator.',
                 code: 'USER_LOCKED'
             });
         }
 
-        const validPassword = user.password ? await bcrypt.compare(password, user.password) : false;
+        const validPassword = effectiveUser.password ? await bcrypt.compare(password, effectiveUser.password) : false;
 
         if (!validPassword) {
-            const threshold = await getSettingNumber('failed_login_lock_threshold', DEFAULT_LOCK_THRESHOLD);
-            const attempts = Number(user.failed_login_attempts || 0) + 1;
-            const shouldLock = attempts >= threshold;
+            const failure = await registerFailedAuthenticationAttempt(effectiveUser, 'AUTH_LOGIN_FAILED', req);
 
-            await db.execute(`
-                UPDATE users
-                SET failed_login_attempts = ?,
-                    locked_until = CASE WHEN ? THEN CURRENT_TIMESTAMP + INTERVAL '${DEFAULT_LOCK_MINUTES} minutes' ELSE locked_until END
-                WHERE id = ?
-            `, [attempts, shouldLock, user.id]);
-
-            await auditAuthEvent(user, 'AUTH_LOGIN_FAILED', {
-                reason: shouldLock ? 'LOCK_THRESHOLD_REACHED' : 'INVALID_PASSWORD',
-                attempts
-            }, req);
+            if (failure.shouldLock) {
+                return res.status(423).json({
+                    error: 'Account temporarily locked due to multiple failed password attempts. Please try again after 15 minutes or contact the administrator.',
+                    code: 'USER_LOCKED'
+                });
+            }
 
             return res.status(401).json({ error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
         }
 
-        const assignedBarangays = await getUserAssignments(user);
+        const assignedBarangays = await getUserAssignments(effectiveUser);
         const primaryBarangay = assignedBarangays[0] || null;
         const primaryBarangayId = await getPrimaryBarangayId(primaryBarangay);
-        const assignmentError = validateScopedAssignments(user.role, assignedBarangays);
+        const assignmentError = validateScopedAssignments(effectiveUser.role, assignedBarangays);
         if (assignmentError) {
             await auditAuthEvent({
-                ...user,
-                assigned_barangay: primaryBarangay || user.assigned_barangay
+                ...effectiveUser,
+                assigned_barangay: primaryBarangay || effectiveUser.assigned_barangay
             }, 'AUTH_LOGIN_FAILED', {
                 reason: assignmentError.auditReason,
                 barangay_id: primaryBarangayId
@@ -291,33 +369,27 @@ router.post('/login', async (req, res) => {
             return res.status(assignmentError.status).json(assignmentError.body);
         }
 
-        const sessionMinutes = await getSettingNumber('session_idle_timeout_minutes', DEFAULT_SESSION_SECONDS / 60);
-        const passwordUpdateRequired = Boolean(user.must_change_password);
+        const sessionPolicy = await getSessionPolicy();
+        const passwordUpdateRequired = Boolean(effectiveUser.must_change_password);
         const authToken = SecurityUtils.signToken({
-            id: user.id,
-            role: user.role,
+            id: effectiveUser.id,
+            role: effectiveUser.role,
             assigned_barangay: primaryBarangay,
             barangay_id: primaryBarangayId,
             assigned_barangays: assignedBarangays,
             password_update_required: passwordUpdateRequired
-        }, sessionMinutes * 60);
+        }, sessionPolicy.tokenLifetimeSeconds);
 
-        await db.execute(`
-            UPDATE users
-            SET failed_login_attempts = 0,
-                locked_until = NULL,
-                last_login_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        `, [user.id]);
+        await resetFailedAuthenticationState(effectiveUser.id, ', last_login_at = CURRENT_TIMESTAMP');
 
         await auditAuthEvent(
             {
-                ...user,
-                assigned_barangay: primaryBarangay || user.assigned_barangay
+                ...effectiveUser,
+                assigned_barangay: primaryBarangay || effectiveUser.assigned_barangay
             },
             passwordUpdateRequired ? 'AUTH_PASSWORD_UPDATE_REQUIRED' : 'AUTH_LOGIN_SUCCESS',
             {
-                role: user.role,
+                role: effectiveUser.role,
                 barangay: primaryBarangay,
                 assigned_barangay: primaryBarangay,
                 barangay_id: primaryBarangayId
@@ -330,10 +402,14 @@ router.post('/login', async (req, res) => {
             status: passwordUpdateRequired ? 'REQUIRES_PASSWORD_UPDATE' : 'AUTHENTICATED',
             message: 'Login successful',
             authToken,
+            sessionPolicy: {
+                idleTimeoutMinutes: sessionPolicy.idleTimeoutMinutes,
+                reauthGraceSeconds: sessionPolicy.reauthGraceSeconds
+            },
             user: {
-                id: user.id,
-                role: user.role,
-                name: user.full_name,
+                id: effectiveUser.id,
+                role: effectiveUser.role,
+                name: effectiveUser.full_name,
                 assigned_barangay: primaryBarangay,
                 barangay_id: primaryBarangayId,
                 assigned_barangays: assignedBarangays,
@@ -347,6 +423,26 @@ router.post('/login', async (req, res) => {
             error: 'Internal server error. Please try again later.',
             code: 'INTERNAL_SERVER_ERROR',
             timestamp: new Date().toISOString()
+        });
+    }
+});
+
+router.get('/session-policy', async (_req, res) => {
+    try {
+        const sessionPolicy = await getSessionPolicy();
+        res.json({
+            success: true,
+            sessionPolicy: {
+                idleTimeoutMinutes: sessionPolicy.idleTimeoutMinutes,
+                reauthGraceSeconds: sessionPolicy.reauthGraceSeconds
+            }
+        });
+    } catch (error) {
+        console.error('Session policy error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Unable to load session policy',
+            code: 'SESSION_POLICY_UNAVAILABLE'
         });
     }
 });
@@ -456,6 +552,7 @@ router.post('/change-password', async (req, res) => {
                 must_change_password = FALSE,
                 last_password_reset_at = CURRENT_TIMESTAMP,
                 failed_login_attempts = 0,
+                failed_login_window_started_at = NULL,
                 locked_until = NULL
             WHERE id = ?
         `, [hashedPassword, user.id]);
@@ -479,12 +576,31 @@ router.post('/change-password', async (req, res) => {
 
 router.post('/reauthenticate', async (req, res) => {
     const token = req.headers['x-auth-token'];
-    const verified = SecurityUtils.verifyToken(token);
+    const sessionPolicy = await getSessionPolicy();
+    const tokenCheck = SecurityUtils.verifyTokenForReauthentication(token, sessionPolicy.reauthGraceSeconds);
+    const verified = tokenCheck.payload;
 
-    if (!verified?.id) {
+    if (tokenCheck.status === 'REAUTH_EXPIRED') {
+        if (verified?.id) {
+            await auditAuthEvent(verified.id, 'AUTH_SESSION_EXPIRED', {
+                reason: 'REAUTH_GRACE_EXPIRED',
+                seconds_expired: tokenCheck.secondsExpired
+            }, req).catch((error) => {
+                console.warn('[AUTH_SESSION_EXPIRED_AUDIT_FAILED]', error);
+            });
+        }
+
         return res.status(401).json({
             success: false,
             error: 'Session expired. Please sign in again.',
+            code: 'REAUTH_EXPIRED'
+        });
+    }
+
+    if (!tokenCheck.valid || !verified?.id) {
+        return res.status(401).json({
+            success: false,
+            error: 'Invalid session. Please sign in again.',
             code: 'INVALID_TOKEN'
         });
     }
@@ -501,6 +617,7 @@ router.post('/reauthenticate', async (req, res) => {
     try {
         const [rows] = await db.execute(`
             SELECT id, role, full_name, assigned_barangay, password, is_active,
+                   failed_login_attempts, failed_login_window_started_at,
                    locked_until, must_change_password, last_password_reset_at
             FROM users
             WHERE id = ?
@@ -514,11 +631,11 @@ router.post('/reauthenticate', async (req, res) => {
             });
         }
 
-        const user = rows[0];
-        if (user.locked_until && new Date(user.locked_until) > new Date()) {
+        const user = await resetExpiredLockIfNeeded(rows[0], req);
+        if (isActiveLock(user)) {
             return res.status(423).json({
                 success: false,
-                error: 'Account is temporarily locked. Please contact your administrator.',
+                error: 'Account temporarily locked due to multiple failed password attempts. Please try again after 15 minutes or contact the administrator.',
                 code: 'USER_LOCKED'
             });
         }
@@ -533,7 +650,16 @@ router.post('/reauthenticate', async (req, res) => {
 
         const validPassword = user.password ? await bcrypt.compare(password, user.password) : false;
         if (!validPassword) {
-            await auditAuthEvent(user, 'AUTH_REAUTH_FAILED', { reason: 'INVALID_PASSWORD' }, req);
+            const failure = await registerFailedAuthenticationAttempt(user, 'AUTH_REAUTH_FAILED', req);
+
+            if (failure.shouldLock) {
+                return res.status(423).json({
+                    success: false,
+                    error: 'Account temporarily locked due to multiple failed password attempts. Please try again after 15 minutes or contact the administrator.',
+                    code: 'USER_LOCKED'
+                });
+            }
+
             return res.status(401).json({
                 success: false,
                 error: 'Password is incorrect.',
@@ -564,7 +690,7 @@ router.post('/reauthenticate', async (req, res) => {
             barangay_id: primaryBarangayId,
             assigned_barangays: assignments,
             password_update_required: passwordUpdateRequired
-        }, DEFAULT_SESSION_SECONDS);
+        }, sessionPolicy.tokenLifetimeSeconds);
 
         await auditAuthEvent({
             ...user,
@@ -576,9 +702,15 @@ router.post('/reauthenticate', async (req, res) => {
             barangay_id: primaryBarangayId
         }, req);
 
+        await resetFailedAuthenticationState(user.id);
+
         res.json({
             success: true,
             authToken,
+            sessionPolicy: {
+                idleTimeoutMinutes: sessionPolicy.idleTimeoutMinutes,
+                reauthGraceSeconds: sessionPolicy.reauthGraceSeconds
+            },
             user: {
                 id: user.id,
                 role: user.role,

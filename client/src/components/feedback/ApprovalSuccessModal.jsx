@@ -46,7 +46,7 @@ function ApprovalSuccessModal({ infant, onClose }) {
             </span>
           )}
           <span className="block mt-2">
-            has been approved and is now available in the NIP Schedule for vaccination planning.
+            has been approved and is now available in the Vaccination Schedule for vaccination planning.
           </span>
         </p>
         
@@ -62,7 +62,7 @@ function ApprovalSuccessModal({ infant, onClose }) {
             onClick={handleNavigateToSchedule}
             className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-sm"
           >
-            Go to NIP Schedule →
+            Go to Vaccination Schedule →
           </button>
         </div>
       </div>

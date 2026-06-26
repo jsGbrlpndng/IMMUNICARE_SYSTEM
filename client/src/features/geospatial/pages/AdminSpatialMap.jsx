@@ -389,7 +389,7 @@ export default function AdminSpatialMap() {
                 <div className="px-8 py-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-100">San Pedro Field Operations</p>
-                        <h1 className="mt-3 text-3xl font-black tracking-tight">Admin Spatial Analysis</h1>
+                        <h1 className="mt-3 text-3xl font-black tracking-tight">Field Deployment Map</h1>
                         <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-emerald-50">
                             Field deployment view for {assignedBarangay}. Results are bounded to the assigned barangay map extent.
                         </p>

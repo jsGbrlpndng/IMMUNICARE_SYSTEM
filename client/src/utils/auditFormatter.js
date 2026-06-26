@@ -6,6 +6,8 @@ const ACTION_LABELS = {
     AUTH_PASSWORD_CHANGED: 'Changed Password',
     AUTH_REAUTH_SUCCESS: 'Unlocked Session',
     AUTH_REAUTH_FAILED: 'Failed Session Unlock',
+    AUTH_ACCOUNT_TEMP_LOCKED: 'Account Temporarily Locked',
+    AUTH_ACCOUNT_UNLOCKED: 'Account Lock Cleared',
     AUTH_LOGOUT: 'Logged Out',
     SESSION_IDLE_LOCKED: 'Session Locked Due to Inactivity',
     CREATE_INFANT: 'Registered Infant',

@@ -34,9 +34,14 @@ const BRAND = {
 const navItems = [
     { path: '/bhw/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/bhw/submissions', label: 'My Submissions', icon: FolderCheck },
-    { path: '/bhw/follow-ups', label: 'Follow-Ups', icon: ClipboardList },
+    { path: '/bhw/follow-ups', label: 'Follow-up Tasks', icon: ClipboardList },
     { path: '/bhw/profile', label: 'Account Settings', icon: Settings }
 ];
+
+const pageLabels = {
+    ...navItems.reduce((labels, item) => ({ ...labels, [item.path]: item.label }), {}),
+    '/bhw/register': 'Register Infant'
+};
 
 const BHWLayout = () => {
     const { user, logout, auditLogout } = useAuth();
@@ -80,12 +85,13 @@ const BHWLayout = () => {
         ? displayName.split(' ').map((name) => name[0]).join('').toUpperCase().slice(0, 2)
         : 'BH';
 
-    const pageName = location.pathname
+    const fallbackPageName = location.pathname
         .split('/')
         .filter(Boolean)
         .pop()
         ?.replace(/-/g, ' ')
         .replace(/\b\w/g, (character) => character.toUpperCase()) || 'Dashboard';
+    const pageName = pageLabels[location.pathname] || fallbackPageName;
 
     const isActive = (path) => location.pathname === path;
 

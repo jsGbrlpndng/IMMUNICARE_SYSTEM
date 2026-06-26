@@ -288,7 +288,7 @@ const BHWDashboard = () => {
                             onClick={() => navigate('/bhw/follow-ups')}
                             className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#084C39] px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#07362A]"
                         >
-                            View Priority Follow-Ups
+                            View Priority Follow-up Tasks
                             <ChevronRight className="h-4 w-4" />
                         </button>
                     </div>
@@ -399,7 +399,7 @@ const BHWDashboard = () => {
                         to="/bhw/follow-ups"
                         className="inline-flex items-center gap-1 text-sm font-black text-emerald-600 transition-colors hover:text-emerald-700"
                     >
-                        Open Follow-Ups
+                        Open Follow-up Tasks
                         <ChevronRight className="h-4 w-4" />
                     </Link>
                 </div>

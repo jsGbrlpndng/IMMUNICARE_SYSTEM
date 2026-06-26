@@ -32,7 +32,7 @@ const featureCards = [
         icon: Users
     },
     {
-        title: 'NIP Schedule Monitoring',
+        title: 'Vaccination Schedule Monitoring',
         desc: 'Track due, overdue, completed, pending validation, and clinically ineligible doses from the NIP schedule.',
         icon: ClipboardCheck
     },
@@ -47,7 +47,7 @@ const featureCards = [
         icon: FileText
     },
     {
-        title: 'Heatmap Decision Support',
+        title: 'Hotspot Map Decision Support',
         desc: 'Use geospatial and DBSCAN hotspot views to focus outreach in priority localities.',
         icon: MapPinned
     },

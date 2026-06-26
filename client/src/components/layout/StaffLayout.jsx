@@ -1,42 +1,44 @@
 import React from 'react';
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BarChart2, CalendarDays, ClipboardList, Map as MapIcon, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
+import { Baby, BarChart2, CalendarDays, ClipboardList, Map as MapIcon, MapPinned, Menu, MessageSquare, Settings, ShieldCheck, LayoutDashboard } from 'lucide-react';
 import SidebarNav from './SidebarNav';
 import NotificationBell from '../feedback/NotificationBell';
 import { useAuth } from '../../contexts/AuthContext';
 
 const clinicalNavigation = [
     {
-        group: 'Clinical',
+        group: 'Clinical Portal',
         items: [
             { name: 'Dashboard', path: '/clinical/dashboard', icon: LayoutDashboard },
             { name: 'Infant Registry', path: '/clinical/registry', icon: ClipboardList },
-            { name: 'Validation', path: '/clinical/validation', icon: ShieldCheck },
-            { name: 'NIP Schedule', path: '/clinical/schedule', icon: CalendarDays }
-        ]
-    },
-    {
-        group: 'Insights',
-        items: [
+            { name: 'Validation Queue', path: '/clinical/validation', icon: ShieldCheck },
+            { name: 'Vaccination Schedule', path: '/clinical/schedule', icon: CalendarDays },
             { name: 'Reports', path: '/clinical/reports', icon: BarChart2 },
-            { name: 'Heatmap', path: '/clinical/map', icon: MapIcon },
-            { name: 'Follow-Ups', path: '/clinical/follow-ups', icon: ClipboardList }
-        ]
-    },
-    {
-        group: 'Messaging',
-        items: [
-            { name: 'SMS', path: '/clinical/sms', icon: MessageSquare }
-        ]
-    },
-    {
-        group: 'Security',
-        items: [
+            {
+                name: 'Geographic Monitoring',
+                path: '/clinical/map?view=individual',
+                icon: MapPinned,
+                children: [
+                    { name: 'Infant Status Map', path: '/clinical/map?view=individual', icon: Baby },
+                    { name: 'Defaulter Hotspot Areas', path: '/clinical/map?view=priority', icon: MapIcon }
+                ]
+            },
+            { name: 'Follow-up Tasks', path: '/clinical/follow-ups', icon: ClipboardList },
+            { name: 'SMS', path: '/clinical/sms', icon: MessageSquare },
             { name: 'Account Settings', path: '/clinical/profile', icon: Settings }
         ]
     }
 ];
+
+const pageLabels = clinicalNavigation
+    .flatMap((group) => group.items)
+    .flatMap((item) => [item, ...(item.children || [])])
+    .reduce((labels, item) => ({ ...labels, [item.path]: item.name }), {});
+
+const pageContextLabels = {
+    '/clinical/map': 'Geographic Monitoring'
+};
 
 /**
  * StaffLayout - Midwife clinical portal shell.
@@ -64,9 +66,15 @@ const StaffLayout = ({ children }) => {
         lastPart = 'Patient Record';
     }
 
-    const pageName = lastPart
+    const fallbackPageName = lastPart
         .replace(/-/g, ' ')
         .replace(/\b\w/g, c => c.toUpperCase());
+    const mapView = new URLSearchParams(location.search).get('view') === 'priority' ? 'priority' : 'individual';
+    const currentPageKey = location.pathname === '/clinical/map'
+        ? `${location.pathname}?view=${mapView}`
+        : location.pathname;
+    const pageName = pageLabels[currentPageKey] || pageLabels[location.pathname] || fallbackPageName;
+    const pageContext = pageContextLabels[location.pathname];
 
     useEffect(() => {
         document.title = `ImmuniCare - ${pageName}`;
@@ -82,6 +90,7 @@ const StaffLayout = ({ children }) => {
                 navItems={clinicalNavigation}
                 accountSettingsPath="/clinical/profile"
                 logoutRedirectPath="/portal"
+                showGroupLabels={false}
             />
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'lg:pl-20' : 'lg:pl-64'}`}>
@@ -95,7 +104,7 @@ const StaffLayout = ({ children }) => {
 
                     <div className="hidden sm:block">
                         <p className="text-sm text-slate-400 font-medium">
-                            Clinical Portal <span className="text-slate-700 font-bold">/ {pageName}</span>
+                            Clinical Portal <span className="text-slate-700 font-bold">/ {pageContext ? `${pageContext} / ` : ''}{pageName}</span>
                         </p>
                     </div>
 

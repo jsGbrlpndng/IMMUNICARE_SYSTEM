@@ -17,6 +17,20 @@ const MappingBadge = ({ status }) => {
     return <span title="Unmapped / Needs Address Validation" className="text-slate-300"><AlertTriangle size={10} /></span>;
 };
 
+const isDefaulterRecord = (pt) => {
+    const urgency = String(pt?.urgency || '').toLowerCase();
+    const mapStatus = String(pt?.computed_map_status || '').toLowerCase();
+    return urgency === 'defaulter'
+        || urgency === 'overdue'
+        || mapStatus === 'defaulter'
+        || mapStatus === 'defaulted'
+        || mapStatus === 'overdue';
+};
+
+const uniqueById = (records = []) => Array.from(
+    new Map(records.map((pt, index) => [pt?.id || `record-${index}`, pt])).values()
+);
+
 const PrioritySummaryCard = ({ mapState, onFocus }) => {
     const topAction = mapState?.recommended_actions?.find(a => a.type === 'FIELD_TARGET');
     if (!topAction) return null;
@@ -219,8 +233,22 @@ const HeatmapSidePanel = ({
     loadingReport = false,
     onSubmitReport = null
 }) => {
-    const clusters = mapState?.clusters || [];
+    const clusters = (mapState?.clusters || [])
+        .map((cluster) => {
+            const sourcePoints = uniqueById(cluster.points || []);
+            const defaulterPoints = sourcePoints.filter(isDefaulterRecord);
+            const fallbackCount = Number(cluster?.total_defaulters || cluster?.defaulter_count || 0);
+            const defaulterCount = sourcePoints.length > 0 ? defaulterPoints.length : fallbackCount;
+            return {
+                ...cluster,
+                points: defaulterPoints,
+                defaulterCount,
+                total_infants: defaulterCount
+            };
+        })
+        .filter(cluster => mode !== 'priority' || cluster.defaulterCount > 0);
     const selectedCluster = clusters.find(c => (c.clusterId || c.id) === selectedClusterId);
+    const defaultersInView = uniqueById(allMarkersForMode || []).filter(isDefaulterRecord);
 
     const deploymentByLabel = React.useMemo(() => {
         const lookup = new Map();
@@ -298,7 +326,7 @@ const HeatmapSidePanel = ({
             <div className="px-6 py-5 border-b border-slate-300 bg-white flex-shrink-0">
                 <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Field Deployment & Triage</h2>
                 <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                    {selectedCluster ? 'Deployment Detail' : 'Priority Outreach Areas'}
+                    {selectedCluster ? 'Deployment Detail' : 'Defaulter Hotspot Areas'}
                 </h3>
             </div>
 
@@ -307,23 +335,23 @@ const HeatmapSidePanel = ({
                     <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-[#084C39]" />
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-wider text-emerald-900">
-                            Standardized Cluster Detection (Min. 3 Infants)
+                            Standardized Cluster Detection (Min. 3 Defaulters)
                         </p>
                         <p className="mt-1 text-[11px] font-semibold leading-5 text-[#084C39]">
-                            Read-only supervisor view of assigned outreach areas.
+                            Read-only supervisor view of defaulter-focused outreach areas.
                         </p>
                     </div>
                 </div>
 
                 {!selectedCluster ? (
                     <>
-                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Active Deployment Areas</h4>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-2">Defaulter Hotspot Areas</h4>
                         {clusters.length > 0 ? (
                             clusters.map((cluster, index) => {
                                 const deployment = getDeployment(cluster);
                                 const assignedName = getAssignedDisplay(cluster);
                                 const status = cluster?.cluster_status || deployment?.cluster_status || 'Pending';
-                                const infantCount = cluster?.total_infants || cluster?.assigned_count || deployment?.assigned_count || 0;
+                                const defaulterCount = cluster?.defaulterCount || cluster?.total_infants || cluster?.assigned_count || deployment?.assigned_count || 0;
 
                                 return (
                                     <button
@@ -335,7 +363,7 @@ const HeatmapSidePanel = ({
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
                                                 <p className="text-sm font-black text-slate-900">{cluster.locality || cluster.cluster_label || `Priority Area ${index + 1}`}</p>
-                                                <p className="mt-1 text-xs font-semibold text-slate-500">{infantCount} infants in this deployment area</p>
+                                                <p className="mt-1 text-xs font-semibold text-slate-500">{defaulterCount} defaulters for follow-up</p>
                                             </div>
                                             <span className="border border-rose-200 bg-rose-50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-rose-700">
                                                 Requires Intervention
@@ -350,7 +378,7 @@ const HeatmapSidePanel = ({
                         ) : (
                             <div className="p-12 text-center">
                                 <Activity className="text-slate-200 mx-auto mb-4" size={48} />
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">No active clusters</span>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">No defaulter hotspot areas found for the selected barangay.</span>
                             </div>
                         )}
                     </>
@@ -383,7 +411,7 @@ const HeatmapSidePanel = ({
 
                             <div className="grid grid-cols-2 gap-4 mb-4">
                                 <div>
-                                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Population</span>
+                                    <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Defaulters</span>
                                     <span className="text-2xl font-black text-slate-900">{selectedCluster.total_infants}</span>
                                 </div>
                                 <div>
@@ -450,10 +478,11 @@ const HeatmapSidePanel = ({
                         </div>
 
                         <div className="px-2">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-2">Action Roster</h4>
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-2">Defaulter Action Roster</h4>
                             <div className="flex flex-col gap-1">
-                                {Array.from(new Map((selectedCluster.points || []).map(pt => [pt.id, pt])).values())
-                                    .filter(pt => activeFilters.statuses.includes(pt.urgency || 'defaulter'))
+                                {uniqueById(selectedCluster.points || [])
+                                    .filter(isDefaulterRecord)
+                                    .filter(pt => activeFilters.statuses.includes('defaulter'))
                                     .sort((a, b) => {
                                         const urgencyOrder = { 'defaulter': 1, 'overdue': 1, 'due_today': 2, 'due_soon': 3, 'upcoming': 4, 'completed': 5 };
                                         return (urgencyOrder[a.urgency || 'defaulter'] || 99) - (urgencyOrder[b.urgency || 'defaulter'] || 99);
@@ -467,8 +496,12 @@ const HeatmapSidePanel = ({
             {/* Operational Footer */}
             <div className="bg-slate-50 p-5 flex-shrink-0 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Triage Count</span>
-                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest">{selectedCluster ? Array.from(new Map((selectedCluster.points || []).map(pt => [pt.id, pt])).values()).filter(p => activeFilters.statuses.includes(p.urgency || 'defaulter')).length : (mapState?.all_infants?.filter(p => activeFilters.statuses.includes(p.urgency || 'defaulter')).length || 0)} Infants</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        {selectedCluster ? 'Defaulters in Hotspot Area' : 'Defaulters in View'}
+                    </span>
+                    <span className="text-sm font-black text-slate-800 uppercase tracking-widest">
+                        {selectedCluster ? uniqueById(selectedCluster.points || []).filter(isDefaulterRecord).length : defaultersInView.length} Defaulters
+                    </span>
                 </div>
             </div>
         </div>

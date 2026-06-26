@@ -209,6 +209,24 @@ const addressPartKey = (value) => normalize(value).replace(/\s+/g, ' ').trim();
 
 const isPostalCodePart = (value) => /^\d{4,5}$/.test(String(value || '').trim());
 
+const sanitizeProviderAddressPart = (part) => {
+    let text = String(part || '').trim().replace(/\s+/g, ' ');
+    if (!text) return '';
+
+    text = text
+        .replace(/\b(?:HOUSE|UNIT|BLDG|BUILDING)\s*(?:NO\.?|NUMBER|#)?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\b(?:BLOCK|BLK|LOT)\s*(?:NO\.?|NUMBER|#)?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/(?:^|[\s,])#\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\bNO\.?\s*[0-9A-Z-]+\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[,\s-]+|[,\s-]+$/g, '');
+
+    if (/^[0-9A-Z-]+$/i.test(text)) return '';
+    if (/\b(?:HOUSE|UNIT|BLDG|BUILDING|BLOCK|BLK|LOT)\b/i.test(text)) return '';
+
+    return text;
+};
+
 const isAddressNoisePart = (part, barangay = null) => {
     const key = addressPartKey(part);
     if (!key) return true;
@@ -228,7 +246,7 @@ const cleanAddressParts = (value, barangay = null) => {
     const seen = new Set();
     const output = [];
     String(value || '').split(',').forEach((part) => {
-        const trimmed = part.trim();
+        const trimmed = sanitizeProviderAddressPart(part);
         const key = addressPartKey(trimmed);
         if (!key || seen.has(key) || isAddressNoisePart(trimmed, barangay)) return;
         seen.add(key);

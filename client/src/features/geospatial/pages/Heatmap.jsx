@@ -3,13 +3,12 @@ import L from 'leaflet';
 import {
     Activity,
     Search,
-    AlertTriangle,
     Maximize,
     Target,
     Shield
 } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import apiClient from '../../../services/apiClient';
 
 // Sub-components
@@ -22,25 +21,36 @@ import { getBarangayCenter } from '../../../utils/barangayConfig';
 import { getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
+const ALL_STATUS_FILTERS = ['defaulter', 'due_soon', 'on_track', 'completed'];
+const PRIORITY_STATUS_FILTERS = ['defaulter'];
+
+const getDefaultActiveFilters = (mode) => ({
+    statuses: mode === 'priority' ? [...PRIORITY_STATUS_FILTERS] : [...ALL_STATUS_FILTERS],
+    shortcuts: []
+});
+
 // --- Main Orchestrator ---
 export default function Heatmap() {
     const { user } = useAuth();
     const location = useLocation();
+    const navigate = useNavigate();
     const navState = location.state || {};
+    const initialMode = navState.initialMode;
+    const initialFocusCluster = navState.focusCluster;
     const isMidwife = user?.role === 'Midwife';
     const canAdjustEpsilon = ['Admin', 'Super Admin'].includes(user?.role);
     const [eps, setEps] = useState(300);
-    const [mode, setMode] = useState(navState.initialMode || 'all'); // 'all' (Individual) or 'priority' (Priority Areas)
-    const [pendingFocus, setPendingFocus] = useState(navState.focusCluster || null);
-    const [activeFilters, setActiveFilters] = useState({
-        // All 4 independent clinical states enabled by default.
-        // Toggling one in the legend HUD only affects its own group.
-        statuses: ['defaulter', 'due_soon', 'on_track', 'completed'],
-        shortcuts: []
-    });
+    const routeMode = useMemo(() => {
+        const view = new URLSearchParams(location.search).get('view');
+        if (view === 'priority') return 'priority';
+        if (view === 'individual') return 'all';
+        return initialMode === 'priority' ? 'priority' : 'all';
+    }, [location.search, initialMode]);
+    const mode = routeMode; // 'all' (Infant Status Map) or 'priority' (Defaulter Hotspot Areas)
+    const [pendingFocus, setPendingFocus] = useState(initialFocusCluster || null);
+    const [activeFilters, setActiveFilters] = useState(() => getDefaultActiveFilters(routeMode));
     const [mapState, setMapState] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [isTransitioning, setIsTransitioning] = useState(false); 
     const [mapTarget, setMapTarget] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [currentZoom, setCurrentZoom] = useState(16);
@@ -53,6 +63,33 @@ export default function Heatmap() {
     const [loadingReport, setLoadingReport] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
+    const mapViewCopy = mode === 'priority'
+        ? {
+            title: 'Defaulter Hotspot Areas',
+            subtitle: 'Follow-up Area Monitoring'
+        }
+        : {
+            title: 'Infant Status Map',
+            subtitle: 'Infant Immunization Status Monitoring'
+        };
+
+    useEffect(() => {
+        const view = new URLSearchParams(location.search).get('view');
+        if (!view) {
+            const targetView = initialMode === 'priority' ? 'priority' : 'individual';
+            const preservedState = initialMode || initialFocusCluster
+                ? { initialMode, focusCluster: initialFocusCluster }
+                : undefined;
+            navigate(`/clinical/map?view=${targetView}`, { replace: true, state: preservedState });
+        }
+    }, [location.search, initialMode, initialFocusCluster, navigate]);
+
+    useEffect(() => {
+        setSelectedInfantId(null);
+        setSelectedClusterId(null);
+        setSearchQuery('');
+        setActiveFilters(getDefaultActiveFilters(mode));
+    }, [mode]);
 
     const selectedCluster = useMemo(() => {
         if (!mapState?.clusters || !selectedClusterId) return null;
@@ -206,25 +243,21 @@ export default function Heatmap() {
         return () => window.removeEventListener('immunicare:followups-updated', handleFollowUpUpdate);
     }, [fetchData]);
 
-    // Mode Switcher with Guard
-    const handleModeChange = useCallback((newMode) => {
-        if (newMode === mode) return;
-        
-        setIsTransitioning(true);
-        setSelectedInfantId(null);
-        setSelectedClusterId(null);
-        setMode(newMode);
-        
-        setTimeout(() => {
-            setIsTransitioning(false);
-        }, 300);
-    }, [mode]);
-
     // Helpers
     const hasValidLatLng = useCallback((pt) => {
         const lat = parseFloat(pt?.lat);
         const lng = parseFloat(pt?.lng);
         return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+    }, []);
+
+    const isDefaulterRecord = useCallback((pt) => {
+        const urgency = String(pt?.urgency || '').toLowerCase();
+        const mapStatus = String(pt?.computed_map_status || '').toLowerCase();
+        return urgency === 'defaulter'
+            || urgency === 'overdue'
+            || mapStatus === 'defaulter'
+            || mapStatus === 'defaulted'
+            || mapStatus === 'overdue';
     }, []);
     
     const normalizeCoords = useCallback((pt) => {
@@ -261,36 +294,55 @@ export default function Heatmap() {
 
     // Filtered data for the map markers
     const allMarkersForMode = useMemo(() => {
-        if (!mapState || isTransitioning) return [];
+        if (!mapState) return [];
         let pool = mapState.all_infants || [];
 
         // Status Filtering (Primary Triage)
-        pool = pool.filter(p => activeFilters.statuses.includes(p.urgency) || p.id === selectedInfantId);
+        if (mode === 'priority') {
+            pool = pool.filter(p => isDefaulterRecord(p) && activeFilters.statuses.includes('defaulter'));
+        } else {
+            pool = pool.filter(p => activeFilters.statuses.includes(p.urgency) || p.id === selectedInfantId);
+        }
 
         // Shortcut / Quality Filtering
         if (activeFilters.shortcuts.includes('unmapped_high_risk')) {
-            pool = pool.filter(p => (!hasValidLatLng(p) && p.urgency === 'defaulter') || p.id === selectedInfantId);
+            pool = pool.filter(p => (!hasValidLatLng(p) && isDefaulterRecord(p)) || p.id === selectedInfantId);
         }
         if (activeFilters.shortcuts.includes('address_needs_validation')) {
             pool = pool.filter(p => (!p.is_location_verified && hasValidLatLng(p)) || p.id === selectedInfantId);
         }
         if (activeFilters.shortcuts.includes('mapped_high_risk_only')) {
-            pool = pool.filter(p => (hasValidLatLng(p) && p.urgency === 'defaulter') || p.id === selectedInfantId);
+            pool = pool.filter(p => (hasValidLatLng(p) && isDefaulterRecord(p)) || p.id === selectedInfantId);
         }
         
         return pool;
-    }, [mapState, mode, isTransitioning, activeFilters, hasValidLatLng, selectedInfantId]);
+    }, [mapState, mode, activeFilters, hasValidLatLng, isDefaulterRecord, selectedInfantId]);
 
     const derivedCounts = useMemo(() => {
         if (!mapState || !mapState.counts) return {
             all: 0, rendered: 0,
             total_defaulters: 0, total_due_soon: 0, total_on_track: 0, total_completed: 0,
             mapped_defaulters: 0, mapped_due_soon: 0, mapped_on_track: 0, mapped_completed: 0,
+            clustered_defaulters: 0, isolated_defaulters: 0, defaulters_in_view: 0, hotspot_area_count: 0,
             // Legacy keys kept for any components that still read them
             totalDefaulter: 0, totalDueSoon: 0, totalOnTrack: 0, totalCompleted: 0,
             mappedDefaulter: 0, mappedDueSoon: 0
         };
         const { counts } = mapState;
+        const defaulters = (mapState.all_infants || []).filter(isDefaulterRecord);
+        const defaulterClusters = (mapState.clusters || []).filter((cluster) => {
+            const sourcePoints = cluster.points || [];
+            return sourcePoints.some(isDefaulterRecord) || Number(cluster?.total_defaulters || cluster?.defaulter_count || 0) > 0;
+        });
+        const clusteredDefaulterIds = new Set(
+            defaulterClusters
+                .flatMap(cluster => cluster.points || [])
+                .filter(isDefaulterRecord)
+                .map(point => point.id)
+                .filter(Boolean)
+        );
+        const clusteredDefaulters = defaulters.filter(point => clusteredDefaulterIds.has(point.id)).length;
+        const isolatedDefaulters = Math.max(defaulters.length - clusteredDefaulters, 0);
 
         return {
             all: counts.all || 0,
@@ -307,6 +359,10 @@ export default function Heatmap() {
             mapped_due_soon:   counts.mapped_due_soon   || 0,
             mapped_on_track:   counts.mapped_on_track   || 0,
             mapped_completed:  counts.mapped_completed  || 0,
+            clustered_defaulters: clusteredDefaulters,
+            isolated_defaulters: isolatedDefaulters,
+            defaulters_in_view: allMarkersForMode.filter(isDefaulterRecord).length,
+            hotspot_area_count: defaulterClusters.length,
 
             // Legacy aliases for backwards compatibility
             totalDefaulter: counts.total_defaulters || 0,
@@ -316,19 +372,21 @@ export default function Heatmap() {
             mappedDefaulter: counts.mapped_defaulters || 0,
             mappedDueSoon:   counts.mapped_due_soon   || 0
         };
-    }, [mapState, allMarkersForMode]);
+    }, [mapState, allMarkersForMode, isDefaulterRecord]);
 
     const searchResults = useMemo(() => {
         if (!searchQuery.trim()) return null;
         const q = searchQuery.toLowerCase().trim();
-        return (mapState?.all_infants || []).filter(pt => {
+        return (mapState?.all_infants || [])
+            .filter(pt => mode !== 'priority' || isDefaulterRecord(pt))
+            .filter(pt => {
             const name = formatFullNameFromObject(pt).toLowerCase();
             const addr = (pt.exact_address || '').toLowerCase();
             const loc = (pt.locality || pt.barangay || '').toLowerCase();
             const guardian = (pt.guardian_name || pt.mothers_maiden_name || pt.mother_name || '').toLowerCase();
             return name.includes(q) || addr.includes(q) || loc.includes(q) || guardian.includes(q);
         });
-    }, [searchQuery, mapState]);
+    }, [searchQuery, mapState, mode, isDefaulterRecord]);
 
     const handleSearchSelect = (pt) => {
         if (hasValidLatLng(pt)) {
@@ -361,27 +419,11 @@ export default function Heatmap() {
                         <Activity className="text-white" size={20} />
                     </div>
                     <div>
-                        <h1 className="text-lg font-black text-slate-800 tracking-tight leading-none">Midwife Follow-Up</h1>
+                        <h1 className="text-lg font-black text-slate-800 tracking-tight leading-none">{mapViewCopy.title}</h1>
                         <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
-                            {user?.assigned_barangay ? `Barangay ${user.assigned_barangay}` : 'Municipal Overview'} • Spatial Triage
+                            {user?.assigned_barangay ? `Barangay ${user.assigned_barangay}` : 'Municipal Overview'} • {mapViewCopy.subtitle}
                         </p>
                     </div>
-                </div>
-
-                {/* KPI Tabs */}
-                <div className="flex bg-slate-100 rounded-lg p-1">
-                    <button 
-                        onClick={() => handleModeChange('all')}
-                        className={`px-6 py-2 text-xs transition-all ${mode === 'all' ? 'bg-white shadow-sm text-slate-900 font-bold rounded-md' : 'text-slate-500 font-medium hover:text-slate-700'}`}
-                    >
-                        Individual ({derivedCounts.all || 0})
-                    </button>
-                    <button 
-                        onClick={() => handleModeChange('priority')}
-                        className={`px-6 py-2 text-xs transition-all ${mode === 'priority' ? 'bg-white shadow-sm text-slate-900 font-bold rounded-md' : 'text-slate-500 font-medium hover:text-slate-700'}`}
-                    >
-                        Priority Areas
-                    </button>
                 </div>
 
                 {/* Search */}
@@ -457,7 +499,7 @@ export default function Heatmap() {
                                 formatDisplayName={formatDisplayName}
                                 formatAge={formatAge}
                                 handleCall={handleCall}
-                                loading={loading || isTransitioning}
+                                loading={loading}
                                 resetViewFlag={resetViewFlag}
                                 markerRefsCallback={markerRefsCallback}
                                 activeFilters={activeFilters}
@@ -512,7 +554,7 @@ export default function Heatmap() {
                                 <div className="flex items-center gap-2">
                                     <span className={`w-1.5 h-1.5 rounded-full ${mode === 'all' ? 'bg-[#084C39]' : 'bg-rose-500'} animate-pulse`}></span>
                                     <span className="text-[11px] font-black text-slate-800 tracking-widest uppercase">
-                                        {activeFilters.statuses.length < 4 || activeFilters.shortcuts.length > 0 ? 'Filtered' : 'Global'} View: {allMarkersForMode.length} Infants
+                                        {activeFilters.shortcuts.length > 0 ? 'Filtered' : 'Defaulters in'} View: {allMarkersForMode.length} Defaulters
                                     </span>
                                 </div>
                             )}
@@ -552,7 +594,6 @@ export default function Heatmap() {
                         <HeatmapSidePanel 
                             mapState={mapState}
                             mode={mode}
-                            setMode={handleModeChange} 
                             activeFilters={activeFilters}
                             setActiveFilters={setActiveFilters}
                             derivedCounts={derivedCounts}
@@ -578,7 +619,7 @@ export default function Heatmap() {
                     {canAdjustEpsilon ? (
                         <div className="flex flex-col gap-1.5 p-4 border-t border-slate-200">
                             <div className="flex items-center justify-between text-xs font-black text-slate-700 uppercase">
-                                <span>Cluster Radius (Epsilon)</span>
+                                <span>Hotspot Radius</span>
                                 <span className="text-emerald-700">{eps}m</span>
                             </div>
                             <input

@@ -251,7 +251,7 @@ const AuditLogs = () => {
                             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">
                                 {isSuperAdmin ? 'Head Nurse Audit Ledger' : 'Barangay Audit Ledger'}
                             </p>
-                            <h1 className="text-2xl font-black text-slate-950">Immutable Activity History</h1>
+                            <h1 className="text-2xl font-black text-slate-950">{isSuperAdmin ? 'Audit Trail' : 'Barangay Audit Trail'}</h1>
                             <p className="mt-1 text-sm font-semibold text-slate-500">
                                 {isSuperAdmin ? 'All RHU 2 barangays and system-level activity' : `Locked to ${lockedBarangay}`}
                             </p>

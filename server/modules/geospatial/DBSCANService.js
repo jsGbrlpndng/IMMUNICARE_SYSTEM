@@ -2,8 +2,9 @@
  * DBSCAN Spatial Clustering Service
  * 
  * Implements the DBSCAN (Density-Based Spatial Clustering of Applications with Noise)
- * algorithm to identify geographic clusters of under-immunized infants based on
- * Haversine distance.
+ * algorithm to identify geographic clusters of under-immunized infants.
+ * Production clustering is executed by PostGIS using ST_ClusterDBSCAN over
+ * ST_Transform(location, 32651), so epsilon is interpreted in projected meters.
  */
 
 const { MIN_CLUSTER_INFANTS } = require('../../config/constants/domain');
