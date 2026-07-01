@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { SummaryItem } from './FormComponents';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
+import { formatTTStatus } from '../../../utils/registrationValidation';
 
 const ReviewGroup = ({ title, children }) => (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -87,8 +88,8 @@ const ReviewSection = ({
                 )}
                 <SummaryItem label="Breastfeeding" value={formData.initiated_breastfeeding ? 'Initiated Immediately' : 'Not Initiated'} />
                 <SummaryItem label="Spatial Coords" value={formData.latitude ? `${formData.latitude.toFixed(6)}, ${formData.longitude.toFixed(6)}` : 'Not captured'} />
-                <SummaryItem label="Maternal TT Status" value={formData.tt_history_unknown ? 'Unknown' : (formData.mother_tt_status?.startsWith('TT') ? formData.mother_tt_status : `TT${formData.mother_tt_status}`)} />
-                {!formData.tt_history_unknown && formData.last_tt_date && (
+                <SummaryItem label="Maternal TT Status" value={formatTTStatus(formData.mother_tt_status)} />
+                {String(formData.mother_tt_status || '') !== '0' && formData.last_tt_date && (
                     <SummaryItem label="Last TT Date" value={new Date(formData.last_tt_date).toLocaleDateString()} />
                 )}
                 <SummaryItem label="BCG Status" value={formData.bcg_status || 'Pending Selection'} />

@@ -2,20 +2,19 @@ import React from 'react';
 import {
     Baby,
     CalendarDays,
-    Download,
     HeartPulse,
     Home,
     MapPin,
     Phone,
-    Printer,
     Ruler,
     Scale,
-    ShieldCheck,
     UserRound,
     UsersRound
 } from 'lucide-react';
 import VaccineStatusBadge from './VaccineStatusBadge';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
+import BrandLogo from '../../../components/brand/BrandLogo';
+import { formatFullAddress } from '../../../utils/addressFormatting';
 
 const CARD_GREEN = '#0F5132';
 const PRIMARY_GREEN = '#198754';
@@ -31,6 +30,15 @@ const formatDate = (value) => {
 };
 
 const valueOrDash = (value) => value || '-';
+
+const formatRemark = (value) => {
+    if (!value) return 'Not recorded.';
+    const remark = String(value).trim();
+    if (/auto-logged at-birth dose upon clinical validation approval/i.test(remark)) {
+        return 'Recorded at birth after clinical validation.';
+    }
+    return remark;
+};
 
 const InfoField = ({ icon: Icon, label, value, wide = false }) => (
     <div className={`flex gap-3 border-b border-emerald-900/15 py-3 ${wide ? 'sm:col-span-2' : ''}`}>
@@ -74,8 +82,8 @@ const VaccineRecordTable = ({ vaccineGroups }) => (
                     <tr className="bg-[#198754] text-white">
                         <th className="w-[27%] px-4 py-3 text-left text-xs font-black uppercase">Vaccine</th>
                         <th className="w-[9%] px-3 py-3 text-center text-xs font-black uppercase">Dose</th>
-                        <th className="w-[18%] px-3 py-3 text-center text-xs font-black uppercase">Due Date</th>
-                        <th className="w-[18%] px-3 py-3 text-center text-xs font-black uppercase">Date Given</th>
+                        <th className="w-[18%] px-3 py-3 text-center text-xs font-black uppercase">Scheduled Date</th>
+                        <th className="w-[18%] px-3 py-3 text-center text-xs font-black uppercase">Date Administered</th>
                         <th className="w-[16%] px-3 py-3 text-center text-xs font-black uppercase">Status</th>
                         <th className="w-[12%] px-3 py-3 text-center text-xs font-black uppercase">Remarks</th>
                     </tr>
@@ -95,7 +103,7 @@ const VaccineRecordTable = ({ vaccineGroups }) => (
                                 <td className="border-r border-slate-200 px-3 py-3 text-center">
                                     <VaccineStatusBadge status={dose.status} />
                                 </td>
-                                <td className="px-3 py-3 text-center text-xs font-medium text-slate-600">{dose.remarks || 'Not recorded'}</td>
+                                <td className="px-3 py-3 text-center text-xs font-medium text-slate-600">{formatRemark(dose.remarks)}</td>
                             </tr>
                         ))
                     ))}
@@ -110,7 +118,10 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
 
     const { infant, summary = {}, vaccine_groups: vaccineGroups = [] } = card;
     const childName = formatFullNameFromObject(infant);
-    const address = [infant.address, infant.purok, infant.barangay].filter(Boolean).join(', ');
+    const address = formatFullAddress({
+        exactAddress: infant.exact_address || infant.address,
+        barangay: infant.barangay
+    }) || [infant.address, infant.purok, infant.barangay].filter(Boolean).join(', ');
 
     return (
         <div className="min-h-screen bg-[#f3f7f4] px-3 py-5 text-slate-950 sm:px-5" style={{ fontFamily: 'Poppins, Inter, system-ui, sans-serif' }}>
@@ -161,22 +172,6 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                 <div className="caregiver-no-print mx-auto mb-4 flex max-w-5xl flex-wrap items-center justify-end gap-2">
                     <button
                         type="button"
-                        onClick={() => window.print()}
-                        className="inline-flex items-center gap-2 rounded-md border border-[#198754] bg-white px-4 py-2 text-sm font-black text-[#0F5132] shadow-sm hover:bg-[#D1E7DD]"
-                    >
-                        <Printer className="h-4 w-4" />
-                        Print
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => window.print()}
-                        className="inline-flex items-center gap-2 rounded-md border border-[#198754] bg-white px-4 py-2 text-sm font-black text-[#0F5132] shadow-sm hover:bg-[#D1E7DD]"
-                    >
-                        <Download className="h-4 w-4" />
-                        Save as PDF
-                    </button>
-                    <button
-                        type="button"
                         onClick={onSignOut}
                         className="rounded-md bg-[#0F5132] px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-[#198754]"
                     >
@@ -191,8 +186,8 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                         </div>
 
                         <div className="grid gap-4 border-b border-[#198754] bg-white px-5 py-6 sm:grid-cols-[120px_1fr_190px] sm:items-center sm:px-7">
-                            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-[#D1E7DD] bg-[#D1E7DD] text-[#0F5132]">
-                                <ShieldCheck className="h-11 w-11" />
+                            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-[#D1E7DD] bg-white text-[#0F5132]">
+                                <BrandLogo variant="print" imageClassName="h-20 w-20" />
                             </div>
                             <div className="text-center sm:text-left">
                                 <p className="text-xs font-black uppercase tracking-[0.18em] text-[#198754]">IMMUNICARE</p>
@@ -200,9 +195,9 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                                     Child Immunization Card
                                 </h1>
                             </div>
-                            <div className="rounded-lg bg-[#0F5132] p-4 text-white shadow-sm">
-                                <p className="text-[10px] font-black uppercase tracking-wide text-[#D1E7DD]">Reference / Code No.</p>
-                                <p className="mt-2 break-words text-xl font-black">{infant.reference_id || infant.code_number || '-'}</p>
+                            <div className="min-w-0 rounded-lg bg-[#0F5132] p-4 text-white shadow-sm">
+                                <p className="text-[10px] font-black uppercase tracking-wide text-[#D1E7DD]">Registration No.</p>
+                                <p className="mt-2 whitespace-nowrap text-base font-black leading-tight sm:text-lg">{infant.reference_id || infant.code_number || '-'}</p>
                             </div>
                         </div>
                     </header>
@@ -219,7 +214,7 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                                 <InfoField icon={Home} label="Address" value={address} />
                                 <InfoField icon={MapPin} label="Barangay" value={infant.barangay} />
                                 <InfoField icon={Scale} label="Birth Weight" value={infant.birth_weight ? `${infant.birth_weight} kg` : null} />
-                                <InfoField icon={Ruler} label="Birth Length" value={infant.birth_length ? `${infant.birth_length} cm` : null} />
+                                <InfoField icon={Ruler} label="Birth Length" value={(infant.birth_length || infant.length_at_birth_cm) ? `${infant.birth_length || infant.length_at_birth_cm} cm` : null} />
                             </dl>
                         </CardSection>
 
@@ -241,7 +236,7 @@ const DigitalImmunizationCard = ({ card, onSignOut }) => {
                             <StatusPill label="Completed" value={summary.completed_count} tone="completed" />
                             <StatusPill label="Due Soon" value={summary.due_soon_count} tone="due" />
                             <StatusPill label="Overdue" value={summary.overdue_count} tone="overdue" />
-                            <StatusPill label="Pending" value={summary.pending_validation_count} tone="pending" />
+                            <StatusPill label="Pending Validation" value={summary.pending_validation_count} tone="pending" />
                         </section>
 
                         {vaccineGroups.length === 0 ? (

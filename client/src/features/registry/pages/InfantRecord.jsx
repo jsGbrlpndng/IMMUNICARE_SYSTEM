@@ -25,6 +25,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import RecordVaccinationModal from '../../vaccination/components/RecordVaccinationModal';
 import DoseCorrectionModal from '../../vaccination/components/DoseCorrectionModal';
 import { formatFullAddress } from '../../../utils/addressFormatting';
+import { formatTTStatus } from '../../../utils/registrationValidation';
 
 /**
  * InfantRecord - High-density clinical patient profile.
@@ -272,7 +273,7 @@ export default function InfantRecord() {
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Maternal TT Status</span>
                             <span className="text-xs font-bold text-slate-700">
-                                {infant.mother_tt_status ? (infant.mother_tt_status.startsWith('TT') ? infant.mother_tt_status : `TT${infant.mother_tt_status}`) : 'Unknown'}
+                                {formatTTStatus(infant.mother_tt_status)}
                             </span>
                         </div>
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">

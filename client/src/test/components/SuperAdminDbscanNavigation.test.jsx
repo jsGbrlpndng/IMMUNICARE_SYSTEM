@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import SuperAdminLayout from '../../components/layout/SuperAdminLayout';
 
@@ -47,5 +47,40 @@ describe('SuperAdminLayout DBSCAN navigation', () => {
         expect(screen.getByText(/Super Admin Portal/i)).toBeInTheDocument();
         expect(screen.getAllByText(/DBSCAN Evaluation/i).length).toBeGreaterThanOrEqual(2);
         expect(screen.getByText('Evaluation Page')).toBeInTheDocument();
+    });
+
+    it('shows the Global Filter only on the Super Admin dashboard', () => {
+        render(
+            <MemoryRouter initialEntries={['/superadmin/dashboard']}>
+                <SuperAdminLayout>
+                    <div>Dashboard Page</div>
+                </SuperAdminLayout>
+            </MemoryRouter>
+        );
+
+        expect(screen.getByText('Global Filter')).toBeInTheDocument();
+
+        const hiddenRoutes = [
+            '/superadmin/geospatial',
+            '/superadmin/geospatial/evaluation',
+            '/superadmin/users',
+            '/superadmin/targets',
+            '/superadmin/reports',
+            '/superadmin/audit',
+            '/superadmin/account-settings'
+        ];
+
+        hiddenRoutes.forEach((route) => {
+            cleanup();
+            render(
+                <MemoryRouter initialEntries={[route]}>
+                    <SuperAdminLayout>
+                        <div>Other Page</div>
+                    </SuperAdminLayout>
+                </MemoryRouter>
+            );
+
+            expect(screen.queryByText('Global Filter')).not.toBeInTheDocument();
+        });
     });
 });

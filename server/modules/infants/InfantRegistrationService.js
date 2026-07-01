@@ -6,6 +6,11 @@ const { ROLES, REGISTRATION_STATUS } = require('../../config/constants/domain');
 const { buildVaccinationReportFields } = require('../../shared/utils/vaccinationReporting');
 const { safeRecordAuditEvent } = require('../../shared/utils/auditLedger');
 
+const GIVEN_WITHIN_24_HOURS = 'Given within 24 hours';
+const GIVEN_MORE_THAN_24_HOURS = 'Given more than 24 hours';
+const NOT_GIVEN = 'Not Given';
+const UNKNOWN = 'Unknown';
+
 class InfantRegistrationService {
     constructor(db) {
         this.db = db;
@@ -46,18 +51,20 @@ class InfantRegistrationService {
 
         const rawStatus = payload.status ?? payload.registration_status;
         const status = this._normalizeBhwSaveStatus(rawStatus ?? REGISTRATION_STATUS.PENDING_VALIDATION);
-        if (status === REGISTRATION_STATUS.DRAFT) {
-            this._validateDraftSavePayload(payload);
-        } else {
-            this._validateSaveRegistrationPayload(payload);
-            payload.correction_notes = null;
-        }
         if (payload.sex !== undefined && payload.sex !== null && String(payload.sex).trim() !== '') {
             payload.sex = this._normalizeSex(payload.sex);
         } else if (status === REGISTRATION_STATUS.PENDING_VALIDATION) {
             payload.sex = this._normalizeSex(payload.sex);
         } else {
             payload.sex = '';
+        }
+        if (status === REGISTRATION_STATUS.DRAFT) {
+            this._normalizeClinicalRegistrationPayload(payload, { strict: false });
+            this._validateDraftSavePayload(payload);
+        } else {
+            this._validateSaveRegistrationPayload(payload);
+            this._normalizeClinicalRegistrationPayload(payload, { strict: true });
+            payload.correction_notes = null;
         }
 
         // Explicitly trim and normalize the barangay string
@@ -213,6 +220,205 @@ class InfantRegistrationService {
             return ['true', '1', 'yes', 'y', 'on'].includes(value.trim().toLowerCase());
         }
         return false;
+    }
+
+    _parseLocalDate(value) {
+        if (!value) return null;
+        const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    _todayLocalDate() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return today;
+    }
+
+    _hasMeaningfulText(value, minLength = 8) {
+        const text = String(value || '').trim();
+        return text.length >= minLength && /[A-Za-zÀ-ÿ]/.test(text);
+    }
+
+    _normalizePositiveInteger(value, fieldName, { required = false, min = 1, max = 20 } = {}) {
+        const raw = String(value ?? '').trim();
+        if (!raw) {
+            if (required) throw this._httpError(`${fieldName} is required.`, 400);
+            return null;
+        }
+        if (!/^[1-9]\d*$/.test(raw)) {
+            throw this._httpError(`${fieldName} must be a positive whole number.`, 400);
+        }
+        const parsed = Number.parseInt(raw, 10);
+        if (parsed < min || parsed > max) {
+            throw this._httpError(`${fieldName} must be between ${min} and ${max}.`, 400);
+        }
+        return parsed;
+    }
+
+    _normalizeDecimal(value, fieldName, { required = false, min, max } = {}) {
+        const raw = String(value ?? '').trim();
+        if (!raw) {
+            if (required) throw this._httpError(`${fieldName} is required.`, 400);
+            return null;
+        }
+        if (!/^\d+(\.\d+)?$/.test(raw)) {
+            throw this._httpError(`${fieldName} must be a valid positive number.`, 400);
+        }
+        const parsed = Number.parseFloat(raw);
+        if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+            throw this._httpError(`${fieldName} must be between ${min} and ${max}.`, 400);
+        }
+        return parsed;
+    }
+
+    _deriveBirthStatus(birthWeight) {
+        const weight = Number.parseFloat(birthWeight);
+        if (!Number.isFinite(weight)) return null;
+        if (weight < 2.5) return 'Low Birth Weight';
+        if (weight > 4.0) return 'Macrosomia';
+        return 'Normal';
+    }
+
+    _normalizeTTStatus(value, { required = false } = {}) {
+        const raw = String(value ?? '').trim().toUpperCase();
+        if (!raw) {
+            if (required) throw this._httpError('mother_tt_status is required.', 400);
+            return '';
+        }
+        if (['NO_TT_HISTORY', 'NO TT HISTORY', 'NONE', 'UNKNOWN', 'UNKNOWN / NO HISTORY'].includes(raw)) return '0';
+        const stripped = raw.replace(/^TT/, '');
+        if (['0', '1', '2', '3', '4', '5'].includes(stripped)) return stripped;
+        throw this._httpError('mother_tt_status must be one of No TT history, TT1, TT2, TT3, TT4, or TT5.', 400);
+    }
+
+    _classifyBirthDoseStatus(dateGiven, dob) {
+        const doseValue = String(dateGiven || '').trim();
+        const dobValue = String(dob || '').trim();
+        const isDateOnly = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+        if (isDateOnly(doseValue) && isDateOnly(dobValue)) {
+            if (doseValue < dobValue) return null;
+            return doseValue === dobValue ? GIVEN_WITHIN_24_HOURS : GIVEN_MORE_THAN_24_HOURS;
+        }
+
+        const doseDate = this._parseLocalDate(dateGiven);
+        const birthDate = this._parseLocalDate(dob);
+        if (!doseDate || !birthDate) return null;
+        const hoursAfterBirth = (doseDate.getTime() - birthDate.getTime()) / (1000 * 60 * 60);
+        if (hoursAfterBirth < 0) return null;
+        return hoursAfterBirth >= 0 && hoursAfterBirth <= 24
+            ? GIVEN_WITHIN_24_HOURS
+            : GIVEN_MORE_THAN_24_HOURS;
+    }
+
+    _normalizeBirthDose(data, prefix, statusField, dateField, { strict = false } = {}) {
+        const rawStatus = String(data[statusField] || '').trim();
+        const dateValue = data[dateField] || null;
+        const upperStatus = rawStatus.toUpperCase();
+        const isKnownNonGiven = [NOT_GIVEN.toUpperCase(), UNKNOWN.toUpperCase()].includes(upperStatus);
+        const isGiven = upperStatus.startsWith('GIVEN');
+
+        if (!rawStatus) {
+            if (strict) throw this._httpError(`${prefix} status is required.`, 400);
+            return;
+        }
+
+        if (!isGiven && !isKnownNonGiven) {
+            throw this._httpError(`${prefix} status is invalid.`, 400);
+        }
+
+        if (isKnownNonGiven) {
+            data[statusField] = upperStatus === UNKNOWN.toUpperCase() ? UNKNOWN : NOT_GIVEN;
+            data[dateField] = '';
+            return;
+        }
+
+        if (strict && !dateValue) {
+            throw this._httpError(`${prefix} date is required when marked as given.`, 400);
+        }
+        if (!dateValue) return;
+
+        const doseDate = this._parseLocalDate(dateValue);
+        const dobDate = this._parseLocalDate(data.dob);
+        if (!doseDate) throw this._httpError(`${prefix} date must be a valid YYYY-MM-DD date.`, 400);
+        if (!dobDate) throw this._httpError('dob is required before validating at-birth doses.', 400);
+        if (doseDate < dobDate) throw this._httpError(`${prefix} date must not be before date of birth.`, 400);
+        if (doseDate > this._todayLocalDate()) throw this._httpError(`${prefix} date must not be in the future.`, 400);
+
+        data[dateField] = String(dateValue).slice(0, 10);
+        data[statusField] = this._classifyBirthDoseStatus(data[dateField], data.dob);
+    }
+
+    _normalizeClinicalRegistrationPayload(data, { strict = false } = {}) {
+        if (!data || typeof data !== 'object') return data;
+
+        if (data.exact_address !== undefined) data.exact_address = String(data.exact_address || '').trim();
+        if (data.landmark !== undefined) data.landmark = String(data.landmark || '').trim();
+        if (strict) {
+            if (!this._hasMeaningfulText(data.exact_address, 10)) {
+                throw this._httpError('exact_address must include meaningful house, street, purok, sitio, or landmark details.', 400);
+            }
+            if (!this._hasMeaningfulText(data.landmark, 8)) {
+                throw this._httpError('landmark must include meaningful house or landmark details.', 400);
+            }
+            const latitude = Number.parseFloat(data.latitude);
+            const longitude = Number.parseFloat(data.longitude);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude === 0 || longitude === 0) {
+                throw this._httpError('Valid map coordinates are required for final submission.', 400);
+            }
+            data.latitude = latitude;
+            data.longitude = longitude;
+            data.is_location_verified = this._isTruthy(data.is_location_verified);
+            if (!data.is_location_verified) {
+                throw this._httpError('Map location must be verified before final submission.', 400);
+            }
+        }
+
+        const ttStatus = this._normalizeTTStatus(data.mother_tt_status, { required: strict });
+        data.mother_tt_status = ttStatus;
+        data.tt_history_unknown = ttStatus === '0';
+        if (ttStatus === '0') {
+            data.last_tt_date = '';
+        } else if (ttStatus) {
+            if (strict && !data.last_tt_date) {
+                throw this._httpError('last_tt_date is required for TT1-TT5.', 400);
+            }
+            if (data.last_tt_date) {
+                const ttDate = this._parseLocalDate(data.last_tt_date);
+                const dobDate = this._parseLocalDate(data.dob);
+                if (!ttDate) throw this._httpError('last_tt_date must be a valid YYYY-MM-DD date.', 400);
+                if (ttDate > this._todayLocalDate()) throw this._httpError('last_tt_date must not be in the future.', 400);
+                if (dobDate && ttDate > dobDate) throw this._httpError('last_tt_date must not be after date of birth.', 400);
+                data.last_tt_date = String(data.last_tt_date).slice(0, 10);
+            }
+        }
+
+        const pregnancyOrder = this._normalizePositiveInteger(data.pregnancy_order, 'pregnancy_order', { required: strict, min: 1, max: 20 });
+        data.pregnancy_order = pregnancyOrder === null ? '' : pregnancyOrder;
+
+        const birthWeight = this._normalizeDecimal(data.birth_weight, 'birth_weight', { required: strict, min: 1.0, max: 6.0 });
+        data.birth_weight = birthWeight === null ? '' : birthWeight;
+        data.birth_status = birthWeight === null ? (data.birth_status || 'Pending birth weight') : this._deriveBirthStatus(birthWeight);
+
+        const lengthAtBirth = this._normalizeDecimal(data.length_at_birth_cm, 'length_at_birth_cm', { required: strict, min: 35.0, max: 60.0 });
+        data.length_at_birth_cm = lengthAtBirth === null ? '' : lengthAtBirth;
+
+        if (strict) {
+            this._requireNonEmptyString(data.mothers_maiden_name, 'mothers_maiden_name is required.');
+            this._requireNonEmptyString(data.caregiver_relationship, 'caregiver_relationship is required.');
+            this._requireNonEmptyString(data.caregiver_phone, 'caregiver_phone is required.');
+            if (!/^(09|\+639)\d{9}$/.test(String(data.caregiver_phone || '').trim())) {
+                throw this._httpError('caregiver_phone must use Philippine mobile format 09XXXXXXXXX.', 400);
+            }
+            if (data.birth_setting === 'FACILITY') {
+                this._requireNonEmptyString(data.delivery_facility_name, 'delivery_facility_name is required for facility births.');
+            }
+        }
+
+        this._normalizeBirthDose(data, 'BCG', 'bcg_status', 'bcg_date', { strict });
+        this._normalizeBirthDose(data, 'Hepatitis B', 'hepatitis_b_status', 'hepatitis_b_date', { strict });
+        data.hepa_b_status = data.hepatitis_b_status || data.hepa_b_status || '';
+
+        return data;
     }
 
     _duplicateConflictError(alert) {
@@ -838,7 +1044,8 @@ class InfantRegistrationService {
 
             // 1. Fetch registration
             const reg = await this._getRegistrationForActor(connection, registrationId, actor, true);
-            const data = typeof reg.registration_data === 'string' ? JSON.parse(reg.registration_data) : reg.registration_data;
+            const data = typeof reg.registration_data === 'string' ? JSON.parse(reg.registration_data) : { ...(reg.registration_data || {}) };
+            this._normalizeClinicalRegistrationPayload(data, { strict: true });
 
             if (reg.status !== REGISTRATION_STATUS.PENDING_VALIDATION) {
                 throw new Error(`Forbidden: Cannot approve from ${reg.status}. Registration must be PENDING_VALIDATION.`);
@@ -875,9 +1082,18 @@ class InfantRegistrationService {
                     return normalized;
                 }
 
+                const doseValue = String(administeredDate || fallbackDate || '').trim();
+                const birthValue = String(fallbackDate || '').trim();
+                const isDateOnly = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+                if (isDateOnly(doseValue) && isDateOnly(birthValue)) {
+                    if (doseValue < birthValue) return 'Invalid';
+                    return doseValue === birthValue ? 'Given within 24 hours' : 'Given more than 24 hours';
+                }
+
                 const doseDate = new Date(administeredDate || fallbackDate);
                 const birthDate = new Date(fallbackDate);
                 const hoursAfterBirth = (doseDate.getTime() - birthDate.getTime()) / (1000 * 60 * 60);
+                if (hoursAfterBirth < 0) return 'Invalid';
                 return hoursAfterBirth >= 0 && hoursAfterBirth <= 24
                     ? 'Given within 24 hours'
                     : 'Given more than 24 hours';
@@ -914,11 +1130,12 @@ class InfantRegistrationService {
             });
 
             const sexValue = this._mapSexToInfantColumn(data.sex);
-            const bcgStatusForStorage = classifyBirthDoseStatus(
+            const bcgStatusForStorage = data.bcg_status || classifyBirthDoseStatus(
                 data.bcg_status || (data.bcg_given ? 'Given' : null),
                 data.bcg_date || data.dob,
                 data.dob
             );
+            const hepBStatusForStorage = data.hepatitis_b_status || data.hepa_b_status || NOT_GIVEN;
             
             const promoQuery = `
                 INSERT INTO infants 
@@ -945,7 +1162,7 @@ class InfantRegistrationService {
                 data.hepatitis_b_date || null,
                 data.birth_setting || null, data.mother_tt_status ? String(data.mother_tt_status) : '0',
                 reg.created_by, data.encoded_by_role || 'BHW',
-                data.birth_status || null,
+                data.birth_status || this._deriveBirthStatus(data.birth_weight),
                 !!data.bcg_facility, !!data.hepa_b_facility,
                 parseFloat(data.longitude) || 0, parseFloat(data.latitude) || 0,
                 !!data.is_location_verified,
@@ -955,7 +1172,7 @@ class InfantRegistrationService {
                 !!(data.initiated_breastfeeding || data.breastfed_immediately_after_birth),
                 data.delivery_facility_name || null,
                 bcgStatusForStorage,
-                data.hepatitis_b_status || data.hepa_b_status || 'Not Given',
+                hepBStatusForStorage,
                 data.latitude ? parseFloat(data.latitude) : null,
                 data.longitude ? parseFloat(data.longitude) : null,
                 registrationId
@@ -1023,7 +1240,7 @@ class InfantRegistrationService {
             }
 
             if (data.hepatitis_b_given || completedStatuses.includes(data.hepatitis_b_status) || completedStatuses.includes(data.hepa_b_status)) {
-                const adminDate = data.hepatitis_b_date || data.bcg_date || dobStr;
+                const adminDate = data.hepatitis_b_date || dobStr;
                 atBirthDosesToLog.push({
                     vaccine_name: 'Hepatitis B Birth Dose',
                     vaccine_code: 'HEPB',

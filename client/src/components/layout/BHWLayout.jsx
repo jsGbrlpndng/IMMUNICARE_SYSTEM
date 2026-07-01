@@ -11,11 +11,11 @@ import {
     X,
     Menu,
     FolderCheck,
-    Shield,
     Settings
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import NotificationBell from '../feedback/NotificationBell';
+import BrandLogo from '../brand/BrandLogo';
 
 const BRAND = {
     green: '#0B6E4F',
@@ -119,31 +119,14 @@ const BHWLayout = () => {
                     className={`h-20 border-b flex items-center ${isCollapsed ? 'justify-center px-4' : 'justify-between px-6'}`}
                     style={{ borderColor: BRAND.border }}
                 >
-                    {!isCollapsed ? (
-                        <div className="flex items-center gap-3">
-                            <div
-                                className="h-10 w-10 rounded-md flex items-center justify-center"
-                                style={{ backgroundColor: BRAND.green }}
-                            >
-                                <Shield className="h-5 w-5 text-white" strokeWidth={2.3} />
-                            </div>
-                            <div className="leading-tight">
-                                <p className="text-[1.05rem] font-extrabold tracking-tight" style={{ color: BRAND.text }}>
-                                    ImmuniCare
-                                </p>
-                                <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em]" style={{ color: BRAND.green }}>
-                                    San Pedro RHU
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div
-                            className="h-10 w-10 rounded-md flex items-center justify-center"
-                            style={{ backgroundColor: BRAND.green }}
-                        >
-                            <Shield className="h-5 w-5 text-white" strokeWidth={2.3} />
-                        </div>
-                    )}
+                    <BrandLogo
+                        variant={isCollapsed ? 'compact' : 'lockup'}
+                        showText={!isCollapsed}
+                        subtitle="San Pedro RHU"
+                        imageClassName={isCollapsed ? 'h-10 w-10' : 'h-11 w-11'}
+                        textClassName="text-[1.05rem]"
+                        subtitleClassName="text-[0.68rem]"
+                    />
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-4 py-5">

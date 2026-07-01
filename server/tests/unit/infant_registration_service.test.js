@@ -20,7 +20,25 @@ describe('InfantRegistrationService strict registration validation', () => {
         sex: 'F',
         barangay: 'Langgam',
         exact_address: 'Blk 2 Lot 4 Langgam, San Pedro, Laguna',
-        landmark: 'Blue gate beside sari-sari store'
+        landmark: 'Blue gate beside sari-sari store',
+        latitude: 14.3261,
+        longitude: 121.0179,
+        is_location_verified: true,
+        mothers_maiden_name: 'Ana Reyes',
+        caregiver_relationship: 'Mother',
+        caregiver_phone: '09123456789',
+        pregnancy_order: '1',
+        mother_tt_status: '2',
+        last_tt_date: '2025-12-15',
+        birth_weight: '3.20',
+        length_at_birth_cm: '50.5',
+        birth_status: 'Normal',
+        birth_setting: 'FACILITY',
+        delivery_facility_name: 'San Pedro District Hospital',
+        bcg_status: 'Given within 24 hours',
+        bcg_date: '2026-01-15',
+        hepatitis_b_status: 'Given within 24 hours',
+        hepatitis_b_date: '2026-01-15'
     });
 
     beforeEach(() => {
@@ -126,6 +144,105 @@ describe('InfantRegistrationService strict registration validation', () => {
             duplicate_alert: null
         });
         expect(db.execute).toHaveBeenCalledTimes(8);
+    });
+
+    test.each([
+        ['pregnancy_order', '-3', 'pregnancy_order must be a positive whole number.'],
+        ['pregnancy_order', '1.5', 'pregnancy_order must be a positive whole number.'],
+        ['pregnancy_order', '0', 'pregnancy_order must be a positive whole number.'],
+        ['birth_weight', '-2.5', 'birth_weight must be a valid positive number.'],
+        ['birth_weight', '0', 'birth_weight must be between 1 and 6.'],
+        ['length_at_birth_cm', '12', 'length_at_birth_cm must be between 35 and 60.']
+    ])('rejects invalid final submission field %s=%s', async (field, value, message) => {
+        const payload = validPayload();
+        payload[field] = value;
+
+        await expect(service.saveRegistration(payload, actor)).rejects.toMatchObject({
+            status: 400,
+            message
+        });
+        expect(db.execute).not.toHaveBeenCalled();
+    });
+
+    test('rejects TT placeholder and future TT date on final submission', async () => {
+        const missingTt = validPayload();
+        missingTt.mother_tt_status = '';
+
+        await expect(service.saveRegistration(missingTt, actor)).rejects.toMatchObject({
+            status: 400,
+            message: 'mother_tt_status is required.'
+        });
+
+        const futureTt = validPayload();
+        futureTt.last_tt_date = '2099-01-01';
+
+        await expect(service.saveRegistration(futureTt, actor)).rejects.toMatchObject({
+            status: 400,
+            message: 'last_tt_date must not be in the future.'
+        });
+    });
+
+    test('clears last TT date when No TT history is selected', async () => {
+        let persistedRegistrationData = null;
+        db.execute.mockImplementation(async (sql, params) => {
+            if (sql.includes('FROM infant_registrations ir') || sql.includes('FROM infants i')) return [[]];
+            if (sql.includes('INSERT INTO infant_registrations')) {
+                persistedRegistrationData = JSON.parse(params[2] || '{}');
+                return [{ affectedRows: 1, insertId: 1 }];
+            }
+            return [[{ affectedRows: 1 }]];
+        });
+
+        const payload = validPayload();
+        payload.mother_tt_status = '0';
+        payload.last_tt_date = '2025-12-15';
+
+        await service.saveRegistration(payload, actor);
+
+        expect(persistedRegistrationData).toEqual(expect.objectContaining({
+            mother_tt_status: '0',
+            tt_history_unknown: true,
+            last_tt_date: ''
+        }));
+    });
+
+    test('auto-classifies BCG and Hepatitis B dates relative to DOB before persistence', async () => {
+        let persistedRegistrationData = null;
+        db.execute.mockImplementation(async (sql, params) => {
+            if (sql.includes('FROM infant_registrations ir') || sql.includes('FROM infants i')) return [[]];
+            if (sql.includes('INSERT INTO infant_registrations')) {
+                persistedRegistrationData = JSON.parse(params[2] || '{}');
+                return [{ affectedRows: 1, insertId: 1 }];
+            }
+            return [[{ affectedRows: 1 }]];
+        });
+
+        const payload = validPayload();
+        payload.bcg_status = 'Given more than 24 hours';
+        payload.bcg_date = '2026-01-15';
+        payload.hepatitis_b_status = 'Given within 24 hours';
+        payload.hepatitis_b_date = '2026-01-16';
+
+        await service.saveRegistration(payload, actor);
+
+        expect(persistedRegistrationData).toEqual(expect.objectContaining({
+            bcg_status: 'Given within 24 hours',
+            hepatitis_b_status: 'Given more than 24 hours',
+            hepa_b_status: 'Given more than 24 hours'
+        }));
+    });
+
+    test.each([
+        ['bcg_date', '2026-01-14', 'BCG date must not be before date of birth.'],
+        ['hepatitis_b_date', '2099-01-01', 'Hepatitis B date must not be in the future.']
+    ])('rejects invalid at-birth date %s', async (field, value, message) => {
+        const payload = validPayload();
+        payload[field] = value;
+
+        await expect(service.saveRegistration(payload, actor)).rejects.toMatchObject({
+            status: 400,
+            message
+        });
     });
 
     test('rejects draft saves missing infant identity', async () => {
@@ -430,7 +547,10 @@ describe('InfantRegistrationService strict registration validation', () => {
             middle_name: '',
             last_name: 'Arthur',
             dob: '2026-06-03',
-            sex: 'M'
+            sex: 'M',
+            bcg_date: '2026-06-03',
+            hepatitis_b_date: '2026-06-03',
+            last_tt_date: '2026-05-01'
         };
 
         await expect(service.saveRegistration(duplicatePayload, actor)).rejects.toMatchObject({
@@ -847,6 +967,17 @@ describe('InfantRegistrationService approval promotion SQL alignment', () => {
                 mothers_maiden_name: 'Reyes',
                 caregiver_phone: '09123456789',
                 caregiver_relationship: 'Mother',
+                pregnancy_order: '1',
+                mother_tt_status: '1',
+                last_tt_date: '2026-05-01',
+                length_at_birth_cm: '50',
+                birth_setting: 'FACILITY',
+                delivery_facility_name: 'San Pedro Hospital',
+                bcg_status: 'Not Given',
+                hepatitis_b_status: 'Not Given',
+                latitude: '14.3211',
+                longitude: '121.0412',
+                is_location_verified: true,
                 current_address: 'Langgam, San Pedro',
                 exact_address: 'Kapitan Caron Avenue',
                 landmark: 'Blue gate'

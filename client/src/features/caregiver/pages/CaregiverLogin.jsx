@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Activity, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import CaregiverOtpForm from '../components/CaregiverOtpForm';
 import caregiverApi from '../../../services/caregiverApi';
+import BrandLogo from '../../../components/brand/BrandLogo';
 
 const CaregiverLogin = () => {
     const navigate = useNavigate();
@@ -64,13 +65,12 @@ const CaregiverLogin = () => {
             <nav className="border-b border-slate-200 bg-white">
                 <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
                     <Link to="/" className="flex items-center gap-2">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-800 text-white">
-                            <Activity className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <p className="text-lg font-black text-emerald-900">ImmuniCare</p>
-                            <p className="text-[10px] font-black uppercase text-emerald-700">Caregiver Access</p>
-                        </div>
+                        <BrandLogo
+                            variant="lockup"
+                            subtitle="Caregiver Access"
+                            imageClassName="h-10 w-10"
+                            subtitleClassName="tracking-[0.14em]"
+                        />
                     </Link>
                     <Link to="/" className="inline-flex items-center gap-2 text-sm font-black text-slate-500 hover:text-emerald-900">
                         <ArrowLeft className="h-4 w-4" />

@@ -16,7 +16,14 @@ import ImmunizationSection from '../components/ImmunizationSection';
 import ReviewSection from '../components/ReviewSection';
 
 // Validation Logic
-import { validateField, isStepValid } from '../../../utils/registrationValidation';
+import {
+    GIVEN_WITHIN_24_HOURS,
+    deriveBirthStatus,
+    isStepValid,
+    normalizeBirthDoseSelection,
+    normalizeTTStatus,
+    validateField
+} from '../../../utils/registrationValidation';
 import { getBarangayCenter } from '../../../utils/barangayConfig';
 import { getBarangayBoundaryGeoJson, getBarangayNameForPoint, isPointInBarangayBoundary } from '../../../utils/barangayBoundaries';
 import { normalizeBarangayKey } from '../../../utils/barangayCanonical';
@@ -57,7 +64,7 @@ const initialFormState = {
     out_of_barangay_exception_confirmed: false,
     out_of_barangay_exception_reason: '',
     out_of_barangay_exception_barangay: '',
-    mother_tt_status: '0', 
+    mother_tt_status: '',
     pregnancy_order: '',
     last_tt_date: '',
     tt_history_unknown: false,
@@ -80,6 +87,41 @@ const initialFormState = {
     // BHW/Emergency fields
     is_emergency: false,
     emergency_justification: ''
+};
+
+const normalizeDateInputValue = (value) => {
+    if (!value) return '';
+    const text = String(value).trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : text;
+};
+
+const normalizeAtBirthDoseFields = (data) => {
+    const normalized = {
+        ...data,
+        dob: normalizeDateInputValue(data.dob),
+        last_tt_date: normalizeDateInputValue(data.last_tt_date),
+        bcg_date: normalizeDateInputValue(data.bcg_date),
+        hepatitis_b_date: normalizeDateInputValue(data.hepatitis_b_date)
+    };
+    const normalizedBcg = normalizeBirthDoseSelection({
+        status: normalized.bcg_status,
+        date: normalized.bcg_date,
+        dob: normalized.dob
+    });
+    const normalizedHepB = normalizeBirthDoseSelection({
+        status: normalized.hepatitis_b_status || normalized.hepa_b_status,
+        date: normalized.hepatitis_b_date,
+        dob: normalized.dob
+    });
+    return {
+        ...normalized,
+        bcg_status: normalizedBcg.status,
+        bcg_date: normalizedBcg.date,
+        hepatitis_b_status: normalizedHepB.status,
+        hepa_b_status: normalizedHepB.status,
+        hepatitis_b_date: normalizedHepB.date
+    };
 };
 
 const readApiError = async (response, fallbackMessage) => {
@@ -128,6 +170,44 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             isMounted.current = false;
         };
     }, []);
+
+    useEffect(() => {
+        setErrors(prev => {
+            const next = { ...prev };
+            const bcgStatusError = formData.bcg_status
+                ? validateField('bcg_status', formData.bcg_status, formData)
+                : prev.bcg_status;
+            const bcgDateError = formData.bcg_status?.startsWith('Given') && !formData.bcg_date
+                ? (prev.bcg_date || 'Required')
+                : validateField('bcg_date', formData.bcg_date, formData);
+            const hepBStatusError = formData.hepatitis_b_status
+                ? validateField('hepatitis_b_status', formData.hepatitis_b_status, formData)
+                : prev.hepatitis_b_status;
+            const hepBDateError = formData.hepatitis_b_status?.startsWith('Given') && !formData.hepatitis_b_date
+                ? (prev.hepatitis_b_date || 'Required')
+                : validateField('hepatitis_b_date', formData.hepatitis_b_date, formData);
+
+            if (bcgStatusError) next.bcg_status = bcgStatusError;
+            else delete next.bcg_status;
+
+            if (bcgDateError) next.bcg_date = bcgDateError;
+            else delete next.bcg_date;
+
+            if (hepBStatusError) next.hepatitis_b_status = hepBStatusError;
+            else delete next.hepatitis_b_status;
+
+            if (hepBDateError) next.hepatitis_b_date = hepBDateError;
+            else delete next.hepatitis_b_date;
+
+            return next;
+        });
+    }, [
+        formData.dob,
+        formData.bcg_status,
+        formData.bcg_date,
+        formData.hepatitis_b_status,
+        formData.hepatitis_b_date
+    ]);
 
     const currentStatus = (formData.status || formData.registration_status || '').toUpperCase();
     const isEditableStatus = ['DRAFT', 'NEEDS_CORRECTION', 'RETURNED_FOR_CORRECTION'].includes(currentStatus);
@@ -378,7 +458,10 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                             rejection_reason: reg.rejection_reason || '',
                             rejection_notes: reg.rejection_notes || ''
                         };
-                        setFormData(flatData);
+                        const normalizedFlatData = normalizeAtBirthDoseFields(flatData);
+                        normalizedFlatData.mother_tt_status = normalizeTTStatus(normalizedFlatData.mother_tt_status);
+                        normalizedFlatData.tt_history_unknown = normalizedFlatData.mother_tt_status === '0';
+                        setFormData(normalizedFlatData);
                         setActiveRegistrationId(reg.id);
                         
                         const statusVal = (reg.status || reg.registration_status || '').toUpperCase();
@@ -387,8 +470,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                         }
                         
                         // Update map center if coordinates exist
-                        const existingLat = toDecimalFloat(flatData.latitude);
-                        const existingLng = toDecimalFloat(flatData.longitude);
+                        const existingLat = toDecimalFloat(normalizedFlatData.latitude);
+                        const existingLng = toDecimalFloat(normalizedFlatData.longitude);
                         if (hasValidCoordinate(existingLat, existingLng)) {
                             setFormData(prev => ({ ...prev, latitude: existingLat, longitude: existingLng }));
                             setMapCenter([existingLat, existingLng]);
@@ -468,7 +551,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
     }, [assignedBarangayName, getCoverageError, isAllowedCoverageBarangay, isWithinAssignedBarangay, resolveLocationBarangay, user?.assigned_barangay]);
 
     const buildRegistrationPayload = useCallback((data, overrides = {}) => {
-        const { suffix_is_other, ...payloadData } = data;
+        const normalizedDoseData = normalizeAtBirthDoseFields(data);
+        const { suffix_is_other, ...payloadData } = normalizedDoseData;
         const cleanExactAddress = formatExactAddress(data.exact_address || data.current_address, { barangay: data.barangay });
         const cleanFullAddress = formatFullAddress({
             exactAddress: data.exact_address || data.current_address,
@@ -482,6 +566,8 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             middle_name: data.has_no_middle_name ? '' : (data.middle_name || ''),
             suffix: String(data.suffix || '').trim().toUpperCase() === 'OTHER' ? '' : (data.suffix || ''),
             sex: data.sex === 'M' || data.sex === 'F' ? data.sex : '',
+            mother_tt_status: normalizeTTStatus(normalizedDoseData.mother_tt_status),
+            tt_history_unknown: normalizeTTStatus(normalizedDoseData.mother_tt_status) === '0',
             latitude: toDecimalFloat(data.latitude),
             longitude: toDecimalFloat(data.longitude),
             exact_address: cleanExactAddress,
@@ -507,13 +593,16 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             rejection_reason: reg.rejection_reason ?? fallbackData.rejection_reason ?? '',
             rejection_notes: reg.rejection_notes ?? fallbackData.rejection_notes ?? ''
         };
+        const normalizedMerged = normalizeAtBirthDoseFields(merged);
+        normalizedMerged.mother_tt_status = normalizeTTStatus(normalizedMerged.mother_tt_status);
+        normalizedMerged.tt_history_unknown = normalizedMerged.mother_tt_status === '0';
 
-        setFormData(merged);
+        setFormData(normalizedMerged);
         if (reg.id) setActiveRegistrationId(reg.id);
         if (['PENDING_VALIDATION', 'REJECTED', 'VALIDATED', 'NEEDS_CORRECTION'].includes(normalizedStatus)) {
             setCurrentStep(5);
         }
-        return merged;
+        return normalizedMerged;
     }, [activeRegistrationId, formData]);
 
     const handleSelectSuggestion = (res) => {
@@ -815,43 +904,84 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
 
         // --- Clinical Automation: Birth Status ---
         if (name === 'birth_weight') {
-            const weight = parseFloat(value);
-            if (!String(value || '').trim() || !Number.isFinite(weight)) {
-                newFormData.birth_status = 'Pending birth weight';
-            } else {
-                newFormData.birth_status = weight < 2.5 ? 'Low Birth Weight' : weight > 4.0 ? 'Macrosomia' : 'Normal';
-            }
+            newFormData.birth_status = deriveBirthStatus(value);
         }
         
         // Logical Resets
+        if (name === 'mother_tt_status') {
+            const normalizedTtStatus = String(value || '').trim().toUpperCase().replace(/^TT/, '');
+            newFormData.tt_history_unknown = normalizedTtStatus === '0';
+            if (normalizedTtStatus === '0' || normalizedTtStatus === '') {
+                newFormData.last_tt_date = '';
+            }
+        }
         if (name === 'tt_history_unknown' && checked) {
             newFormData.mother_tt_status = '0';
             newFormData.last_tt_date = '';
         }
         // --- Immunization Logic & Automation ---
-        if (name === 'bcg_status') {
-            if (value === 'Given within 24 hours') {
-                newFormData.bcg_date = formData.dob;
-            } else if (value === 'Not Given' || value === 'Unknown' || value === '') {
-                newFormData.bcg_date = '';
-            }
+        if (name === 'bcg_status' && value === GIVEN_WITHIN_24_HOURS && formData.dob) {
+            newFormData.bcg_date = formData.dob;
         }
-        
-        if (name === 'hepatitis_b_status') {
-            if (value === 'Given within 24 hours') {
-                newFormData.hepatitis_b_date = formData.dob;
-            } else if (value === 'Not Given' || value === 'Unknown' || value === '') {
-                newFormData.hepatitis_b_date = '';
-            }
+        if (name === 'hepatitis_b_status' && value === GIVEN_WITHIN_24_HOURS && formData.dob) {
+            newFormData.hepatitis_b_date = formData.dob;
+        }
+
+        if (['bcg_status', 'bcg_date', 'dob'].includes(name)) {
+            const normalizedBcg = normalizeBirthDoseSelection({
+                status: newFormData.bcg_status,
+                date: newFormData.bcg_date,
+                dob: newFormData.dob
+            });
+            newFormData.bcg_status = normalizedBcg.status;
+            newFormData.bcg_date = normalizedBcg.date;
+        }
+
+        if (['hepatitis_b_status', 'hepatitis_b_date', 'dob'].includes(name)) {
+            const normalizedHepB = normalizeBirthDoseSelection({
+                status: newFormData.hepatitis_b_status,
+                date: newFormData.hepatitis_b_date,
+                dob: newFormData.dob
+            });
+            newFormData.hepatitis_b_status = normalizedHepB.status;
+            newFormData.hepatitis_b_date = normalizedHepB.date;
         }
 
         setFormData(newFormData);
         const validationName = name === 'suffix_select' ? 'suffix' : name;
         const validationValue = validationName === 'suffix' ? newFormData.suffix : (type === 'checkbox' ? checked : value);
         const errorMessage = validateField(validationName, validationValue, newFormData);
+        const dependentErrors = {};
+        if (['mother_tt_status', 'last_tt_date', 'dob', 'tt_history_unknown'].includes(name)) {
+            const normalizedTtStatus = normalizeTTStatus(newFormData.mother_tt_status);
+            const requiresLastTtDate = ['1', '2', '3', '4', '5'].includes(normalizedTtStatus);
+            dependentErrors.mother_tt_status = newFormData.mother_tt_status
+                ? validateField('mother_tt_status', newFormData.mother_tt_status, newFormData)
+                : 'Select TT status';
+            dependentErrors.last_tt_date = requiresLastTtDate
+                ? (!newFormData.last_tt_date ? 'Required' : validateField('last_tt_date', newFormData.last_tt_date, newFormData))
+                : null;
+        }
+        if (['bcg_status', 'bcg_date', 'dob'].includes(name)) {
+            dependentErrors.bcg_date = newFormData.bcg_status?.startsWith('Given') && !newFormData.bcg_date
+                ? 'Required'
+                : validateField('bcg_date', newFormData.bcg_date, newFormData);
+            dependentErrors.bcg_status = newFormData.bcg_status
+                ? validateField('bcg_status', newFormData.bcg_status, newFormData)
+                : 'Required';
+        }
+        if (['hepatitis_b_status', 'hepatitis_b_date', 'dob'].includes(name)) {
+            dependentErrors.hepatitis_b_date = newFormData.hepatitis_b_status?.startsWith('Given') && !newFormData.hepatitis_b_date
+                ? 'Required'
+                : validateField('hepatitis_b_date', newFormData.hepatitis_b_date, newFormData);
+            dependentErrors.hepatitis_b_status = newFormData.hepatitis_b_status
+                ? validateField('hepatitis_b_status', newFormData.hepatitis_b_status, newFormData)
+                : 'Required';
+        }
         setErrors(prev => ({
             ...prev,
             [validationName]: errorMessage,
+            ...dependentErrors,
             ...(name === 'has_no_middle_name' && checked ? { middle_name: null } : {})
         }));
     };
@@ -909,9 +1039,19 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             // Force error display on missing fields
             const stepFields = {
                 1: ['first_name', 'middle_name', 'last_name', 'suffix', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
-                2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone'],
-                3: ['birth_weight', 'length_at_birth_cm'],
-                4: ['bcg_status', 'hepatitis_b_status']
+                2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone', 'pregnancy_order'],
+                3: [
+                    'mother_tt_status',
+                    ...(['1', '2', '3', '4', '5'].includes(normalizeTTStatus(formData.mother_tt_status)) ? ['last_tt_date'] : []),
+                    'birth_weight',
+                    'length_at_birth_cm'
+                ],
+                4: [
+                    'bcg_status',
+                    ...(formData.bcg_status?.startsWith('Given') ? ['bcg_date'] : []),
+                    'hepatitis_b_status',
+                    ...(formData.hepatitis_b_status?.startsWith('Given') ? ['hepatitis_b_date'] : [])
+                ]
             }[currentStep] || [];
             
             const newErrors = { ...errors };

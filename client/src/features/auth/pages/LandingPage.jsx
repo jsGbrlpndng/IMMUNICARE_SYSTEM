@@ -2,7 +2,6 @@ import React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-    Activity,
     ArrowRight,
     Bell,
     ClipboardCheck,
@@ -15,6 +14,7 @@ import {
     Users,
     X
 } from 'lucide-react';
+import BrandLogo from '../../../components/brand/BrandLogo';
 
 const BRAND_GREEN = '#064E3B';
 
@@ -119,13 +119,11 @@ const LandingPage = () => {
             <nav className={`fixed top-0 z-[100] w-full border-b transition-all duration-300 ${scrolled ? 'border-slate-200 bg-white/95 py-3 shadow-sm backdrop-blur-lg' : 'border-transparent bg-white/80 py-4 backdrop-blur-md'}`}>
                 <div className="mx-auto flex max-w-7xl items-center justify-between px-5 lg:px-8">
                     <button type="button" onClick={() => scrollTo('home')} className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-emerald-600 to-[#064E3B] text-white shadow-sm">
-                            <Activity className="h-5 w-5" />
-                        </div>
-                        <div className="text-left leading-none">
-                            <span className="block text-lg font-black tracking-tight text-[#064E3B]">ImmuniCare</span>
-                            <span className="mt-0.5 block text-[9px] font-black uppercase tracking-[0.18em] text-emerald-600">San Pedro RHU</span>
-                        </div>
+                        <BrandLogo
+                            variant="lockup"
+                            subtitle="San Pedro RHU"
+                            imageClassName="h-9 w-9"
+                        />
                     </button>
 
                     <div className="hidden items-center gap-1 md:flex">
@@ -189,7 +187,7 @@ const LandingPage = () => {
                             Infant Immunization Monitoring System
                         </div>
                         <h1 className="text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
-                            ImmuniCare supports barangay and RHU teams from registration to coverage monitoring.
+                            IMMUNICARE supports barangay and RHU teams from registration to coverage monitoring.
                         </h1>
                         <p className="mt-6 max-w-2xl text-base font-semibold leading-7 text-slate-200 sm:text-lg">
                             A clinical workspace for infant registration, midwife validation, NIP schedule tracking, defaulter follow-up, reports, and geospatial decision support.
@@ -212,7 +210,7 @@ const LandingPage = () => {
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Core System Capabilities</p>
                         <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Built around the infant immunization workflow.</h2>
                         <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
-                            ImmuniCare keeps the user experience close to daily RHU operations: register, validate, schedule, record, follow up, and report.
+                            IMMUNICARE keeps the user experience close to daily RHU operations: register, validate, schedule, record, follow up, and report.
                         </p>
                     </div>
 
@@ -288,7 +286,7 @@ const LandingPage = () => {
                 <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
                     <div>
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Authorized Access</p>
-                        <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Open the ImmuniCare staff portal.</h2>
+                        <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Open the IMMUNICARE staff portal.</h2>
                         <p className="mt-2 text-sm font-semibold text-slate-500">Use your assigned Staff ID and password to continue.</p>
                     </div>
                     <Link to="/portal" className="inline-flex h-12 items-center justify-center border border-[#064E3B] bg-[#064E3B] px-6 text-sm font-black uppercase tracking-wider text-white shadow-sm transition hover:bg-emerald-900">
@@ -300,10 +298,13 @@ const LandingPage = () => {
             <footer className="border-t border-slate-200 bg-slate-50 py-8">
                 <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 text-sm font-semibold text-slate-500 md:flex-row md:items-center md:justify-between lg:px-8">
                     <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center bg-[#064E3B] text-white">
-                            <Activity className="h-4 w-4" />
-                        </div>
-                        <span className="font-black text-slate-900">ImmuniCare</span>
+                        <BrandLogo
+                            variant="lockup"
+                            subtitle="San Pedro RHU"
+                            imageClassName="h-8 w-8"
+                            textClassName="text-base text-slate-900"
+                            subtitleClassName="hidden"
+                        />
                     </div>
                     <p>Infant immunization tracking and RHU decision-support workspace.</p>
                 </div>

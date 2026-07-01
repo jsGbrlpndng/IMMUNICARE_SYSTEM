@@ -1,7 +1,17 @@
 import React from 'react';
 import { InputWrapper, inputClasses } from './FormComponents';
+import { validateField } from '../../../utils/registrationValidation';
 
 const ImmunizationSection = ({ formData, errors, handleChange, isReadOnly = false }) => {
+    const isBcgGiven = formData.bcg_status?.startsWith('Given');
+    const isHepBGiven = formData.hepatitis_b_status?.startsWith('Given');
+    const bcgDateError = isBcgGiven
+        ? (!formData.bcg_date ? 'Required' : validateField('bcg_date', formData.bcg_date, formData))
+        : null;
+    const hepBDateError = isHepBGiven
+        ? (!formData.hepatitis_b_date ? 'Required' : validateField('hepatitis_b_date', formData.hepatitis_b_date, formData))
+        : null;
+
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
             <div className="bg-green-50 p-6 rounded-2xl border border-green-100">
@@ -20,13 +30,13 @@ const ImmunizationSection = ({ formData, errors, handleChange, isReadOnly = fals
                                 <option value="Unknown">Unknown</option>
                             </select>
                         </InputWrapper>
-                        <InputWrapper label="Date Given" required={formData.bcg_status?.startsWith('Given')} hasError={!!errors.bcg_date}>
+                        <InputWrapper label="Date Given" required={isBcgGiven} hasError={!!bcgDateError} errorMessage={bcgDateError}>
                             <input 
                                 type="date" 
                                 name="bcg_date" 
                                 value={formData.bcg_date} 
                                 onChange={handleChange} 
-                                disabled={formData.bcg_status !== 'Given more than 24 hours' || isReadOnly} 
+                                disabled={!isBcgGiven || isReadOnly}
                                 min={formData.dob}
                                 max={new Date().toISOString().split('T')[0]}
                                 className={inputClasses} 
@@ -45,13 +55,13 @@ const ImmunizationSection = ({ formData, errors, handleChange, isReadOnly = fals
                                 <option value="Unknown">Unknown</option>
                             </select>
                         </InputWrapper>
-                        <InputWrapper label="Date Given" required={formData.hepatitis_b_status?.startsWith('Given')} hasError={!!errors.hepatitis_b_date}>
+                        <InputWrapper label="Date Given" required={isHepBGiven} hasError={!!hepBDateError} errorMessage={hepBDateError}>
                             <input 
                                 type="date" 
                                 name="hepatitis_b_date" 
                                 value={formData.hepatitis_b_date} 
                                 onChange={handleChange} 
-                                disabled={formData.hepatitis_b_status !== 'Given more than 24 hours' || isReadOnly} 
+                                disabled={!isHepBGiven || isReadOnly}
                                 min={formData.dob}
                                 max={new Date().toISOString().split('T')[0]}
                                 className={inputClasses} 

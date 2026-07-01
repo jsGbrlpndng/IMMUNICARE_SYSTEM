@@ -3,6 +3,8 @@ const request = require('supertest');
 
 describe('DBSCAN audit route access control', () => {
     let mockEvaluate;
+    let mockGetCurrentSettings;
+    let mockSpatialTriage;
     let mockConnection;
     let mockPerformAuditLog;
 
@@ -22,6 +24,40 @@ describe('DBSCAN audit route access control', () => {
                 minPts: 3
             }
         });
+        mockGetCurrentSettings = jest.fn().mockResolvedValue({
+            epsilon_meters: 300,
+            minPts: 3,
+            distance_model: 'PostGIS ST_ClusterDBSCAN over ST_Transform(location, 32651)',
+            production_behavior_changed: false
+        });
+        mockSpatialTriage = jest.fn(({ barangay }) => Promise.resolve({
+            barangay,
+            scope: 'defaulter',
+            clusters: [{
+                clusterId: 'CL-0',
+                locality: `${barangay || 'MUNICIPAL'} Area`,
+                total_infants: 3,
+                total_defaulter_doses: 4,
+                total_due_doses: 0,
+                severity: 'medium',
+                lat: 14.3,
+                lng: 121.0,
+                bounds: [[14.3, 121.0], [14.31, 121.01]],
+                points: [
+                    { id: `${barangay || 'ALL'}-1`, barangay, lat: 14.3, lng: 121.0 },
+                    { id: `${barangay || 'ALL'}-2`, barangay, lat: 14.31, lng: 121.01 },
+                    { id: `${barangay || 'ALL'}-3`, barangay, lat: 14.32, lng: 121.02 }
+                ]
+            }],
+            noise: [],
+            all_infants: [],
+            recommended_actions: [],
+            counts: {
+                all: 3,
+                total_defaulters: 3,
+                mapped_defaulters: 3
+            }
+        }));
         mockConnection = {
             beginTransaction: jest.fn().mockResolvedValue(undefined),
             commit: jest.fn().mockResolvedValue(undefined),
@@ -63,9 +99,12 @@ describe('DBSCAN audit route access control', () => {
         }));
 
         jest.doMock('../../modules/vaccination/EnhancedNIPScheduleEngine', () => jest.fn().mockImplementation(() => ({})));
-        jest.doMock('../../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({})));
+        jest.doMock('../../modules/infants/InfantService', () => jest.fn().mockImplementation(() => ({
+            getSpatialTriage: mockSpatialTriage
+        })));
         jest.doMock('../../modules/geospatial/DBSCANEvaluationService', () => jest.fn().mockImplementation(() => ({
-            evaluate: mockEvaluate
+            evaluate: mockEvaluate,
+            getCurrentSettings: mockGetCurrentSettings
         })));
 
         const router = require('../../modules/dashboard/dashboard.routes');
@@ -119,6 +158,48 @@ describe('DBSCAN audit route access control', () => {
         expect(response.status).toBe(401);
         expect(response.body.error).toContain('Unauthorized');
         expect(mockEvaluate).not.toHaveBeenCalled();
+    });
+
+    test('returns current DBSCAN settings through a read-only route', async () => {
+        const app = buildApp();
+
+        const response = await request(app)
+            .get('/api/dashboard/dbscan-settings')
+            .set('x-test-role', 'Super Admin');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.current_production_settings).toEqual(expect.objectContaining({
+            epsilon_meters: 300,
+            minPts: 3
+        }));
+        expect(mockGetCurrentSettings).toHaveBeenCalledTimes(1);
+        expect(mockConnection.beginTransaction).not.toHaveBeenCalled();
+        expect(mockPerformAuditLog).not.toHaveBeenCalled();
+    });
+
+    test('runs Super Admin all-barangay spatial analysis per barangay without persisting cluster rows', async () => {
+        const app = buildApp();
+
+        const response = await request(app)
+            .get('/api/dashboard/superadmin/spatial-analysis?barangay=all&eps=250&minPts=4')
+            .set('x-test-role', 'Super Admin');
+
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.clustering_scope).toBe('BARANGAY_AWARE_MUNICIPAL_OVERVIEW');
+        expect(response.body.clusters.length).toBeGreaterThan(1);
+        expect(response.body.clusters.every(cluster => cluster.barangay)).toBe(true);
+        expect(mockSpatialTriage).toHaveBeenCalledTimes(12);
+        expect(mockSpatialTriage).toHaveBeenCalledWith(expect.objectContaining({
+            barangay: 'LANGGAM',
+            eps: 250,
+            minPts: '4',
+            persistResults: false
+        }));
+        expect(mockSpatialTriage).not.toHaveBeenCalledWith(expect.objectContaining({
+            barangay: null
+        }));
     });
 
     test('allows only Super Admin to apply DBSCAN settings with confirmation and audit logging', async () => {

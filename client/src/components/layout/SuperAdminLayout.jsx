@@ -50,9 +50,10 @@ const SuperAdminLayout = ({ children }) => {
     }, [isCollapsed]);
 
     const pageName = pageLabels[location.pathname] || 'Head Nurse Portal';
+    const showGlobalFilter = location.pathname === '/superadmin/dashboard';
 
     useEffect(() => {
-        document.title = `ImmuniCare - ${pageName}`;
+        document.title = `IMMUNICARE - ${pageName}`;
     }, [pageName]);
 
     return (
@@ -88,22 +89,24 @@ const SuperAdminLayout = ({ children }) => {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <div className="hidden items-center border border-slate-200 bg-slate-50 px-3 py-1.5 lg:flex">
-                            <Filter size={14} className="mr-2 text-[#064E3B]" />
-                            <span className="mr-2 border-r border-slate-200 pr-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                                Global Filter
-                            </span>
-                            <select
-                                value={selectedBarangay}
-                                onChange={(event) => setSelectedBarangay(event.target.value)}
-                                className="min-w-[210px] border-0 bg-transparent py-0 text-xs font-black uppercase text-slate-700 outline-none focus:ring-0"
-                            >
-                                <option value="all">All RHU 2 Barangays</option>
-                                {RHU2_BARANGAYS.map((barangay) => (
-                                    <option key={barangay} value={barangay}>{barangay}</option>
-                                ))}
-                            </select>
-                        </div>
+                        {showGlobalFilter && (
+                            <div className="hidden items-center border border-slate-200 bg-slate-50 px-3 py-1.5 lg:flex">
+                                <Filter size={14} className="mr-2 text-[#064E3B]" />
+                                <span className="mr-2 border-r border-slate-200 pr-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                    Global Filter
+                                </span>
+                                <select
+                                    value={selectedBarangay}
+                                    onChange={(event) => setSelectedBarangay(event.target.value)}
+                                    className="min-w-[210px] border-0 bg-transparent py-0 text-xs font-black uppercase text-slate-700 outline-none focus:ring-0"
+                                >
+                                    <option value="all">All RHU 2 Barangays</option>
+                                    {RHU2_BARANGAYS.map((barangay) => (
+                                        <option key={barangay} value={barangay}>{barangay}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <NotificationBell visible={user?.role === 'Super Admin'} />
                     </div>
                 </nav>

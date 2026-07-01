@@ -146,13 +146,13 @@ const IdentitySection = ({
             />
 
             <div className="col-span-full">
-                <InputWrapper label="Landmark / House Description" required hasError={!!errors.landmark} errorMessage={errors.landmark}>
+                <InputWrapper label="Exact House Address / Landmark Description" required hasError={!!errors.landmark} errorMessage={errors.landmark}>
                     <textarea 
                         name="landmark" 
                         value={formData.landmark} 
                         onChange={handleChange} 
                         required
-                        placeholder="e.g. Blue gate, beside Aling Nena's store" 
+                        placeholder="House number, block/lot, street, purok/sitio, and nearby landmark"
                         rows="2"
                         className={`${inputClasses} resize-none`}
                         disabled={isReadOnly}

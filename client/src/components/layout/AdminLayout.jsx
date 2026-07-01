@@ -48,7 +48,7 @@ const AdminLayout = ({ children }) => {
     const pageName = pageLabels[location.pathname] || 'Barangay Dashboard';
 
     useEffect(() => {
-        document.title = `ImmuniCare - ${pageName}`;
+        document.title = `IMMUNICARE - ${pageName}`;
     }, [pageName]);
 
     return (

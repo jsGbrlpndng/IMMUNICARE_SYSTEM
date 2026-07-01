@@ -37,7 +37,18 @@ vi.mock('react-router-dom', async () => {
 
 vi.mock('../../utils/registrationValidation', () => ({
   validateField: () => '',
-  isStepValid: () => true
+  isStepValid: () => true,
+  normalizeTTStatus: (value) => (String(value || '').replace(/^TT/, '') || ''),
+  deriveBirthStatus: () => 'Normal',
+  classifyBirthDoseStatus: () => 'Given within 24 hours',
+  normalizeBirthDoseSelection: ({ status, date }) => ({
+    status: ['Not Given', 'Unknown'].includes(status) ? status : (status || ''),
+    date: ['Not Given', 'Unknown'].includes(status) ? '' : (date || '')
+  }),
+  GIVEN_WITHIN_24_HOURS: 'Given within 24 hours',
+  GIVEN_MORE_THAN_24_HOURS: 'Given more than 24 hours',
+  NOT_GIVEN: 'Not Given',
+  UNKNOWN: 'Unknown'
 }));
 
 vi.mock('../../utils/formatFullName', () => ({

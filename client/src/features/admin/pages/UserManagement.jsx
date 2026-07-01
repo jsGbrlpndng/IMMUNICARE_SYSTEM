@@ -594,7 +594,7 @@ const UserManagement = () => {
                         <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
                             <div>
                                 <h3 className={modalTitleClass}>Register New Staff</h3>
-                                <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-500">Create a credentialed ImmuniCare staff account</p>
+                                <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-500">Create a credentialed IMMUNICARE staff account</p>
                             </div>
                             <button
                                 type="button"

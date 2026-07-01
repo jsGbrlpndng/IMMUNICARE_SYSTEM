@@ -60,4 +60,17 @@ describe('apiClient session-aware 401 handling', () => {
         expect(localStorage.getItem('auth_token')).toBeNull();
         expect(localStorage.getItem('user')).toBeNull();
     });
+
+    it('does not silently append the Super Admin global barangay filter to unrelated endpoints', async () => {
+        localStorage.setItem('auth_token', 'token');
+        localStorage.setItem('user', JSON.stringify({ id: 'SA-001', role: 'Super Admin' }));
+        sessionStorage.setItem('selected_barangay', 'LANGGAM');
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+            jsonResponse(200, { success: true })
+        );
+
+        await apiClient.get('/dashboard/dbscan-audit');
+
+        expect(fetchSpy).toHaveBeenCalledWith('/api/dashboard/dbscan-audit', expect.any(Object));
+    });
 });

@@ -90,12 +90,6 @@ class ApiClient {
             headers['x-admin-barangay-id'] = String(user.barangay_id);
         }
 
-        const contextBarangay = sessionStorage.getItem('selected_barangay');
-        if (user?.role === 'Super Admin' && contextBarangay && contextBarangay !== 'all' && !/[?&]barangay=/.test(url)) {
-            const separator = url.includes('?') ? '&' : '?';
-            url += `${separator}barangay=${encodeURIComponent(contextBarangay)}`;
-        }
-
         try {
             const response = await fetch(url, {
                 ...options,

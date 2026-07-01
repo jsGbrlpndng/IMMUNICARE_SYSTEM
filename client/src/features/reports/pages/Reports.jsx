@@ -254,7 +254,7 @@ const Reports = () => {
         doc.setTextColor(...DARK_TEXT);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(14);
-        doc.text('ImmuniCare Clinical System', marginX, 42);
+        doc.text('IMMUNICARE Clinical System', marginX, 42);
 
         doc.setTextColor(...SAN_PEDRO_GREEN);
         doc.setFontSize(11);

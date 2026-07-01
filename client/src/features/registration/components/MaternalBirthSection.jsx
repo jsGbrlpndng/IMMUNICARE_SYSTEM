@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { InputWrapper, inputClasses } from './FormComponents';
+import { normalizeTTStatus, validateField } from '../../../utils/registrationValidation';
 
 const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isReadOnly = false }) => {
     const hasExistingBhwNotes = Boolean((formData.bhw_intake_notes || '').trim());
     const [showBhwNotes, setShowBhwNotes] = useState(hasExistingBhwNotes);
     const bhwNotesEnabled = showBhwNotes || hasExistingBhwNotes;
+    const ttStatus = normalizeTTStatus(formData.mother_tt_status);
+    const requiresLastTtDate = ['1', '2', '3', '4', '5'].includes(ttStatus);
+    const motherTtStatusError = formData.mother_tt_status
+        ? validateField('mother_tt_status', formData.mother_tt_status, formData)
+        : errors.mother_tt_status;
+    const lastTtDateError = requiresLastTtDate
+        ? (!formData.last_tt_date ? 'Required' : validateField('last_tt_date', formData.last_tt_date, formData))
+        : null;
 
     useEffect(() => {
         if (hasExistingBhwNotes) setShowBhwNotes(true);
@@ -15,31 +24,28 @@ const MaternalBirthSection = ({ formData, errors, handleChange, handleBlur, isRe
             <div className="col-span-full border-b border-slate-100 pb-2">
                 <h3 className="text-[11px] font-black text-[#065f46] uppercase tracking-[0.2em]">Maternal Tetanus History</h3>
             </div>
-            <InputWrapper label="Mother TT Status">
-                <select name="mother_tt_status" value={formData.mother_tt_status} onChange={handleChange} disabled={formData.tt_history_unknown || isReadOnly} className={inputClasses}>
-                    <option value="0">Unknown / No History</option>
-                    <option value="TT1">TT1 (No protection)</option>
-                    <option value="TT2">TT2 (3 years protection)</option>
-                    <option value="TT3">TT3 (5 years protection)</option>
-                    <option value="TT4">TT4 (10 years protection)</option>
-                    <option value="TT5">TT5 (Life-long protection)</option>
+            <InputWrapper label="Mother TT Status" required hasError={!!motherTtStatusError} errorMessage={motherTtStatusError}>
+                <select name="mother_tt_status" value={formData.mother_tt_status} onChange={handleChange} disabled={isReadOnly} className={inputClasses}>
+                    <option value="">Select TT status</option>
+                    <option value="0">No TT history</option>
+                    <option value="1">TT1</option>
+                    <option value="2">TT2</option>
+                    <option value="3">TT3</option>
+                    <option value="4">TT4</option>
+                    <option value="5">TT5</option>
                 </select>
             </InputWrapper>
-            <InputWrapper label="Last TT Date" hasError={!!errors.last_tt_date} errorMessage={errors.last_tt_date}>
+            <InputWrapper label="Last TT Date" required={requiresLastTtDate} hasError={!!lastTtDateError} errorMessage={lastTtDateError}>
                 <input 
                     type="date" 
                     name="last_tt_date" 
                     value={formData.last_tt_date} 
                     onChange={handleChange} 
-                    disabled={formData.tt_history_unknown || isReadOnly} 
+                    disabled={!requiresLastTtDate || isReadOnly}
                     max={new Date().toISOString().split('T')[0]}
                     className={inputClasses} 
                 />
             </InputWrapper>
-            <div className="flex items-center gap-3 px-1 py-2">
-                <input type="checkbox" name="tt_history_unknown" id="tt_history_unknown" checked={formData.tt_history_unknown} onChange={handleChange} disabled={isReadOnly} className="w-5 h-5 accent-[#065f46] rounded" />
-                <label htmlFor="tt_history_unknown" className="text-xs font-black text-slate-500 uppercase tracking-widest cursor-pointer select-none">TT History Unknown</label>
-            </div>
 
 
             

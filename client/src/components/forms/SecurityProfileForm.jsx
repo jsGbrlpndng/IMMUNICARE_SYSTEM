@@ -1,8 +1,9 @@
 import React, { memo, useCallback, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
 import apiClient from '../../services/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandLogo from '../brand/BrandLogo';
 
 const passwordRequirements = [
     { label: 'At least 10 characters', test: (value) => value.length >= 10 },
@@ -74,12 +75,10 @@ export const PasswordSuccessInterstitial = () => {
             >
                 <div className="border-b border-emerald-100 bg-[#ECFDF5] px-6 py-5">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center bg-[#084C39] text-white shadow-sm">
-                            <CheckCircle2 className="h-7 w-7" />
-                        </div>
+                        <BrandLogo variant="compact" imageClassName="h-12 w-12" />
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-800">
-                                ImmuniCare Security
+                                IMMUNICARE Security
                             </p>
                             <h1 id="password-success-title" className="mt-1 text-2xl font-black text-slate-950">
                                 Security Update Complete

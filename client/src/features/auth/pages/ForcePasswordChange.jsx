@@ -1,8 +1,9 @@
 import React from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Activity, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import SecurityProfileForm, { getDefaultRouteForRole } from '../../../components/forms/SecurityProfileForm';
+import BrandLogo from '../../../components/brand/BrandLogo';
 
 const ForcePasswordChange = () => {
     const navigate = useNavigate();
@@ -34,15 +35,13 @@ const ForcePasswordChange = () => {
         <div className="min-h-screen bg-slate-100 px-4 py-8 text-slate-950">
             <div className="mx-auto mb-8 flex max-w-xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center bg-[#084C39] text-white shadow-sm">
-                        <Activity className="h-6 w-6" />
-                    </div>
-                    <div>
-                        <p className="text-lg font-black leading-none">ImmuniCare</p>
-                        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.24em] text-emerald-800">
-                            Mandatory Credential Update
-                        </p>
-                    </div>
+                    <BrandLogo
+                        variant="lockup"
+                        subtitle="Mandatory Credential Update"
+                        imageClassName="h-11 w-11"
+                        textClassName="text-lg text-slate-950"
+                        subtitleClassName="tracking-[0.22em]"
+                    />
                 </div>
                 <button
                     type="button"

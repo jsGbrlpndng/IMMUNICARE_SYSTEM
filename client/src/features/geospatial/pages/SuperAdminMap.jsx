@@ -123,7 +123,8 @@ const normalizeAnalysisPayload = (payload = {}) => ({
     noise: payload.noise || [],
     allInfants: payload.all_infants || payload.allInfants || [],
     recommendedActions: payload.recommended_actions || payload.recommendedActions || [],
-    counts: payload.counts || {}
+    counts: payload.counts || {},
+    clusteringScope: payload.clustering_scope || payload.clusteringScope || null
 });
 
 /**
@@ -155,6 +156,16 @@ const deriveClusterBarangayLabel = (points) => {
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
     if (sorted.length === 0) return 'Unknown';
     return sorted.map(([brgy]) => brgy).join(', ');
+};
+
+const getClusterBarangays = (cluster) => {
+    const names = new Set();
+    if (cluster?.barangay) names.add(String(cluster.barangay).trim().toUpperCase());
+    (cluster?.points || []).forEach((point) => {
+        const barangay = String(point?.barangay || '').trim().toUpperCase();
+        if (barangay) names.add(barangay);
+    });
+    return [...names].filter(Boolean);
 };
 
 /* ─── MapBoundsController ─── */
@@ -247,7 +258,6 @@ export default function SuperAdminMap() {
 
     /* ── Filter state ── */
     const [filters, setFilters] = useState({ barangay: 'All' });
-    const [clusterEps, setClusterEps] = useState(300);
     const [reportYear, setReportYear] = useState(now.getFullYear());
     const [reportMonth, setReportMonth] = useState(now.getMonth() + 1);
 
@@ -265,6 +275,7 @@ export default function SuperAdminMap() {
     /* ── Data state ── */
     const [performanceGap, setPerformanceGap] = useState({ rows: [], summary: {} });
     const [analysis, setAnalysis] = useState(null);
+    const [activeDbscanSetting, setActiveDbscanSetting] = useState({ epsilon_meters: 300, minPts: 3 });
 
     /* ── Loading & messages ── */
     const [loadingView, setLoadingView] = useState(true);
@@ -325,7 +336,8 @@ export default function SuperAdminMap() {
             params.set('barangay', filters.barangay === 'All' ? 'all' : filters.barangay);
             params.set('sortBy', 'urgency');
             params.set('scope', 'defaulter');
-            params.set('eps', String(clusterEps));
+            params.set('eps', String(activeDbscanSetting.epsilon_meters || 300));
+            params.set('minPts', String(activeDbscanSetting.minPts || 3));
 
             const response = await apiClient.get(`/dashboard/superadmin/spatial-analysis?${params.toString()}`);
             const payload = response.ok ? await response.json() : {};
@@ -339,7 +351,23 @@ export default function SuperAdminMap() {
         } finally {
             setRunningAnalysis(false);
         }
-    }, [filters.barangay, clusterEps]);
+    }, [filters.barangay, activeDbscanSetting.epsilon_meters, activeDbscanSetting.minPts]);
+
+    const loadActiveDbscanSetting = useCallback(async () => {
+        try {
+            const response = await apiClient.get('/dashboard/dbscan-settings');
+            const payload = response.ok ? await response.json() : {};
+            if (!response.ok || !payload?.success) return;
+            const settings = payload.current_production_settings || {};
+            setActiveDbscanSetting({
+                epsilon_meters: Number(settings.epsilon_meters || 300),
+                minPts: Number(settings.minPts || settings.min_points || 3),
+                distance_model: settings.distance_model || null
+            });
+        } catch (requestError) {
+            console.error('[DBSCAN_SETTINGS_DISPLAY]', requestError);
+        }
+    }, []);
 
     /* ── API: Notify Admin ── */
 
@@ -396,6 +424,10 @@ export default function SuperAdminMap() {
         };
     }, [isClusterMode, loadPerformanceGap]);
 
+    useEffect(() => {
+        loadActiveDbscanSetting();
+    }, [loadActiveDbscanSetting]);
+
     /* ── Handlers ── */
 
     const handleModeChange = async (nextMode) => {
@@ -408,7 +440,7 @@ export default function SuperAdminMap() {
     };
 
     const openNotifyModal = (cluster, clusterIndex) => {
-        const brgy = deriveClusterBarangay(cluster.points) || 'Unknown';
+        const brgy = cluster.barangay || deriveClusterBarangay(cluster.points) || 'Unknown';
         setNotifyModal({
             open: true,
             barangay: brgy,
@@ -461,7 +493,7 @@ export default function SuperAdminMap() {
     const clusterRanking = useMemo(() => {
         const grouped = {};
         analysisRows.forEach((cluster) => {
-            const brgy = cluster.locality || 'Unknown';
+            const brgy = cluster.barangay || deriveClusterBarangay(cluster.points) || 'Unknown';
             if (!grouped[brgy]) grouped[brgy] = { barangay: brgy, defaulters: 0, clusters: 0 };
             grouped[brgy].defaulters += Number(cluster.total_infants || 0);
             grouped[brgy].clusters += 1;
@@ -500,10 +532,10 @@ export default function SuperAdminMap() {
                                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#064E3B]">
                                     Municipal Geographic Monitoring
                                 </p>
-                                <h1 className="mt-1 text-2xl font-black text-slate-950">Spatial Decision Support System</h1>
+                                <h1 className="mt-1 text-2xl font-black text-slate-950">Municipal Geographic Monitoring</h1>
                                 <p className="mt-1 text-sm font-semibold text-slate-500">
                                     {isClusterMode
-                                        ? 'Macro-level DBSCAN cluster detection for prioritizing barangay outreach.'
+                                        ? 'Municipal overview of barangay-aware defaulter hotspots for prioritizing outreach.'
                                         : 'Population target vs. actual comparison across all barangays.'}
                                 </p>
                             </div>
@@ -782,21 +814,12 @@ export default function SuperAdminMap() {
                                         ))}
                                     </select>
                                 </label>
-                                <label className="flex flex-col gap-1">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Hotspot Radius</span>
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            type="range"
-                                            min="100"
-                                            max="500"
-                                            step="50"
-                                            value={clusterEps}
-                                            onChange={(e) => setClusterEps(Number(e.target.value))}
-                                            className="w-32 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#064E3B]"
-                                        />
-                                        <span className="text-sm font-black text-slate-900 tabular-nums w-14">{clusterEps}m</span>
-                                    </div>
-                                </label>
+                                <div className="flex flex-col gap-1 border border-slate-200 bg-slate-50 px-4 py-2">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Active DBSCAN Setting</span>
+                                    <span className="text-sm font-black text-slate-900 tabular-nums">
+                                        {activeDbscanSetting.epsilon_meters || 300}m / MinPts {activeDbscanSetting.minPts || 3}
+                                    </span>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={runClusterAnalysis}
@@ -804,11 +827,11 @@ export default function SuperAdminMap() {
                                     className="inline-flex h-10 items-center gap-2 bg-[#064E3B] px-5 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-[#053B2D] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                                 >
                                     {runningAnalysis ? <Loader2 className="h-4 w-4 animate-spin" /> : <Radar className="h-4 w-4" />}
-                                    {runningAnalysis ? 'Running...' : 'Run Spatial Analysis'}
+                                    {runningAnalysis ? 'Refreshing...' : 'Refresh Hotspot Overview'}
                                 </button>
                             </div>
                             <p className="text-[10px] text-slate-400 font-semibold px-5 pb-3">
-                                ⚠️ Exploratory analysis. Barangay deployments always use the 300m standard.
+                                DBSCAN parameter changes are managed only through the DBSCAN Evaluation page. This map uses the active approved setting as read-only.
                             </p>
                         </section>
 
@@ -816,9 +839,9 @@ export default function SuperAdminMap() {
                         <section className="border border-slate-300 bg-white">
                             <div className="flex items-center justify-between gap-4 border-b border-slate-300 px-5 py-3">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">DBSCAN Cluster Map</p>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Defaulter Hotspot Overview</p>
                                     <p className="mt-1 text-sm font-semibold text-slate-500">
-                                        Macro-level cluster polygons. Individual infant markers are not shown at this administrative level.
+                                        Municipal overview of barangay-aware hotspot polygons. Individual infant markers are not shown at this administrative level.
                                     </p>
                                 </div>
                                 <button
@@ -920,7 +943,7 @@ export default function SuperAdminMap() {
                                 {isPanelOpen && (
                                 <aside className="h-auto w-full overflow-visible">
                                     <div className="border-b border-slate-300 px-4 py-3">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">Defaulter Cluster Ranking</p>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#064E3B]">Barangay-aware hotspot ranking</p>
                                     </div>
 
                                     {/* Summary cards */}
@@ -944,8 +967,9 @@ export default function SuperAdminMap() {
                                         ) : (
                                             analysisRows.map((cluster, index) => {
                                                 const clusterId = cluster.clusterId || `CL-${index}`;
+                                                const clusterBarangays = getClusterBarangays(cluster);
+                                                const hasMixedBarangays = clusterBarangays.length > 1;
                                                 const isNotified = notifiedBarangays.has(clusterId);
-                                                const predominantBarangay = deriveClusterBarangay(cluster.points) || 'Unknown';
                                                 const involvedBarangays = deriveClusterBarangayLabel(cluster.points);
                                                 return (
                                                     <div key={clusterId} className="border-b border-slate-300 p-4">
@@ -966,16 +990,18 @@ export default function SuperAdminMap() {
                                                             <div className="flex-shrink-0">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => isNotified ? null : openNotifyModal(cluster, index)}
-                                                                    disabled={isNotified}
+                                                                    onClick={() => (isNotified || hasMixedBarangays) ? null : openNotifyModal(cluster, index)}
+                                                                    disabled={isNotified || hasMixedBarangays}
                                                                     className={`inline-flex items-center justify-center gap-2 border px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] transition-colors ${
                                                                         isNotified
                                                                             ? 'cursor-default border-emerald-300 bg-emerald-50 text-emerald-800'
-                                                                            : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                                                            : hasMixedBarangays
+                                                                                ? 'cursor-not-allowed border-slate-300 bg-slate-100 text-slate-500'
+                                                                                : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
                                                                     }`}
                                                                 >
                                                                     {isNotified ? <Check className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-                                                                    {isNotified ? 'Admin Notified' : 'Notify Admin'}
+                                                                    {isNotified ? 'Admin Notified' : (hasMixedBarangays ? 'Mixed Scope' : 'Notify Admin')}
                                                                 </button>
                                                             </div>
                                                         </div>

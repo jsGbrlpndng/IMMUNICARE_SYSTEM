@@ -7,9 +7,9 @@ import {
     LogOut,
     Settings,
     ChevronDown,
-    Activity,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import BrandLogo from '../brand/BrandLogo';
 
 const T = {
     bg: '#F9FBFC',
@@ -23,20 +23,6 @@ const T = {
 };
 
 /* ─── Logo mark ──────────────────────────────────────────────────── */
-const LogoMark = () => (
-    <div style={{
-        width: 32, height: 32,
-        borderRadius: 8,
-        background: `linear-gradient(135deg, ${T.green} 0%, ${T.greenDeep} 100%)`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-        boxShadow: `0 3px 10px rgba(5, 150, 105, 0.25)`,
-        border: '1px solid rgba(255,255,255,0.1)',
-    }}>
-        <Activity size={16} strokeWidth={2.5} color="#fff" />
-    </div>
-);
-
 /* ─── NavItem ────────────────────────────────────────────────────── */
 const NavItem = ({ item, active, isCollapsed, onClick }) => {
     const [hovered, setHovered] = useState(false);
@@ -282,17 +268,14 @@ const SidebarNav = ({
                     justifyContent: isCollapsed ? 'center' : 'flex-start',
                     background:     '#FFFFFF',
                 }}>
-                    <LogoMark />
-                    {!isCollapsed && (
-                        <div style={{ display:'flex', flexDirection:'column', lineHeight:1.2 }}>
-                            <span style={{ color: T.greenDeep, fontSize:15, fontWeight:800, letterSpacing:'-0.6px' }}>
-                                ImmuniCare
-                            </span>
-                            <span style={{ color: T.green, fontSize:9, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', opacity: 0.9 }}>
-                                {brandSubtitle || (user?.assigned_barangay ? `BARANGAY ${user.assigned_barangay}` : 'San Pedro RHU')}
-                            </span>
-                        </div>
-                    )}
+                    <BrandLogo
+                        variant={isCollapsed ? 'compact' : 'lockup'}
+                        showText={!isCollapsed}
+                        subtitle={brandSubtitle || (user?.assigned_barangay ? `BARANGAY ${user.assigned_barangay}` : 'San Pedro RHU')}
+                        imageClassName={isCollapsed ? 'h-10 w-10' : 'h-11 w-11'}
+                        textClassName="text-[15px]"
+                        subtitleClassName="text-[9px]"
+                    />
                 </div>
 
                 {/* ── Navigation body ──────────────────────────────────── */}

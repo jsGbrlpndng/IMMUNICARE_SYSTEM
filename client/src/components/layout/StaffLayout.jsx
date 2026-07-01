@@ -77,7 +77,7 @@ const StaffLayout = ({ children }) => {
     const pageContext = pageContextLabels[location.pathname];
 
     useEffect(() => {
-        document.title = `ImmuniCare - ${pageName}`;
+        document.title = `IMMUNICARE - ${pageName}`;
     }, [pageName]);
 
     return (

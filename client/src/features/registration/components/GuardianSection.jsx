@@ -22,8 +22,21 @@ const GuardianSection = ({ formData, errors, handleChange, handleBlur, isReadOnl
             <InputWrapper label="Caregiver Phone (09XXXXXXXXX)" required hasError={!!errors.caregiver_phone} errorMessage={errors.caregiver_phone}>
                 <input name="caregiver_phone" value={formData.caregiver_phone} onChange={handleChange} placeholder="09171234567" className={inputClasses} disabled={isReadOnly} readOnly={isReadOnly} />
             </InputWrapper>
-            <InputWrapper label="Pregnancy Order">
-                <input type="number" name="pregnancy_order" value={formData.pregnancy_order} onChange={handleChange} placeholder="e.g. 1" className={inputClasses} disabled={isReadOnly} readOnly={isReadOnly} />
+            <InputWrapper label="Pregnancy Order" required hasError={!!errors.pregnancy_order} errorMessage={errors.pregnancy_order}>
+                <input
+                    type="number"
+                    name="pregnancy_order"
+                    value={formData.pregnancy_order}
+                    onChange={handleChange}
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    pattern="[1-9][0-9]*"
+                    placeholder="e.g. 1"
+                    className={inputClasses}
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
+                />
             </InputWrapper>
         </div>
     );

@@ -8,6 +8,7 @@ const InfantService = require('../infants/InfantService');
 const DBSCANEvaluationService = require('../geospatial/DBSCANEvaluationService');
 const { performAuditLog } = require('../../shared/utils/auditLogger');
 const { CLINICAL_STATUS, MIN_CLUSTER_INFANTS, ROLES } = require('../../config/constants/domain');
+const { RHU2_BARANGAYS } = require('../../config/constants/rhu2Barangays');
 const enhancedEngine = new EnhancedNIPScheduleEngine(db);
 const infantService = new InfantService(db);
 const dbscanEvaluationService = new DBSCANEvaluationService(db);
@@ -52,6 +53,28 @@ router.get('/dbscan-audit', requireRole(
         res.status(500).json({
             success: false,
             error: 'Failed to evaluate DBSCAN parameter sweep.',
+            details: error.message
+        });
+    }
+});
+
+// GET /api/dashboard/dbscan-settings
+// Read-only current production DBSCAN settings for display outside the approval flow.
+router.get('/dbscan-settings', requireRole(
+    [ROLES.SUPER_ADMIN, ROLES.ADMIN],
+    'Only Admins and Super Admins can view DBSCAN settings.'
+), async (req, res) => {
+    try {
+        const result = await dbscanEvaluationService.getCurrentSettings();
+        res.json({
+            success: true,
+            current_production_settings: result
+        });
+    } catch (error) {
+        console.error('[GET /api/dashboard/dbscan-settings]', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to read DBSCAN settings.',
             details: error.message
         });
     }
@@ -544,16 +567,95 @@ router.get('/superadmin/spatial-analysis', requireSuperAdminOnly, async (req, re
 
         const rawEps3 = parseInt(req.query.eps, 10);
         const clampedEps3 = Number.isFinite(rawEps3) && rawEps3 >= 100 && rawEps3 <= 500 ? rawEps3 : 300;
-        const spatialData = await infantService.getSpatialTriage({
-            barangay: targetBarangay,
+        const baseParams = {
             eps: clampedEps3,
             minPts: req.query.minPts || 3,
             scope: req.query.scope || 'defaulter',
             ageGroup: req.query.ageGroup || null,
             vaccineType: req.query.vaccineType || null,
             assignedBhw: req.query.assignedBhw || null,
-            sortBy: req.query.sortBy || 'urgency'
-        });
+            sortBy: req.query.sortBy || 'urgency',
+            persistResults: false
+        };
+
+        let spatialData;
+        if (targetBarangay) {
+            spatialData = await infantService.getSpatialTriage({
+                ...baseParams,
+                barangay: targetBarangay
+            });
+        } else {
+            const barangayResults = await Promise.all(RHU2_BARANGAYS.map(async (barangayName) => {
+                const result = await infantService.getSpatialTriage({
+                    ...baseParams,
+                    barangay: barangayName
+                });
+
+                return {
+                    ...result,
+                    clusters: (result.clusters || []).map((cluster) => ({
+                        ...cluster,
+                        barangay: barangayName,
+                        clusterId: `${barangayName}-${cluster.clusterId || cluster.rank || 'CL'}`,
+                        locality: cluster.locality || barangayName,
+                        points: (cluster.points || []).map((point) => ({
+                            ...point,
+                            barangay: point.barangay || barangayName
+                        }))
+                    })),
+                    noise: (result.noise || []).map((point) => ({
+                        ...point,
+                        barangay: point.barangay || barangayName
+                    })),
+                    all_infants: (result.all_infants || []).map((point) => ({
+                        ...point,
+                        barangay: point.barangay || barangayName
+                    }))
+                };
+            }));
+
+            const sumCounts = barangayResults.reduce((acc, result) => {
+                const counts = result.counts || {};
+                Object.entries(counts).forEach(([key, value]) => {
+                    if (typeof value === 'number') {
+                        acc[key] = (acc[key] || 0) + value;
+                    }
+                });
+                return acc;
+            }, {});
+
+            const clusters = barangayResults
+                .flatMap((result) => result.clusters || [])
+                .sort((a, b) => Number(b._sortMetric || b.total_defaulter_doses || b.total_infants || 0) - Number(a._sortMetric || a.total_defaulter_doses || a.total_infants || 0));
+
+            clusters.forEach((cluster, index) => {
+                cluster.rank = index + 1;
+            });
+
+            spatialData = {
+                barangay: null,
+                scope: baseParams.scope,
+                clustering_scope: 'BARANGAY_AWARE_MUNICIPAL_OVERVIEW',
+                clusters,
+                noise: barangayResults.flatMap((result) => result.noise || []),
+                all_infants: barangayResults.flatMap((result) => result.all_infants || []),
+                recommended_actions: clusters.slice(0, 2).map((cluster, index) => ({
+                    type: 'FIELD_TARGET',
+                    rank: index + 1,
+                    title: `${index === 0 ? 'TOP' : 'SECONDARY'} BARANGAY HOTSPOT - ${cluster.locality}`,
+                    subtitle: `${cluster.total_infants || 0} defaulters in ${cluster.barangay}`,
+                    reason: 'Barangay-aware municipal overview; cluster was calculated within one barangay.',
+                    severity: cluster.severity,
+                    impact: `${Number(cluster.total_defaulter_doses || 0) + Number(cluster.total_due_doses || 0)} doses addressable`,
+                    targetId: cluster.clusterId,
+                    lat: cluster.lat,
+                    lng: cluster.lng,
+                    bounds: cluster.bounds,
+                    barangay: cluster.barangay
+                })),
+                counts: sumCounts
+            };
+        }
 
         res.json({
             success: true,

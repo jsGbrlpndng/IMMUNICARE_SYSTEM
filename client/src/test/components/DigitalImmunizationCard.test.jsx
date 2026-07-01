@@ -32,7 +32,29 @@ const mockCardWithData = {
         relationship: 'Mother',
         phone: '09123456789'
     },
-    vaccine_groups: []
+    vaccine_groups: [
+        {
+            name: 'BCG',
+            doses: [
+                {
+                    schedule_id: 'schedule-1',
+                    dose_number: 1,
+                    recommended_date: '2026-01-19',
+                    date_given: '2026-01-19',
+                    status: 'Completed',
+                    remarks: 'Auto-logged at-birth dose upon clinical validation approval'
+                },
+                {
+                    schedule_id: 'schedule-2',
+                    dose_number: 2,
+                    recommended_date: '2026-02-19',
+                    date_given: null,
+                    status: 'Not Yet Due',
+                    remarks: null
+                }
+            ]
+        }
+    ]
 };
 
 const mockCardWithoutData = {
@@ -110,5 +132,33 @@ describe('DigitalImmunizationCard Component Tests', () => {
 
         // Verify caregiver information is not present
         expect(screen.queryByText('Caregiver / Guardian Information')).not.toBeInTheDocument();
+    });
+
+    it('uses caregiver card cleanup labels and hides unfinished print/pdf actions', () => {
+        render(
+            <MemoryRouter>
+                <DigitalImmunizationCard card={mockCardWithData} onSignOut={() => {}} />
+            </MemoryRouter>
+        );
+
+        expect(screen.getByText('Registration No.')).toBeInTheDocument();
+        expect(screen.getByText('REG-2026-1234')).toBeInTheDocument();
+        expect(screen.getByText('Date Administered')).toBeInTheDocument();
+        expect(screen.getByText('Scheduled Date')).toBeInTheDocument();
+        expect(screen.getByText(/Pending Validation:/)).toBeInTheDocument();
+        expect(screen.queryByText('Print')).not.toBeInTheDocument();
+        expect(screen.queryByText('Save as PDF')).not.toBeInTheDocument();
+        expect(screen.getByText('Sign out')).toBeInTheDocument();
+    });
+
+    it('formats vaccination remarks for caregiver-friendly display', () => {
+        render(
+            <MemoryRouter>
+                <DigitalImmunizationCard card={mockCardWithData} onSignOut={() => {}} />
+            </MemoryRouter>
+        );
+
+        expect(screen.getByText('Recorded at birth after clinical validation.')).toBeInTheDocument();
+        expect(screen.getByText('Not recorded.')).toBeInTheDocument();
     });
 });

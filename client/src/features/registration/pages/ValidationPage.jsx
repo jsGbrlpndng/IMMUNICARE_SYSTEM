@@ -19,6 +19,7 @@ import {
 import apiClient from '../../../services/apiClient';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
+import { formatTTStatus } from '../../../utils/registrationValidation';
 
 const REJECTION_REASONS = [
     'Confirmed Duplicate',
@@ -736,7 +737,7 @@ const ValidationPage = () => {
 
                                     <ClinicalSection icon={<Activity size={12} className="text-emerald-700" />} title="Maternal and Birth History">
                                         <div className="chart-grid chart-grid-double">
-                                            <DataField label="Mother TT Status" value={selectedRecord?.mother_tt_status || 'Unknown'} highlight />
+                                            <DataField label="Mother TT Status" value={formatTTStatus(selectedRecord?.mother_tt_status)} highlight />
                                             <DataField label="Last TT Date" value={selectedRecord?.last_tt_date ? new Date(selectedRecord.last_tt_date).toLocaleDateString() : '--'} />
                                         </div>
                                         <div className="chart-grid chart-grid-double border-t border-slate-300">

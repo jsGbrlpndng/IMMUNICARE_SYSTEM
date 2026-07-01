@@ -14,6 +14,7 @@ import {
     Eye,
     EyeOff
 } from 'lucide-react';
+import BrandLogo from '../../../components/brand/BrandLogo';
 
 const AccessPortal = () => {
     const navigate = useNavigate();
@@ -157,13 +158,11 @@ const AccessPortal = () => {
                 <div className="mx-auto flex max-w-7xl items-center justify-between px-5 lg:px-8">
                     {/* Logo */}
                     <Link to="/" className="group flex items-center space-x-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-gradient-to-br from-emerald-600 to-[#064E3B] shadow-sm transition-transform group-hover:scale-105">
-                            <Activity className="h-5 w-5 text-white" />
-                        </div>
-                        <div className="flex flex-col leading-none">
-                            <span className="text-lg font-black tracking-tight text-[#064E3B]">ImmuniCare</span>
-                            <span className="mt-0.5 text-[9px] font-black uppercase tracking-[0.2em] text-emerald-600">RHU Portal</span>
-                        </div>
+                        <BrandLogo
+                            variant="lockup"
+                            subtitle="RHU Portal"
+                            imageClassName="h-9 w-9 transition-transform group-hover:scale-105"
+                        />
                     </Link>
 
                     {/* Back to Home */}
@@ -218,7 +217,7 @@ const AccessPortal = () => {
                                 </div>
                                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#064E3B]">Staff Portal</p>
                                 <h1 className="mt-2 text-3xl font-black text-slate-950">Welcome Back</h1>
-                                <p className="mt-2 text-sm font-semibold text-slate-500">Access your ImmuniCare workspace with your assigned staff credentials.</p>
+                                <p className="mt-2 text-sm font-semibold text-slate-500">Access your IMMUNICARE workspace with your assigned staff credentials.</p>
                             </div>
 
                             <form onSubmit={handleStaffLogin} className="space-y-5">
