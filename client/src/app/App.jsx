@@ -33,6 +33,7 @@ import BHWLayout from '../components/layout/BHWLayout';
 import SuperAdminLayout from '../components/layout/SuperAdminLayout';
 import SuperAdminRoute from './routes/SuperAdminRoute';
 import { BarangayFilterProvider } from '../contexts/BarangayFilterContext';
+import { FeedbackProvider } from '../contexts/FeedbackContext';
 import BHWDashboard from '../features/bhw/pages/BHWDashboard';
 import BHWRegistration from '../features/bhw/pages/BHWRegistration';
 import MySubmissions from '../features/bhw/pages/MySubmissions';
@@ -49,9 +50,10 @@ function App() {
     return (
         <AuthProvider>
             <BarangayFilterProvider>
-                <Router>
-                <IdleSessionProvider>
-                <Routes>
+                <FeedbackProvider>
+                    <Router>
+                    <IdleSessionProvider>
+                    <Routes>
                     {/* Public Landing Page is the entry point */}
                     <Route path="/" element={<LandingPage />} />
 
@@ -377,7 +379,8 @@ function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
                 </IdleSessionProvider>
-            </Router>
+                </Router>
+                </FeedbackProvider>
             </BarangayFilterProvider>
         </AuthProvider >
     );

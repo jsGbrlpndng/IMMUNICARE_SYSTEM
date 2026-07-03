@@ -1,6 +1,7 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { X, Download, MessageSquare } from 'lucide-react';
+import { useFeedback } from '../../contexts/FeedbackContext';
 import FilterToolbar from './FilterToolbar';
 import InfantCard from './InfantCard';
 
@@ -18,6 +19,7 @@ const KPIDetailModal = ({
   infants = [],
   stats = {}
 }) => {
+  const { showToast } = useFeedback();
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     barangay: 'All',
@@ -215,21 +217,21 @@ const KPIDetailModal = ({
     
     // TODO: Integrate with existing SMS modal component
     console.log('Send SMS to:', infantsToSMS.map(i => ({ name: i.name, phone: i.caregiver_phone })));
-    alert(`SMS feature: Would send to ${infantsToSMS.length} infants`);
+    showToast(`SMS feature: Would send to ${infantsToSMS.length} infants`, 'info');
   };
 
   // Individual SMS handler
   const handleSendSMS = (infant) => {
     // TODO: Integrate with existing SMS modal with pre-filled recipient
     console.log('Send SMS to:', infant.name, infant.caregiver_phone);
-    alert(`SMS feature: Would send to ${infant.name}`);
+    showToast(`SMS feature: Would send to ${infant.name}`, 'info');
   };
 
   // Record vaccination handler
   const handleRecordVaccination = (infant) => {
     // TODO: Integrate with existing vaccination recording modal
     console.log('Record vaccination for:', infant.name);
-    alert(`Vaccination recording: Would open modal for ${infant.name}`);
+    showToast(`Vaccination recording: Would open modal for ${infant.name}`, 'info');
   };
 
   if (!isOpen) return null;

@@ -12,6 +12,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../../../services/apiClient';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import LogVisitModal from '../../vaccination/components/LogVisitModal';
 
@@ -19,6 +20,7 @@ const ACTIVE_FIELD_TASK_STATUSES = ['ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE'];
 
 const BHWDashboard = () => {
     const { user } = useAuth();
+    const { showToast } = useFeedback();
     const navigate = useNavigate();
     const [stats, setStats] = useState({
         drafts: 0,
@@ -172,15 +174,15 @@ const BHWDashboard = () => {
             const res = await apiClient.patch(`/follow-ups/tasks/${taskId}/acknowledge`);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                alert(data.error || 'Failed to acknowledge task.');
+                showToast(data.error || 'Failed to acknowledge task.', 'error');
                 return;
             }
-            alert('Task successfully acknowledged.');
+            showToast('Task successfully acknowledged.', 'success');
             await fetchDashboardData();
             window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
         } catch (error) {
             console.error('Failed to acknowledge task:', error);
-            alert('Server connection failed.');
+            showToast('Server connection failed.', 'error');
         } finally {
             setAcknowledgingTaskId(null);
         }

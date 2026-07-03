@@ -344,9 +344,13 @@ class InfantService {
                 const alreadyInCatchment = actorBarangay
                     && currentBarangay
                     && actorBarangay.toUpperCase() === currentBarangay.toUpperCase();
+                const referenceConfirmed = hasReferenceSearch
+                    && String(row.reference_id || '').trim().toUpperCase() === referenceId.toUpperCase();
+                const canTransfer = actor.role === ROLES.MIDWIFE && !alreadyInCatchment && referenceConfirmed;
 
                 const baseMatch = {
                     id: row.id,
+                    reference_id: row.reference_id,
                     first_name: row.first_name,
                     middle_name: row.middle_name,
                     last_name: row.last_name,
@@ -354,7 +358,11 @@ class InfantService {
                     dob: row.dob,
                     current_barangay: row.current_barangay,
                     already_in_catchment: Boolean(alreadyInCatchment),
-                    can_transfer: actor.role === ROLES.MIDWIFE && !alreadyInCatchment
+                    can_transfer: canTransfer,
+                    transfer_requires_reference_confirmation: actor.role === ROLES.MIDWIFE && !alreadyInCatchment && !referenceConfirmed,
+                    transfer_confirmation_message: actor.role === ROLES.MIDWIFE && !alreadyInCatchment && !referenceConfirmed
+                        ? 'Exact reference ID confirmation is required before transfer.'
+                        : null
                 };
 
                 if (isBhw) {
@@ -916,6 +924,7 @@ class InfantService {
         actor,
         reason,
         notes = null,
+        confirmed_reference_id = null,
         current_address = null,
         exact_address = null,
         locality = null,
@@ -971,6 +980,21 @@ class InfantService {
             if (String(infant.status || '').toUpperCase() === 'ARCHIVED') {
                 const error = new Error('Archived infant records cannot be transferred.');
                 error.status = 423;
+                throw error;
+            }
+
+            const confirmedReferenceId = String(confirmed_reference_id || '').trim();
+            if (!confirmedReferenceId) {
+                const error = new Error('Exact reference ID confirmation is required before transfer.');
+                error.status = 400;
+                error.code = 'REFERENCE_CONFIRMATION_REQUIRED';
+                throw error;
+            }
+
+            if (confirmedReferenceId.toUpperCase() !== String(infant.reference_id || '').trim().toUpperCase()) {
+                const error = new Error('Confirmed reference ID does not match the selected infant record.');
+                error.status = 409;
+                error.code = 'REFERENCE_CONFIRMATION_MISMATCH';
                 throw error;
             }
 

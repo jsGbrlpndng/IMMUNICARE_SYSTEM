@@ -125,6 +125,7 @@ export const validateField = (name, value, formData = {}) => {
         case 'pregnancy_order':
             if (!value) return "Required";
             if (!isWholePositiveInteger(value)) return "Must be a positive whole number";
+            if (parseInt(value, 10) < 1 || parseInt(value, 10) > 20) return "pregnancy_order must be between 1 and 20.";
             return null;
         case 'birth_weight':
             if (!value) return "Required";

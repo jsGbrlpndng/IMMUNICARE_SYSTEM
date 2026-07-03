@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { useState, useEffect } from 'react';
 import {
     Shield,
@@ -14,10 +14,12 @@ import {
     Info
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFeedback } from '../../contexts/FeedbackContext';
 import apiClient from '../../services/apiClient';
 
 const DOHRules = () => {
     const { user } = useAuth();
+    const { showToast } = useFeedback();
     const [rules, setRules] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showNewVersionModal, setShowNewVersionModal] = useState(false);
@@ -99,10 +101,10 @@ const DOHRules = () => {
                 }
             } else {
                 const err = await response.json();
-                alert(err.error || 'Failed to issue new protocol');
+                showToast(err.error || 'Failed to issue new protocol', 'error');
             }
         } catch (error) {
-            alert('Governance connection failure');
+            showToast('Governance connection failure', 'error');
         }
     };
 

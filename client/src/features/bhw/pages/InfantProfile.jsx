@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import apiClient from '../../../services/apiClient';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import {
     Calendar,
     User,
@@ -29,6 +30,7 @@ const InfantProfile = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { user } = useAuth();
+    const { showToast, showConfirm } = useFeedback();
 
     const [loading, setLoading] = useState(true);
     const [infant, setInfant] = useState(null);
@@ -77,25 +79,27 @@ const InfantProfile = () => {
         setTimeout(() => setShowSuccessToast(false), 3000);
     };
 
-    const handleApproveClick = async (vaccine) => {
-        if (!window.confirm(`Are you sure you want to approve and lock the ${vaccine.vaccineName} (Dose #${vaccine.doseNumber}) record? This will make it official for reporting.`)) {
-            return;
-        }
-
-        try {
-            setLoading(true);
-            const response = await apiClient.patch(`/vaccinations/${vaccine.vaccinationId}/validate`, {});
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to validate vaccination');
+    const handleApproveClick = (vaccine) => {
+        showConfirm({
+            title: 'Approve & Lock Dose',
+            message: `Are you sure you want to approve and lock the ${vaccine.vaccineName} (Dose #${vaccine.doseNumber}) record? This will make it official for reporting.`,
+            onConfirm: async () => {
+                try {
+                    setLoading(true);
+                    const response = await apiClient.patch(`/vaccinations/${vaccine.vaccinationId}/validate`, {});
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Failed to validate vaccination');
+                    }
+                    await fetchInfantData();
+                } catch (err) {
+                    console.error('Error validating dose:', err);
+                    showToast(`Error: ${err.message}`, 'error');
+                } finally {
+                    setLoading(false);
+                }
             }
-            await fetchInfantData();
-        } catch (err) {
-            console.error('Error validating dose:', err);
-            alert(`Error: ${err.message}`);
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
     if (loading) return <div className="border border-slate-200 bg-white p-8 text-center text-sm font-bold tracking-tight text-slate-500">Loading profile...</div>;

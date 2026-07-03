@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { getBarangayCenter } from '../../../utils/barangayConfig';
 import { barangayBoundaryStyle, getBarangayBoundaryGeoJson } from '../../../utils/barangayBoundaries';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import apiClient from '../../../services/apiClient';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 
@@ -137,6 +138,7 @@ const FlyToCluster = ({ cluster }) => {
 
 export default function AdminSpatialMap() {
     const { user } = useAuth();
+    const { showToast } = useFeedback();
     const location = useLocation();
     const initState = location.state || {};
     const [activeTab, setActiveTab] = useState(initState.initialTab || 'deployments');
@@ -282,7 +284,7 @@ export default function AdminSpatialMap() {
             setValidationNotes('');
         } catch (err) {
             console.error('[VALIDATE_REPORT_ERR]', err);
-            alert(err.message || 'Failed to validate report');
+            showToast(err.message || 'Failed to validate report', 'error');
         } finally {
             setValidating(false);
         }
@@ -318,7 +320,7 @@ export default function AdminSpatialMap() {
             setValidationNotes('');
         } catch (err) {
             console.error('[REJECT_REPORT_ERR]', err);
-            alert(err.message || 'Failed to reject report');
+            showToast(err.message || 'Failed to reject report', 'error');
         } finally {
             setValidating(false);
         }

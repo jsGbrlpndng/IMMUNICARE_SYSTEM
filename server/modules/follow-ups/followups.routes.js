@@ -199,10 +199,13 @@ router.get('/:infantId/logs', async (req, res) => {
                 ful.created_at,
                 ful.barangay,
                 u.full_name AS bhw_name,
-                u.assigned_barangay AS bhw_barangay
+                u.assigned_barangay AS bhw_barangay,
+                ft.assigned_at,
+                ft.completed_at
             FROM follow_up_logs ful
             JOIN infants i ON i.id = ful.infant_id
             LEFT JOIN users u ON u.id = ful.bhw_id
+            LEFT JOIN follow_up_tasks ft ON ft.id = ful.task_id
             WHERE ${filters.join(' AND ')}
             ORDER BY ful.visit_date DESC, ful.created_at DESC
             `,
@@ -253,6 +256,15 @@ router.post('/:infantId/logs', async (req, res) => {
             [req.params.infantId]
         );
 
+        const [activeTasks] = await db.execute(
+            `SELECT id FROM follow_up_tasks
+             WHERE infant_id = ?
+               AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
+             LIMIT 1`,
+            [req.params.infantId]
+        );
+        const activeTaskId = activeTasks[0]?.id || null;
+
         const logId = uuidv4();
         await db.execute(
             `
@@ -265,9 +277,10 @@ router.post('/:infantId/logs', async (req, res) => {
                 visit_date,
                 parent_contact,
                 outcome,
-                notes
+                notes,
+                task_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 logId,
@@ -278,7 +291,8 @@ router.post('/:infantId/logs', async (req, res) => {
                 req.body.visit_date,
                 req.body.parent_contact || null,
                 req.body.outcome,
-                req.body.notes || null
+                req.body.notes || null,
+                activeTaskId
             ]
         );
 
@@ -290,19 +304,34 @@ router.post('/:infantId/logs', async (req, res) => {
         };
         const taskOutcome = dbOutcomeMap[req.body.outcome] || 'CONTACTED_RESCHEDULED';
 
-        await db.execute(
-            `
-            UPDATE follow_up_tasks
-            SET status = 'COMPLETED_PENDING_REVIEW',
-                outcome = ?,
-                outcome_notes = ?,
-                completed_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE infant_id = ?
-              AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
-            `,
-            [taskOutcome, req.body.notes || null, req.params.infantId]
-        );
+        if (activeTaskId) {
+            await db.execute(
+                `
+                UPDATE follow_up_tasks
+                SET status = 'COMPLETED_PENDING_REVIEW',
+                    outcome = ?,
+                    outcome_notes = ?,
+                    completed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                `,
+                [taskOutcome, req.body.notes || null, activeTaskId]
+            );
+        } else {
+            await db.execute(
+                `
+                UPDATE follow_up_tasks
+                SET status = 'COMPLETED_PENDING_REVIEW',
+                    outcome = ?,
+                    outcome_notes = ?,
+                    completed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE infant_id = ?
+                  AND status IN ('ASSIGNED', 'ACKNOWLEDGED', 'OVERDUE')
+                `,
+                [taskOutcome, req.body.notes || null, req.params.infantId]
+            );
+        }
 
         await performAuditLog(req.user.id, 'FOLLOW_UP_VISIT_LOGGED', 'follow_up_logs', logId, {
             infant_id: req.params.infantId,
@@ -310,7 +339,7 @@ router.post('/:infantId/logs', async (req, res) => {
             barangay: req.user.assigned_barangay,
             outcome: req.body.outcome
         });
-        const [newLogRows] = await db.execute('SELECT * FROM follow_up_logs WHERE id = ? LIMIT 1', [logId]);
+
         await safeRecordAuditEvent({
             actor: req.user,
             action: 'FOLLOW_UP_VISIT_LOGGED',
@@ -319,10 +348,16 @@ router.post('/:infantId/logs', async (req, res) => {
             targetName: infantTargetName(infantRows[0]),
             barangay: infantRows[0].barangay,
             oldValues: {},
-            newValues: newLogRows[0] || {
+            newValues: {
+                id: logId,
                 infant_id: req.params.infantId,
+                schedule_id: scheduleRows[0]?.id || null,
+                bhw_id: req.user.id,
+                barangay: req.user.assigned_barangay,
+                visit_date: req.body.visit_date,
                 outcome: req.body.outcome,
-                visit_date: req.body.visit_date
+                notes: req.body.notes || null,
+                task_id: activeTaskId
             },
             req
         });
@@ -471,6 +506,7 @@ router.post('/:infantId/delegate', async (req, res) => {
                     task_notes = ?,
                     status = 'ASSIGNED',
                     target_completion_date = CURRENT_DATE + INTERVAL '7 days',
+                    assigned_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 `,
@@ -479,8 +515,8 @@ router.post('/:infantId/delegate', async (req, res) => {
         } else {
             taskId = uuidv4();
             await db.execute(
-                `INSERT INTO follow_up_tasks (id, infant_id, barangay, assigned_to_bhw_id, assigned_by_midwife_id, target_completion_date, task_notes, status) 
-                 VALUES (?, ?, ?, ?, ?, CURRENT_DATE + INTERVAL '7 days', ?, 'ASSIGNED')`,
+                `INSERT INTO follow_up_tasks (id, infant_id, barangay, assigned_to_bhw_id, assigned_by_midwife_id, target_completion_date, task_notes, status, assigned_at)
+                 VALUES (?, ?, ?, ?, ?, CURRENT_DATE + INTERVAL '7 days', ?, 'ASSIGNED', CURRENT_TIMESTAMP)`,
                 [taskId, infant.id, infant.barangay, bhw.id, req.user.id, taskNotes]
             );
         }

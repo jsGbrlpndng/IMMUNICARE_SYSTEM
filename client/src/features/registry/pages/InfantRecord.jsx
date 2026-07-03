@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../../../services/apiClient';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import RecordVaccinationModal from '../../vaccination/components/RecordVaccinationModal';
 import DoseCorrectionModal from '../../vaccination/components/DoseCorrectionModal';
 import { formatFullAddress } from '../../../utils/addressFormatting';
@@ -35,6 +36,7 @@ export default function InfantRecord() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { showToast } = useFeedback();
     
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
@@ -100,7 +102,7 @@ export default function InfantRecord() {
             await fetchRecord();
         } catch (error) {
             console.error('Error validating pending dose:', error);
-            window.alert(error.message || 'Failed to validate pending dose.');
+            showToast(error.message || 'Failed to validate pending dose.', 'error');
         } finally {
             setValidatingDoseId(null);
         }

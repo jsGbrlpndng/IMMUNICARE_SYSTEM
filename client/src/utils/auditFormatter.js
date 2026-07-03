@@ -21,6 +21,7 @@ const ACTION_LABELS = {
     FOLLOW_UP_COMPLETE: 'Completed Follow-up Task',
     FOLLOW_UP_CONFIRM: 'Confirmed Follow-up Task',
     FOLLOW_UP_VISIT_LOGGED: 'Logged Follow-up Visit',
+    FOLLOW_UP_DELEGATED: 'Delegated Follow-up Task',
     USER_CREATE: 'Created Staff Account',
     USER_CREATED: 'Created Staff Account',
     USER_STATUS_TOGGLE: 'Changed Staff Account Status',

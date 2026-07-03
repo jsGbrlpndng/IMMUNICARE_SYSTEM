@@ -149,7 +149,8 @@ export default function GlobalInfantSearchModal({
         try {
             const response = await apiClient.post(`/infants/${selectedInfant.id}/transfer`, {
                 reason: transferReason.trim(),
-                notes: transferNotes.trim() || null
+                notes: transferNotes.trim() || null,
+                confirmed_reference_id: selectedInfant.reference_id
             });
 
             if (!response.ok) {
@@ -336,6 +337,10 @@ export default function GlobalInfantSearchModal({
                                                     <ArrowRightLeft className="h-4 w-4" />
                                                     Transfer
                                                 </button>
+                                            ) : !isBhw && infant.transfer_requires_reference_confirmation ? (
+                                                <span className="max-w-[220px] rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-800">
+                                                    Exact reference ID confirmation is required before transfer.
+                                                </span>
                                             ) : (
                                                 <span className="rounded-md border border-slate-200 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
                                                     {isBhw ? 'Midwife Review Required' : 'Review Only'}
@@ -367,6 +372,8 @@ export default function GlobalInfantSearchModal({
                         <div className="space-y-4 px-6 py-5">
                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700">
                                 This will move the infant's current catchment from <b>{selectedInfant.current_barangay || 'current barangay'}</b> to <b>{queryMeta?.current_user_barangay || user?.assigned_barangay || 'your assigned barangay'}</b>. Previous vaccinations will remain credited to the barangay where they were administered.
+                                <br />
+                                Reference ID confirmed: <b>{selectedInfant.reference_id}</b>
                             </div>
 
                             {transferError && (

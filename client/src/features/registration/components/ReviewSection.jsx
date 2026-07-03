@@ -5,6 +5,13 @@ import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import { formatExactAddress, formatFullAddress } from '../../../utils/addressFormatting';
 import { formatTTStatus } from '../../../utils/registrationValidation';
 
+const formatDuplicateLifecycle = (match = {}) => {
+    const registrationStatus = match.registration_status ? `Registration: ${String(match.registration_status).replace(/_/g, ' ')}` : null;
+    const registryStatus = match.registry_status ? `Registry: ${String(match.registry_status).replace(/_/g, ' ')}` : null;
+    return [match.source, registrationStatus, registryStatus].filter(Boolean).join(' | ')
+        || String(match.status || match.match_type || 'MATCH').replace(/_/g, ' ');
+};
+
 const ReviewGroup = ({ title, children }) => (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-emerald-100 bg-emerald-50/70 px-5 py-3">
@@ -115,6 +122,7 @@ const ReviewSection = ({
                                         <div className="flex flex-col">
                                             <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{formatFullNameFromObject(match)}</span>
                                             <span className="text-[10px] font-bold text-slate-500">{new Date(match.dob).toLocaleDateString()}</span>
+                                            <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{formatDuplicateLifecycle(match)}</span>
                                         </div>
                                         <span className="text-[10px] font-black uppercase bg-amber-200 px-3 py-1 rounded-full text-amber-900 border border-amber-300">{match.match_type}</span>
                                     </div>

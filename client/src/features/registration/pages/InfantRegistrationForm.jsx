@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import apiClient from '../../../services/apiClient';
 import {
     ClipboardCheck, CheckCircle, Save, Loader2, SaveAll, AlertTriangle, Check, ChevronLeft, ChevronRight, Info
@@ -89,6 +90,13 @@ const initialFormState = {
     emergency_justification: ''
 };
 
+const formatDuplicateLifecycle = (match = {}) => {
+    const registrationStatus = match.registration_status ? `Registration: ${String(match.registration_status).replace(/_/g, ' ')}` : null;
+    const registryStatus = match.registry_status ? `Registry: ${String(match.registry_status).replace(/_/g, ' ')}` : null;
+    return [match.source, registrationStatus, registryStatus].filter(Boolean).join(' | ')
+        || String(match.status || 'MATCH').replace(/_/g, ' ');
+};
+
 const normalizeDateInputValue = (value) => {
     if (!value) return '';
     const text = String(value).trim();
@@ -133,11 +141,20 @@ const readApiError = async (response, fallbackMessage) => {
     }
 };
 
+const getSubmissionFieldError = (message) => {
+    const text = String(message || '');
+    if (text.includes('pregnancy_order')) {
+        return { field: 'pregnancy_order', step: 2, message: text };
+    }
+    return null;
+};
+
 export default function InfantRegistrationForm({ userRole: forcedRole, onComplete }) {
     const navigate = useNavigate();
     const location = useLocation();
     const { id: routeId } = useParams();
     const { user } = useAuth();
+    const { showToast, showConfirm } = useFeedback();
     const userRole = forcedRole || user?.role;
     
     // UI States
@@ -1035,33 +1052,39 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
             return;
         }
 
-        if (!isStepValid(currentStep, formData, errors)) {
-            // Force error display on missing fields
-            const stepFields = {
-                1: ['first_name', 'middle_name', 'last_name', 'suffix', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
-                2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone', 'pregnancy_order'],
-                3: [
-                    'mother_tt_status',
-                    ...(['1', '2', '3', '4', '5'].includes(normalizeTTStatus(formData.mother_tt_status)) ? ['last_tt_date'] : []),
-                    'birth_weight',
-                    'length_at_birth_cm'
-                ],
-                4: [
-                    'bcg_status',
-                    ...(formData.bcg_status?.startsWith('Given') ? ['bcg_date'] : []),
-                    'hepatitis_b_status',
-                    ...(formData.hepatitis_b_status?.startsWith('Given') ? ['hepatitis_b_date'] : [])
-                ]
-            }[currentStep] || [];
-            
-            const newErrors = { ...errors };
-            stepFields.forEach(f => {
-                const fieldError = validateField(f, formData[f], formData);
-                if (fieldError) newErrors[f] = fieldError;
-                else if ((formData[f] === '' || formData[f] === null || formData[f] === undefined) && !['suffix'].includes(f) && !(f === 'middle_name' && formData.has_no_middle_name === true)) {
-                    newErrors[f] = "Required";
-                }
-            });
+        const stepFields = {
+            1: ['first_name', 'middle_name', 'last_name', 'suffix', 'dob', 'sex', 'barangay', 'exact_address', 'landmark'],
+            2: ['mothers_maiden_name', 'caregiver_relationship', 'caregiver_phone', 'pregnancy_order'],
+            3: [
+                'mother_tt_status',
+                ...(['1', '2', '3', '4', '5'].includes(normalizeTTStatus(formData.mother_tt_status)) ? ['last_tt_date'] : []),
+                'birth_weight',
+                'length_at_birth_cm'
+            ],
+            4: [
+                'bcg_status',
+                ...(formData.bcg_status?.startsWith('Given') ? ['bcg_date'] : []),
+                'hepatitis_b_status',
+                ...(formData.hepatitis_b_status?.startsWith('Given') ? ['hepatitis_b_date'] : [])
+            ]
+        }[currentStep] || [];
+
+        const newErrors = { ...errors };
+        let hasStepFieldError = false;
+        stepFields.forEach(f => {
+            const fieldError = validateField(f, formData[f], formData);
+            if (fieldError) {
+                newErrors[f] = fieldError;
+                hasStepFieldError = true;
+            } else if ((formData[f] === '' || formData[f] === null || formData[f] === undefined) && !['suffix'].includes(f) && !(f === 'middle_name' && formData.has_no_middle_name === true)) {
+                newErrors[f] = "Required";
+                hasStepFieldError = true;
+            } else {
+                delete newErrors[f];
+            }
+        });
+
+        if (hasStepFieldError || !isStepValid(currentStep, formData, newErrors)) {
             setErrors(newErrors);
             console.log("Form Validation Errors:", newErrors);
             return;
@@ -1336,10 +1359,23 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                     }
                 }
                 const errorMessage = await readApiError(res, 'Registration failed.');
+                const fieldError = getSubmissionFieldError(errorMessage);
+                if (fieldError) {
+                    setErrors(prev => ({ ...prev, [fieldError.field]: fieldError.message }));
+                    setCurrentStep(fieldError.step);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
                 setSubmissionError(errorMessage);
             }
         } catch(e) {
-            setSubmissionError(e.message || 'Network error connecting to Backend.');
+            const errorMessage = e.message || 'Network error connecting to Backend.';
+            const fieldError = getSubmissionFieldError(errorMessage);
+            if (fieldError) {
+                setErrors(prev => ({ ...prev, [fieldError.field]: fieldError.message }));
+                setCurrentStep(fieldError.step);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            setSubmissionError(errorMessage);
         } finally {
             if (isMounted.current) {
                 setIsSubmitting(false);
@@ -1347,31 +1383,32 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
         }
     };
 
-    const handleDiscardDraft = async () => {
+    const handleDiscardDraft = () => {
         if (!activeRegistrationId || isReadOnly || currentStatus !== 'DRAFT') return;
-        const confirmed = window.confirm('Are you sure you want to discard this draft? This cannot be undone.');
-        if (!confirmed) return;
+        showConfirm({
+            title: 'Discard Draft',
+            message: 'Are you sure you want to discard this draft? This cannot be undone.',
+            onConfirm: async () => {
+                setIsSavingDraft(true);
+                setSubmissionError(null);
+                try {
+                    const res = await apiClient.delete(`/registrations/${activeRegistrationId}`);
+                    if (res.ok) {
+                        navigate('/bhw/submissions', { replace: true, state: { toast: 'Draft Discarded Successfully' } });
+                        return;
+                    }
 
-        setIsSavingDraft(true);
-        setSubmissionError(null);
-        try {
-            const res = await apiClient.delete(`/registrations/${activeRegistrationId}`);
-            if (res.ok) {
-                setToast('Draft Discarded Successfully');
-                setTimeout(() => setToast(null), 3000);
-                navigate('/bhw/submissions', { replace: true, state: { toast: 'Draft Discarded Successfully' } });
-                return;
+                    const errorMessage = await readApiError(res, 'Failed to discard draft');
+                    setSubmissionError(errorMessage);
+                } catch (e) {
+                    setSubmissionError(e.message || 'Network error while discarding draft');
+                } finally {
+                    if (isMounted.current) {
+                        setIsSavingDraft(false);
+                    }
+                }
             }
-
-            const errorMessage = await readApiError(res, 'Failed to discard draft');
-            setSubmissionError(errorMessage);
-        } catch (e) {
-            setSubmissionError(e.message || 'Network error while discarding draft');
-        } finally {
-            if (isMounted.current) {
-                setIsSavingDraft(false);
-            }
-        }
+        });
     };
 
     const handleProceedDuplicateOverride = async () => {
@@ -1524,9 +1561,12 @@ export default function InfantRegistrationForm({ userRole: forcedRole, onComplet
                                                 <p className="text-[11px] font-semibold text-slate-500">
                                                     DOB: {match.dob ? new Date(match.dob).toLocaleDateString() : 'N/A'} • Barangay: {match.barangay || formData.barangay || 'N/A'}
                                                 </p>
+                                                <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                    {formatDuplicateLifecycle(match)}
+                                                </p>
                                             </div>
                                             <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-900">
-                                                {String(match.status || 'MATCH').replace(/_/g, ' ')}
+                                                {String(match.match_type || 'MATCH').replace(/_/g, ' ')}
                                             </span>
                                         </div>
                                     ))}

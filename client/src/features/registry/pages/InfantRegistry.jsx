@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import apiClient from '../../../services/apiClient';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import { formatFullNameFromObject } from '../../../utils/formatFullName';
 import GlobalInfantSearchModal from '../components/GlobalInfantSearchModal';
 import StatusBadge from '../../../components/common/StatusBadge';
@@ -30,6 +31,7 @@ export default function InfantRegistry() {
     const navigate = useNavigate();
     const location = useLocation();
     const { user } = useAuth();
+    const { showToast } = useFeedback();
     
     const [infants, setInfants] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -181,7 +183,7 @@ export default function InfantRegistry() {
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to restore record');
             await refreshCurrentView();
         } catch (error) {
-            alert(error.message);
+            showToast(error.message, 'error');
         } finally {
             setUpdatingStatusId(null);
         }

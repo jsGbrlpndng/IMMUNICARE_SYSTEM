@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import {
     Lock,
     ArrowLeft,
@@ -20,6 +21,7 @@ const AccessPortal = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { login, user } = useAuth();
+    const { showToast } = useFeedback();
     const [userId, setUserId] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -50,11 +52,11 @@ const AccessPortal = () => {
     const handleStaffLogin = async (e) => {
         e.preventDefault();
         if (!userId.trim()) {
-            alert('Please enter your Staff ID');
+            showToast('Please enter your Staff ID', 'warning');
             return;
         }
         if (!password.trim()) {
-            alert('Please enter your password');
+            showToast('Please enter your password', 'warning');
             return;
         }
 
@@ -120,19 +122,19 @@ const AccessPortal = () => {
 
                 switch (errorCode) {
                     case 'INVALID_CREDENTIALS':
-                        alert('Invalid Staff ID or password. Please try again.');
+                        showToast('Invalid Staff ID or password. Please try again.', 'error');
                         break;
                     case 'USER_INACTIVE':
-                        alert('Your account is inactive. Please contact your system administrator.');
+                        showToast('Your account is inactive. Please contact your system administrator.', 'error');
                         break;
                     case 'MISSING_CREDENTIALS':
-                        alert('Please enter both Staff ID and password.');
+                        showToast('Please enter both Staff ID and password.', 'error');
                         break;
                     case 'INVALID_USER_ID_FORMAT':
-                        alert('Please enter a valid Staff ID.');
+                        showToast('Please enter a valid Staff ID.', 'error');
                         break;
                     default:
-                        alert(errorMessage);
+                        showToast(errorMessage, 'error');
                 }
             }
         } catch (error) {
@@ -140,11 +142,11 @@ const AccessPortal = () => {
 
             // Provide user-friendly error messages
             if (error.message.includes('fetch')) {
-                alert('Connection failure to health server. Please check your internet connection and try again.');
+                showToast('Connection failure to health server. Please check your internet connection and try again.', 'error');
             } else if (error.message.includes('JSON')) {
-                alert('Server communication error. Please try again or contact technical support.');
+                showToast('Server communication error. Please try again or contact technical support.', 'error');
             } else {
-                alert(error.message || 'Connection failure to health server. Please try again.');
+                showToast(error.message || 'Connection failure to health server. Please try again.', 'error');
             }
         } finally {
             setLoading(false);

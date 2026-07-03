@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import apiClient from '../../../services/apiClient';
 import RecordVaccinationModal from '../../vaccination/components/RecordVaccinationModal';
 import DelegationModal from '../../../components/forms/DelegationModal';
@@ -33,6 +34,41 @@ const formatDate = (value) => {
     return new Date(value).toLocaleDateString();
 };
 
+const formatDateTime = (value) => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return String(value);
+    return parsed.toLocaleString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+};
+
+const formatElapsedTime = (assignedAt, completedAt) => {
+    if (!assignedAt) return '-';
+    if (!completedAt) return 'Pending / Not completed yet';
+    const start = new Date(assignedAt);
+    const end = new Date(completedAt);
+    const diffMs = end - start;
+    if (isNaN(diffMs) || diffMs < 0) return '-';
+
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 60) {
+        return `Completed after ${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'}`;
+    }
+
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 24) {
+        return `Completed after ${diffHours} ${diffHours === 1 ? 'hour' : 'hours'}`;
+    }
+
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return `Completed after ${diffDays} ${diffDays === 1 ? 'day' : 'days'}`;
+};
+
 const infantName = (infant) => formatFullNameFromObject(infant) || 'Unnamed infant';
 
 const statusClasses = (status) => {
@@ -43,6 +79,7 @@ const statusClasses = (status) => {
 
 const FollowUpTasks = () => {
     const { user } = useAuth();
+    const { showToast, showConfirm } = useFeedback();
     const [loading, setLoading] = useState(true);
     const [followUps, setFollowUps] = useState([]);
     const [selectedInfant, setSelectedInfant] = useState(null);
@@ -178,15 +215,15 @@ const FollowUpTasks = () => {
             const res = await apiClient.patch(`/follow-ups/tasks/${taskId}/acknowledge`);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                alert(data.error || 'Failed to acknowledge task.');
+                showToast(data.error || 'Failed to acknowledge task.', 'error');
                 return;
             }
-            alert('Task successfully acknowledged.');
+            showToast('Task successfully acknowledged.', 'success');
             await loadData();
             window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
         } catch (error) {
             console.error('Failed to acknowledge task:', error);
-            alert('Server connection failed.');
+            showToast('Server connection failed.', 'error');
         } finally {
             setAcknowledgingTaskId(null);
         }
@@ -207,16 +244,16 @@ const FollowUpTasks = () => {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                alert(data.error || 'Failed to confirm follow-up outcome.');
+                showToast(data.error || 'Failed to confirm follow-up outcome.', 'error');
                 return;
             }
-            alert('Follow-up outcome successfully confirmed.');
+            showToast('Follow-up outcome successfully confirmed.', 'success');
             setConfirmTarget(null);
             await loadData();
             window.dispatchEvent(new CustomEvent('immunicare:followups-updated'));
         } catch (error) {
             console.error('Failed to confirm follow-up outcome:', error);
-            alert('Server connection failed.');
+            showToast('Server connection failed.', 'error');
         } finally {
             setConfirmingId(null);
         }
@@ -746,22 +783,53 @@ const FollowUpTasks = () => {
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-200 border border-slate-200">
-                                    {historyLogs.map((log) => (
-                                        <div key={log?.id} className="px-4 py-4">
-                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                <div className="text-sm font-black text-slate-900">{formatDate(log?.visit_date)}</div>
-                                                <span className="border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
-                                                    {log?.outcome || '-'}
-                                                </span>
+                                    {historyLogs.map((log) => {
+                                        const elapsed = formatElapsedTime(log?.assigned_at, log?.completed_at);
+                                        return (
+                                            <div key={log?.id} className="px-5 py-4 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                                                        Outcome: {log?.outcome || '-'}
+                                                    </span>
+                                                    {log?.assigned_at && (
+                                                        <span className={`text-[11px] font-bold px-2 py-0.5 border ${
+                                                            !log?.completed_at
+                                                                ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                                                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                                        }`}>
+                                                            {elapsed}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs font-semibold text-slate-600">
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Assigned Date/Time</span>
+                                                        <span className="text-slate-900">{formatDateTime(log?.assigned_at)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Assigned BHW</span>
+                                                        <span className="text-slate-900">{log?.bhw_name || 'Unassigned'}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Visit/Contact Date</span>
+                                                        <span className="text-slate-900">{formatDate(log?.visit_date)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Completion Date/Time</span>
+                                                        <span className="text-slate-900">{formatDateTime(log?.completed_at)}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider mb-1">Operational Notes</span>
+                                                    <p className="text-sm leading-6 text-slate-700 bg-slate-50 p-2.5 border border-slate-200 whitespace-pre-wrap">
+                                                        {log?.notes || 'No notes provided.'}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="mt-2 text-xs font-semibold text-slate-500">
-                                                Logged by {log?.bhw_name || 'BHW'} · Contact {log?.parent_contact || '-'}
-                                            </div>
-                                            <p className="mt-3 text-sm leading-6 text-slate-700">
-                                                {log?.notes || 'No notes provided.'}
-                                            </p>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -905,7 +973,7 @@ const FollowUpTasks = () => {
                 onClose={() => setDelegationTarget(null)}
                 infant={delegationTarget}
                 onDelegateSuccess={async (bhwName) => {
-                    alert(`Follow-up task successfully delegated to ${bhwName || 'BHW'}.`);
+                    showToast(`Follow-up task successfully delegated to ${bhwName || 'BHW'}.`, 'success');
                     await loadData();
                 }}
             />

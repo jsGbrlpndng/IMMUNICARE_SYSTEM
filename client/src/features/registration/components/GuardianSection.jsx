@@ -29,6 +29,7 @@ const GuardianSection = ({ formData, errors, handleChange, handleBlur, isReadOnl
                     value={formData.pregnancy_order}
                     onChange={handleChange}
                     min="1"
+                    max="20"
                     step="1"
                     inputMode="numeric"
                     pattern="[1-9][0-9]*"

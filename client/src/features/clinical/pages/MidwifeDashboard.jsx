@@ -34,6 +34,7 @@ import {
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeedback } from '../../../contexts/FeedbackContext';
 import apiClient from '../../../services/apiClient';
 import { MapContainer, TileLayer, Circle, Popup, LayerGroup, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -96,6 +97,7 @@ const createStatusIcon = (status) => {
 export default function MidwifeDashboard() {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { showToast } = useFeedback();
 
     // -- STATE --
     const [stats, setStats] = useState({ scheduledToday: 0, overdueCount: 0, clusterCount: 0, smsSent: 0 });
@@ -298,7 +300,7 @@ export default function MidwifeDashboard() {
             (address.toLowerCase().includes('langgam') && address.length < 15);
 
         const handleAction = () => {
-            alert('Action recorded: Feature integration pending.');
+            showToast('Action recorded: Feature integration pending.', 'info');
         };
 
         if (inf.rankingStatus === 'DEFAULTED' || (inf.days_overdue && inf.days_overdue >= 30)) {

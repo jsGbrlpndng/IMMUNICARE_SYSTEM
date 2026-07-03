@@ -384,6 +384,7 @@ router.post('/:id/transfer', requireTransferPrivilege, async (req, res) => {
             actor: req.user,
             reason: req.body.reason,
             notes: req.body.notes,
+            confirmed_reference_id: req.body.confirmed_reference_id,
             current_address: req.body.current_address,
             exact_address: req.body.exact_address,
             locality: req.body.locality,

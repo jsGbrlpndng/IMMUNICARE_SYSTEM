@@ -482,6 +482,85 @@ class InfantRegistrationService {
         return signatureSource || null;
     }
 
+    _normalizeDuplicateMatch(row = {}) {
+        const sourceTable = row.source_table || 'REGISTRATION';
+        const isInfantRecord = sourceTable === 'INFANT';
+        const officialInfantId = isInfantRecord ? row.id : (row.promoted_infant_id || null);
+
+        return {
+            ...row,
+            source_table: sourceTable,
+            official_infant_id: officialInfantId,
+            registration_record_id: isInfantRecord ? null : row.id,
+            registry_record_id: officialInfantId,
+            registration_status: isInfantRecord
+                ? (row.infant_registration_status || row.registration_status || null)
+                : (row.status || row.registration_status || null),
+            registry_status: isInfantRecord
+                ? (row.status || row.registry_status || null)
+                : (row.registry_status || null),
+            lifecycle_source: isInfantRecord
+                ? 'Official infant registry record'
+                : (officialInfantId ? 'Approved registration linked to official infant record' : 'Registration workflow record'),
+            source: isInfantRecord
+                ? 'Official infant record'
+                : (officialInfantId ? 'Official infant record from approved registration' : 'Registration workflow record')
+        };
+    }
+
+    _duplicateChildKey(match = {}) {
+        return match.official_infant_id
+            || match.promoted_infant_id
+            || (match.source_table === 'INFANT' ? match.id : null)
+            || match.reference_id
+            || `${match.source_table || 'MATCH'}:${match.id || 'unknown'}`;
+    }
+
+    _mergeDuplicateLifecycle(existing = {}, incoming = {}) {
+        const preferIncoming = incoming.source_table === 'INFANT' && existing.source_table !== 'INFANT';
+        const primary = preferIncoming ? incoming : existing;
+        const secondary = preferIncoming ? existing : incoming;
+        const matchTypes = Array.from(new Set([
+            primary.match_type,
+            secondary.match_type,
+            ...(Array.isArray(primary.match_types) ? primary.match_types : []),
+            ...(Array.isArray(secondary.match_types) ? secondary.match_types : [])
+        ].filter(Boolean)));
+
+        return {
+            ...secondary,
+            ...primary,
+            registration_record_id: primary.registration_record_id || secondary.registration_record_id || null,
+            registry_record_id: primary.registry_record_id || secondary.registry_record_id || null,
+            promoted_infant_id: primary.promoted_infant_id || secondary.promoted_infant_id || null,
+            official_infant_id: primary.official_infant_id || secondary.official_infant_id || null,
+            registration_status: primary.registration_status || secondary.registration_status || null,
+            registry_status: primary.registry_status || secondary.registry_status || null,
+            lifecycle_source: primary.source_table === 'INFANT' && (primary.registration_status || secondary.registration_status)
+                ? 'Official infant record from approved registration'
+                : (primary.lifecycle_source || secondary.lifecycle_source || null),
+            source: primary.source_table === 'INFANT' && (primary.registration_status || secondary.registration_status)
+                ? 'Official infant record from approved registration'
+                : (primary.source || secondary.source || null),
+            match_type: matchTypes[0] || primary.match_type || secondary.match_type || null,
+            match_types: matchTypes
+        };
+    }
+
+    _consolidateDuplicateMatches(matches = []) {
+        const byChild = new Map();
+
+        for (const rawMatch of Array.isArray(matches) ? matches : []) {
+            if (!rawMatch) continue;
+            const match = this._normalizeDuplicateMatch(rawMatch);
+            const key = this._duplicateChildKey(match);
+            const existing = byChild.get(key);
+            byChild.set(key, existing ? this._mergeDuplicateLifecycle(existing, match) : match);
+        }
+
+        return Array.from(byChild.values());
+    }
+
     _fullIdentityName(row = {}) {
         return [row.first_name, row.has_no_middle_name ? '' : row.middle_name, row.last_name]
             .map((part) => String(part || '').trim())
@@ -575,6 +654,7 @@ class InfantRegistrationService {
                 i.last_name,
                 i.dob,
                 i.sex,
+                i.registration_status AS infant_registration_status,
                 'INFANT' AS source_table
             FROM infants i
             WHERE LOWER(TRIM(COALESCE(i.first_name, ''))) = LOWER(TRIM(COALESCE(?, '')))
@@ -599,6 +679,7 @@ class InfantRegistrationService {
                 i.last_name,
                 i.dob,
                 i.sex,
+                i.registration_status AS infant_registration_status,
                 'INFANT' AS source_table
             FROM infants i
             WHERE LOWER(TRIM(COALESCE(i.first_name, ''))) = LOWER(TRIM(COALESCE(?, '')))
@@ -652,6 +733,7 @@ class InfantRegistrationService {
                 i.last_name,
                 i.dob,
                 i.sex,
+                i.registration_status AS infant_registration_status,
                 'INFANT' AS source_table
             FROM infants i
             WHERE LOWER(TRIM(COALESCE(i.first_name, ''))) = LOWER(TRIM(COALESCE(?, '')))
@@ -715,11 +797,12 @@ class InfantRegistrationService {
                 dob: row.dob || null,
                 sex: row.sex || null,
                 promoted_infant_id: row.promoted_infant_id || null,
+                infant_registration_status: row.infant_registration_status || null,
                 source_table: row.source_table || 'REGISTRATION',
                 match_type: 'EXACT'
             }));
 
-        const strictMatches = matches.filter((row) => this._normalizeDuplicateText(row.barangay) === barangay);
+        const strictMatches = this._consolidateDuplicateMatches(matches.filter((row) => this._normalizeDuplicateText(row.barangay) === barangay));
         const crossBarangayMatches = [...(Array.isArray(crossBarangayRegistrationRows) ? crossBarangayRegistrationRows : []), ...(Array.isArray(crossBarangayInfantRows) ? crossBarangayInfantRows : [])]
             .filter(Boolean)
             .map((row) => ({
@@ -735,11 +818,13 @@ class InfantRegistrationService {
                 dob: row.dob || null,
                 sex: row.sex || null,
                 promoted_infant_id: row.promoted_infant_id || null,
+                infant_registration_status: row.infant_registration_status || null,
                 source_table: row.source_table || 'REGISTRATION',
                 match_type: 'TRANSFER_INQUIRY'
             }))
             .filter((row, index, source) => source.findIndex((candidate) => `${candidate.source_table}:${candidate.id}` === `${row.source_table}:${row.id}`) === index);
-        const crossBarangayMatch = crossBarangayMatches[0] || matches.find((row) => this._normalizeDuplicateText(row.barangay) !== barangay) || null;
+        const consolidatedCrossBarangayMatches = this._consolidateDuplicateMatches(crossBarangayMatches);
+        const crossBarangayMatch = consolidatedCrossBarangayMatches[0] || this._consolidateDuplicateMatches(matches.filter((row) => this._normalizeDuplicateText(row.barangay) !== barangay))[0] || null;
         const probableMatches = [...(Array.isArray(probableRegistrationRows) ? probableRegistrationRows : []), ...(Array.isArray(probableInfantRows) ? probableInfantRows : [])]
             .filter(Boolean)
             .map((row) => ({
@@ -755,14 +840,16 @@ class InfantRegistrationService {
                 dob: row.dob || null,
                 sex: row.sex || null,
                 promoted_infant_id: row.promoted_infant_id || null,
+                infant_registration_status: row.infant_registration_status || null,
                 source_table: row.source_table || 'REGISTRATION',
                 match_type: 'PROBABLE'
             }))
             .filter((row, index, source) => source.findIndex((candidate) => `${candidate.source_table}:${candidate.id}` === `${row.source_table}:${row.id}`) === index);
+        const consolidatedProbableMatches = this._consolidateDuplicateMatches(probableMatches);
 
         return {
             strictMatches,
-            probableMatches,
+            probableMatches: consolidatedProbableMatches,
             crossBarangayAlert: crossBarangayMatch
                 ? {
                     status: 'TRANSFER_POSSIBLE',
@@ -770,10 +857,14 @@ class InfantRegistrationService {
                     source_table: crossBarangayMatch.source_table,
                     source_record_id: crossBarangayMatch.id,
                     reference_id: crossBarangayMatch.reference_id || null,
-                    full_name: this._fullIdentityName(crossBarangayMatch)
+                    full_name: this._fullIdentityName(crossBarangayMatch),
+                    official_infant_id: crossBarangayMatch.official_infant_id || null,
+                    registration_status: crossBarangayMatch.registration_status || null,
+                    registry_status: crossBarangayMatch.registry_status || null,
+                    source: crossBarangayMatch.source || null
                 }
                 : null,
-            allMatches: [...matches, ...probableMatches, ...crossBarangayMatches]
+            allMatches: this._consolidateDuplicateMatches([...matches, ...consolidatedProbableMatches, ...consolidatedCrossBarangayMatches])
         };
     }
 
@@ -1902,13 +1993,17 @@ class InfantRegistrationService {
 
         const shapeMatch = (match = {}) => ({
             id: match.id || null,
+            reference_id: match.reference_id || null,
             first_name: match.first_name || null,
             middle_name: match.middle_name || null,
             last_name: match.last_name || null,
             dob: match.dob || null,
             barangay: match.barangay || null,
             status: match.status || null,
-            match_type: match.match_type || null
+            match_type: match.match_type || null,
+            registration_status: match.registration_status || null,
+            registry_status: match.registry_status || null,
+            source: match.source || match.lifecycle_source || null
         });
 
         return {

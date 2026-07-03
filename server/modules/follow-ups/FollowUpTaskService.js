@@ -246,9 +246,9 @@ class FollowUpTaskService {
             `
             INSERT INTO follow_up_tasks (
                 id, infant_id, barangay, assigned_to_bhw_id, assigned_by_midwife_id,
-                target_completion_date, task_notes, status
+                target_completion_date, task_notes, status, assigned_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'ASSIGNED')
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ASSIGNED', CURRENT_TIMESTAMP)
             `,
             [
                 taskId,
@@ -271,7 +271,7 @@ class FollowUpTaskService {
         const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
         await safeRecordAuditEvent({
             actor: user,
-            action: 'FOLLOW_UP_ASSIGN_TASK',
+            action: 'FOLLOW_UP_CREATE',
             targetEntity: 'follow_up_tasks',
             targetRecordId: taskId,
             targetName: this._infantTargetName(infant),
@@ -329,9 +329,9 @@ class FollowUpTaskService {
                 `
                 INSERT INTO follow_up_tasks (
                     id, infant_id, barangay, assigned_to_bhw_id, assigned_by_midwife_id,
-                    target_completion_date, task_notes, status
+                    target_completion_date, task_notes, status, assigned_at
                 )
-                VALUES (?, ?, ?, ?, ?, CURRENT_DATE + INTERVAL '7 days', ?, 'ASSIGNED')
+                VALUES (?, ?, ?, ?, ?, CURRENT_DATE + INTERVAL '7 days', ?, 'ASSIGNED', CURRENT_TIMESTAMP)
                 `,
                 [
                     taskId,
@@ -353,7 +353,7 @@ class FollowUpTaskService {
         });
         await safeRecordAuditEvent({
             actor: user,
-            action: 'FOLLOW_UP_AUTO_ASSIGN_TASKS',
+            action: 'FOLLOW_UP_AUTO_GENERATE',
             targetEntity: 'follow_up_tasks',
             targetRecordId: null,
             targetName: `${created.length} Defaulter Follow-up Task${created.length === 1 ? '' : 's'}`,
@@ -417,7 +417,7 @@ class FollowUpTaskService {
         const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
         await safeRecordAuditEvent({
             actor: user,
-            action: 'FOLLOW_UP_STATUS_UPDATE',
+            action: 'FOLLOW_UP_ACKNOWLEDGE',
             targetEntity: 'follow_up_tasks',
             targetRecordId: taskId,
             targetName,
@@ -486,7 +486,7 @@ class FollowUpTaskService {
         const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
         await safeRecordAuditEvent({
             actor: user,
-            action: 'FOLLOW_UP_STATUS_UPDATE',
+            action: 'FOLLOW_UP_COMPLETE',
             targetEntity: 'follow_up_tasks',
             targetRecordId: taskId,
             targetName,
@@ -560,7 +560,7 @@ class FollowUpTaskService {
         const [newRows] = await this.db.execute('SELECT * FROM follow_up_tasks WHERE id = ? LIMIT 1', [taskId]);
         await safeRecordAuditEvent({
             actor: user,
-            action: 'FOLLOW_UP_STATUS_UPDATE',
+            action: 'FOLLOW_UP_CONFIRM',
             targetEntity: 'follow_up_tasks',
             targetRecordId: taskId,
             targetName,

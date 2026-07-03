@@ -359,6 +359,38 @@ async function applyHardening() {
         `);
     }
 
+    if (existingTables.has('follow_up_tasks')) {
+        await db.execute(`
+            ALTER TABLE follow_up_tasks
+            ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ
+        `);
+        await db.execute(`
+            UPDATE follow_up_tasks
+            SET assigned_at = created_at
+            WHERE assigned_at IS NULL
+        `);
+    }
+
+    if (existingTables.has('follow_up_logs')) {
+        await db.execute(`
+            ALTER TABLE follow_up_logs
+            ADD COLUMN IF NOT EXISTS task_id UUID REFERENCES follow_up_tasks(id) ON DELETE SET NULL
+        `);
+        await db.execute(`
+            UPDATE follow_up_logs ful
+            SET task_id = (
+                SELECT ft.id
+                FROM follow_up_tasks ft
+                WHERE ft.infant_id = ful.infant_id
+                  AND ft.schedule_id = ful.schedule_id
+                  AND ful.schedule_id IS NOT NULL
+                  AND ft.schedule_id IS NOT NULL
+                LIMIT 1
+            )
+            WHERE ful.task_id IS NULL
+        `);
+    }
+
     await db.execute(`
         CREATE OR REPLACE FUNCTION prevent_audit_modification()
         RETURNS trigger AS $$

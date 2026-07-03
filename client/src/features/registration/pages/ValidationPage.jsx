@@ -30,6 +30,13 @@ const REJECTION_REASONS = [
 
 const normalizeWorkflowValue = (value) => String(value || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
 
+const formatDuplicateLifecycle = (match = {}) => {
+    const registrationStatus = match.registration_status ? `Registration: ${String(match.registration_status).replace(/_/g, ' ')}` : null;
+    const registryStatus = match.registry_status ? `Registry: ${String(match.registry_status).replace(/_/g, ' ')}` : null;
+    return [match.source, registrationStatus, registryStatus].filter(Boolean).join(' | ')
+        || String(match.status || 'MATCH').replace(/_/g, ' ');
+};
+
 const ValidationPage = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -609,7 +616,7 @@ const ValidationPage = () => {
                                                                 {formatFullNameFromObject(match)}
                                                             </div>
                                                             <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                                                DOB: {match.dob ? new Date(match.dob).toLocaleDateString() : '--'} | Barangay: {match.barangay || '--'} | {String(match.status || 'MATCH').replace(/_/g, ' ')}
+                                                                DOB: {match.dob ? new Date(match.dob).toLocaleDateString() : '--'} | Barangay: {match.barangay || '--'} | {formatDuplicateLifecycle(match)}
                                                             </div>
                                                         </div>
                                                     ))}
